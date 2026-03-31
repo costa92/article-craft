@@ -5,36 +5,64 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   tag-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read version from plugin.json
+      - name: Extract version from plugin.json
         id: version
         run: |
           VERSION=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Found version: $VERSION"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Current version: $VERSION"
 
       - name: Check if tag exists
         id: check-tag
         run: |
-          if git tag | grep -q "^v${{ steps.version.outputs.version }}$"; then
+          if git tag | grep -q "^${{ steps.version.outputs.tag }}$"; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag v${{ steps.version.outputs.version }} already exists"
+            echo "Tag ${{ steps.version.outputs.tag }} already exists, skipping"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Tag v${{ steps.version.outputs.version }} does not exist"
           fi
 
-      - name: Create and push tag
+      - name: Get latest commit SHA
+        id: sha
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create git tag via API
+        if: steps.check-tag.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.git.createTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: '${{ steps.version.outputs.tag }}',
+                message: 'Release ${{ steps.version.outputs.tag }}',
+                object: '${{ steps.sha.outputs.sha }}',
+                type: 'commit'
+              });
+              console.log('Tag ${{ steps.version.outputs.tag }} created successfully');
+            } catch (e) {
+              if (e.status === 422) {
+                console.log('Tag already exists (API), skipping');
+              } else {
+                throw e;
+              }
+            }
+
+      - name: Push tag
         if: steps.check-tag.outputs.exists == 'false'
         run: |
-          TAG="v${{ steps.version.outputs.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Release $TAG — article-craft v${{ steps.version.outputs.version }}"
-          git push origin "$TAG"
-          echo "✅ Created and pushed tag: $TAG"
+          git push origin refs/tags/${{ steps.version.outputs.tag }}
+          echo "✅ Tag ${{ steps.version.outputs.tag }} pushed to origin"
