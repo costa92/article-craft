@@ -1,6 +1,6 @@
 ---
 name: article-craft:lint
-version: 1.1.0
+version: 1.2.0
 description: "Check and auto-fix article style violations — red-flag words, hook length, closing patterns, AI traces. Use to clean up articles before review."
 ---
 

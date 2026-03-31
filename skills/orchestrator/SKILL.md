@@ -1,6 +1,6 @@
 ---
 name: article-craft
-version: 1.1.0
+version: 1.2.0
 description: "Full article generation pipeline — orchestrates requirements, verification, writing, image generation, review, and publishing. Use when creating a complete technical article end-to-end."
 allowed-tools:
   - Read

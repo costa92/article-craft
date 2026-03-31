@@ -25,7 +25,7 @@ error()   { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 header() {
   echo ""
   echo -e "${BOLD}═══════════════════════════════════════════════════════${RESET}"
-  echo -e "${BOLD}  article-craft v1.1.0  安装向导${RESET}"
+  echo -e "${BOLD}  article-craft 安装向导${RESET}"
   echo -e "${BOLD}═══════════════════════════════════════════════════════${RESET}"
   echo ""
 }
@@ -122,34 +122,44 @@ install_python_deps() {
 }
 
 # =============================================================================
-# 安装 shot-scraper
+# 安装 Playwright（截图工具依赖）
 # =============================================================================
-install_shot_scraper() {
-  separator "安装 shot-scraper"
+install_playwright() {
+  separator "安装 Playwright"
 
-  if command -v shot-scraper >/dev/null 2>&1; then
-    success "shot-scraper 已安装: $(shot-scraper --version 2>&1 | head -1)"
-    install_playwright || true
+  # 检查 playwright 是否可用
+  if python3 -c "from playwright.sync_api import sync_playwright" 2>/dev/null; then
+    success "Playwright Python SDK 已安装"
+    check_chromium || true
     return 0
   fi
 
-  info "安装 shot-scraper..."
-  if pip3 install -q shot-scraper 2>/dev/null; then
-    success "shot-scraper 安装完成"
-    install_playwright
+  info "安装 Playwright..."
+  if pip3 install -q playwright 2>/dev/null; then
+    success "Playwright 安装完成"
+    install_chromium
   else
-    error "shot-scraper 安装失败"
-    echo "  手动运行: pip3 install shot-scraper"
+    error "Playwright 安装失败"
+    echo "  手动运行: pip3 install playwright && playwright install chromium"
     return 1
   fi
 }
 
-install_playwright() {
-  info "安装 Playwright 浏览器..."
-  if shot-scraper install 2>&1 | tail -5; then
-    success "Playwright 安装完成"
+install_chromium() {
+  info "安装 Chromium 浏览器（用于截图）..."
+  if playwright install chromium 2>&1 | tail -5; then
+    success "Chromium 安装完成"
   else
-    warn "Playwright 安装可能失败，请手动运行: shot-scraper install"
+    warn "Chromium 安装可能失败，请手动运行: playwright install chromium"
+  fi
+}
+
+check_chromium() {
+  info "检查 Chromium..."
+  if playwright install --dry-run chromium 2>&1 | grep -q "will install"; then
+    warn "Chromium 未安装，运行: playwright install chromium"
+  else
+    success "Chromium 就绪"
   fi
 }
 
@@ -313,7 +323,7 @@ verify() {
   echo "  ─────────────────────────────"
 
   # Python 包
-  for pkg in google.genai PIL dotenv shot_scraper; do
+  for pkg in google.genai PIL dotenv playwright requests; do
     if python3 -c "import ${pkg//-/_}" 2>/dev/null; then
       echo "  ${pkg}           OK"
     else
@@ -322,11 +332,11 @@ verify() {
     fi
   done
 
-  # shot-scraper
-  if command -v shot-scraper >/dev/null 2>&1; then
-    echo "  shot-scraper      OK"
+  # Playwright chromium
+  if python3 -c "from playwright.sync_api import sync_playwright; sync_playwright().start().stop()" 2>/dev/null; then
+    echo "  playwright        OK"
   else
-    echo "  shot-scraper      MISSING"
+    echo "  playwright        MISSING (run: playwright install chromium)"
     ok=$((ok + 1))
   fi
 
@@ -363,15 +373,20 @@ usage() {
   echo ""
   echo "  ${BOLD}单独使用某个 skill${RESET}:"
   echo ""
-  echo "    /article-write        生成文章"
-  echo "    /article-images       生成图片"
-  echo "    /article-review       审核评分"
-  echo "    /article-lint         风格检查"
-  echo "    /article-screenshot   网页截图"
-  echo "    /article-youtube      YouTube 转文章"
+  echo "    /article-craft:write        生成文章"
+  echo "    /article-craft:images       生成图片"
+  echo "    /article-craft:review       审核评分"
+  echo "    /article-craft:lint        风格检查"
+  echo "    /article-craft:screenshot   网页截图 + 分享卡片"
+  echo "    /article-craft:youtube      YouTube 转文章"
+  echo ""
+  echo "  ${BOLD}版本管理${RESET}:"
+  echo "    python3 scripts/bump_version.py            # 交互式升级"
+  echo "    python3 scripts/bump_version.py minor     # 小版本升级"
+  echo "    python3 scripts/bump_version.py patch     # 补丁版本升级"
   echo ""
   echo "  ${BOLD}升级${RESET}:"
-  echo "    cd $PLUGIN_ROOT && git pull"
+  echo "    cd $PLUGIN_ROOT && git pull && bash install.sh"
   echo ""
   echo "  ${BOLD}卸载${RESET}:"
   echo "    rm -rf $PLUGIN_ROOT"
@@ -393,8 +408,8 @@ main() {
   # 2. Python 依赖
   install_python_deps || true
 
-  # 3. shot-scraper + Playwright
-  install_shot_scraper || true
+  # 3. Playwright（截图渲染）
+  install_playwright || true
 
   # 4. PicGo
   install_picgo || true

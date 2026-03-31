@@ -1,6 +1,6 @@
 ---
 name: article-craft:verify
-version: 1.1.0
+version: 1.2.0
 description: "Batch verify links, commands, and tool features before writing. Use to ensure all referenced tools and URLs are accurate."
 ---
 

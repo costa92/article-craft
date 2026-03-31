@@ -1,6 +1,6 @@
 ---
 name: article-craft:review
-version: 1.1.0
+version: 1.2.0
 description: "Quality gate for articles -- self-check rules plus content-reviewer scoring. Use after writing to ensure article meets quality standards."
 ---
 

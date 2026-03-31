@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.1.0
+version: 1.2.0
 description: "Generate technical article content with style guide, Obsidian format, and image placeholders. Use when writing a technical blog article."
 ---
 
