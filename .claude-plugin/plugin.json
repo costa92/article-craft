@@ -7,15 +7,5 @@
     "email": ""
   },
   "license": "MIT",
-  "keywords": ["article", "writing", "images", "gemini", "obsidian", "technical-blog"],
-  "dependencies": {
-    "skills": {
-      "required": [],
-      "optional": ["content-reviewer"]
-    },
-    "cli": {
-      "required": ["shot-scraper"],
-      "optional": ["yt-dlp"]
-    }
-  }
+  "keywords": ["article", "writing", "images", "gemini", "obsidian", "technical-blog"]
 }
