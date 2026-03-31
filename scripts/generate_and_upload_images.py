@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import hashlib
 from datetime import datetime
+from urllib.parse import urlparse
 
 # 心跳监控支持（可选，编排器模式下使用）
 HEARTBEAT_AVAILABLE = False
@@ -329,19 +330,20 @@ class ImageConfig:
 
 
 class ScreenshotConfig:
-    """截图配置"""
+    """截图配置（同时支持新旧两种占位符格式）"""
     def __init__(self, slug: str, description: str, url: str,
                  selector: str = None, wait: int = None, js: str = None,
-                 filename: str = None):
+                 filename: str = None, width: int = 1280):
         self.slug = slug
         self.description = description
         self.url = url
         self.selector = selector
-        self.wait = wait
+        self.wait = wait      # 秒数（screenshot_tool.py 格式）
         self.js = js
         self.filename = filename or f"{slug}.png"
         self.local_path = None
         self.cdn_url = None
+        self.width = width
 
 
 def delete_local_file(file_path: str, keep_files: bool = False) -> None:
@@ -769,7 +771,7 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
 
 def take_screenshot(config: 'ScreenshotConfig', output_dir: str = None) -> bool:
     """
-    使用 shot-scraper 截取网页截图
+    使用 screenshot_tool.py (Playwright) 截取网页截图
 
     Args:
         config: 截图配置 (ScreenshotConfig)
@@ -782,12 +784,12 @@ def take_screenshot(config: 'ScreenshotConfig', output_dir: str = None) -> bool:
     images_dir.mkdir(exist_ok=True)
     output_path = images_dir / config.filename
 
-    print(f"\n📸 截图: {config.description}")
+    print(f"\n📸 截图: {config.description or config.slug}")
     print(f"   URL: {config.url}")
     if config.selector:
         print(f"   选择器: {config.selector}")
     if config.wait:
-        print(f"   等待: {config.wait}ms")
+        print(f"   等待: {config.wait}s")
     if config.js:
         print(f"   预执行 JS: {config.js[:60]}...")
 
@@ -799,54 +801,62 @@ def take_screenshot(config: 'ScreenshotConfig', output_dir: str = None) -> bool:
             pass
 
     try:
-        # Use jpg directly for smaller file size without retina doubling
-        # If output_path is PNG, change the extension to JPG to significantly compress it
-        if output_path.suffix.lower() == '.png':
-            output_path = output_path.with_suffix('.jpg')
-            config.filename = output_path.name
-            
+        script_root = os.path.expanduser(os.path.join(
+            os.path.dirname(os.path.abspath(__file__))
+        ))
+        tool_script = os.path.join(script_root, "screenshot_tool.py")
+
         cmd = [
-            "shot-scraper",
+            sys.executable, tool_script,
+            "screenshot",
             config.url,
             "-o", str(output_path),
-            "--width", "800",
-            "--height", "600",  # limit height to avoid overly long images in articles
-            "--quality", "80",  # 80% JPEG quality
+            "--no-upload",
         ]
 
         if config.selector:
-            cmd.extend(["-s", config.selector, "--padding", "10"])
-
+            cmd.extend(["-s", config.selector])
         if config.wait:
-            cmd.extend(["--wait", str(config.wait)])
-
-        if config.js:
-            cmd.extend(["--javascript", config.js])
+            cmd.extend(["-w", str(config.wait)])
+        if config.width:
+            cmd.extend(["--width", str(config.width)])
 
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=TIMEOUTS.get("screenshot", 60)
+            timeout=TIMEOUTS.get("screenshot", 120)
         )
 
+        # screenshot_tool.py 输出 JSON 到 stdout，文本到 stderr
         if result.returncode == 0 and output_path.exists():
+            # 解析 JSON 结果
+            try:
+                import json as _json
+                _json.loads(result.stdout)  # 不使用，但触发解析验证
+            except Exception:
+                pass  # JSON 可能为空，继续
             config.local_path = str(output_path)
             print(f"   ✅ 截图成功: {output_path}")
             return True
         else:
-            print(f"   ❌ 截图失败")
-            if result.stderr:
-                print(f"   错误: {result.stderr[:200]}")
+            # 提取错误信息
+            try:
+                import json as _json
+                err_data = _json.loads(result.stdout)
+                error = err_data.get("error", result.stderr[:200] if result.stderr else "unknown")
+            except Exception:
+                error = (result.stdout + result.stderr)[:200]
+            print(f"   ❌ 截图失败: {error}")
             return False
 
     except subprocess.TimeoutExpired:
-        timeout_val = TIMEOUTS.get("screenshot", 60)
+        timeout_val = TIMEOUTS.get("screenshot", 120)
         print(f"   ❌ 截图超时（{timeout_val}秒）")
         return False
     except FileNotFoundError:
-        print(f"   ❌ shot-scraper 未安装")
-        print(f"   请运行: pip install shot-scraper && shot-scraper install")
+        print(f"   ❌ screenshot_tool.py 未找到")
+        print(f"   请运行: python3 setup_dependencies.py")
         return False
     except Exception as e:
         print(f"   ❌ 截图失败: {str(e)}")
@@ -1588,16 +1598,14 @@ def parse_markdown_images(file_path: str) -> List[tuple]:
     return matches
 
 
-def parse_markdown_screenshots(file_path: str) -> List[tuple]:
+def parse_markdown_screenshots_v2(file_path: str) -> List[tuple]:
     """
-    Parse Markdown file for screenshot placeholders.
+    解析新格式单行截图占位符（优先匹配）。
 
     Format:
-        <!-- SCREENSHOT: slug - description -->
-        <!-- URL: https://example.com -->
-        <!-- SELECTOR: .css-selector -->       (optional)
-        <!-- WAIT: 3000 -->                    (optional)
-        <!-- JS: document.querySelector(...)?.remove() -->  (optional)
+        <!-- SCREENSHOT: https://example.com -->
+        <!-- SCREENSHOT: https://example.com #selector -->
+        <!-- SCREENSHOT: https://example.com WAIT:3 WIDTH:800 -->
 
     Returns: List of (ScreenshotConfig, full_match_text)
     """
@@ -1607,8 +1615,99 @@ def parse_markdown_screenshots(file_path: str) -> List[tuple]:
     file_stem = Path(file_path).stem
     matches = []
 
-    # Match SCREENSHOT + URL (required), then optional SELECTOR, WAIT, JS in any order
-    # The slug uses [\w-]+ to allow hyphens, separated from description by ' - '
+    # 新格式：SCREENSHOT: URL [options]
+    # 选项：#selector, WAIT:N, WIDTH:N（均为可选，可任意组合顺序）
+    new_pattern = re.compile(
+        r'<!--\s*SCREENSHOT:\s*(https?://[^\s#>]+)'
+        r'((?:\s+(?:#[\w.\-]+|WAIT:\d+|WIDTH:\d+))*)'
+        r'\s*-->',
+        re.IGNORECASE
+    )
+
+    for match in new_pattern.finditer(file_content):
+        full_match_text = match.group(0)
+        url = match.group(1).strip()
+        options_str = match.group(2) or ""
+
+        # 解析选项
+        selector = None
+        wait = None
+        width = 1280
+
+        for opt in options_str.split():
+            opt = opt.strip()
+            if opt.startswith('#'):
+                selector = opt[1:]  # 去掉 # 前缀
+            elif opt.upper().startswith('WAIT:'):
+                wait = int(opt.split(':')[1])
+            elif opt.upper().startswith('WIDTH:'):
+                width = int(opt.split(':')[1])
+
+        # 生成 slug/description：从 URL 提取有意义部分
+        parsed = urlparse(url)
+        path = parsed.path.strip("/").replace("/", "-").replace("?", "-").replace("&", "-")
+        if not path:
+            path = parsed.netloc.replace(".", "-")
+        slug = path[:60] if len(path) > 60 else path
+
+        # 生成文件名
+        safe_file_stem = re.sub(r'[^a-zA-Z0-9-_]', '_', file_stem)
+        combined_hash = hashlib.md5(f"{file_path}_{url}".encode('utf-8')).hexdigest()[:12]
+        filename = f"{safe_file_stem}_{combined_hash}.png"
+
+        config = ScreenshotConfig(
+            slug=slug,
+            description=slug,
+            url=url,
+            selector=selector,
+            wait=wait,
+            js=None,
+            filename=filename,
+            width=width
+        )
+        matches.append((config, full_match_text))
+
+    return matches
+
+
+def parse_markdown_screenshots(file_path: str) -> List[tuple]:
+    """
+    解析截图占位符（兼容新旧两种格式）。
+
+    优先级：新格式（单行 URL） > 旧格式（多行 block）
+    防止重复：已在 v2 中匹配的占位符不会被旧格式重复匹配
+
+    新格式:
+        <!-- SCREENSHOT: https://example.com -->
+        <!-- SCREENSHOT: https://example.com #selector WAIT:3 WIDTH:800 -->
+
+    旧格式（向后兼容）:
+        <!-- SCREENSHOT: slug - description -->
+        <!-- URL: https://example.com -->
+        <!-- SELECTOR: .css-selector -->       (optional)
+        <!-- WAIT: 3000 -->                    (optional)
+        <!-- JS: ... -->                       (optional)
+
+    Returns: List of (ScreenshotConfig, full_match_text)
+    """
+    # Step 1: 先解析新格式（优先）
+    new_matches = parse_markdown_screenshots_v2(file_path)
+
+    # Step 2: 收集新格式中已匹配的文本范围（用于排除）
+    with open(file_path, 'r', encoding='utf-8') as f:
+        file_content = f.read()
+
+    # 构建已匹配位置集合（防止旧格式误匹配同一占位符）
+    consumed_ranges = set()
+    for _, full_text in new_matches:
+        start = file_content.find(full_text)
+        if start != -1:
+            end = start + len(full_text)
+            consumed_ranges.add((start, end))
+
+    # Step 3: 解析旧格式，跳过已被新格式消耗的区域
+    file_stem = Path(file_path).stem
+    old_matches = []
     pattern = (
         r'<!--\s*SCREENSHOT:\s*([\w-]+)\s+-\s+(.*?)\s*-->\s*\n'
         r'<!--\s*URL:\s*(.*?)\s*-->'
@@ -1617,35 +1716,40 @@ def parse_markdown_screenshots(file_path: str) -> List[tuple]:
 
     for match in re.finditer(pattern, file_content):
         full_match_text = match.group(0)
+        match_start = match.start()
+        match_end = match.end()
+
+        # 跳过已被新格式占用的区域
+        if any(s <= match_start < e for s, e in consumed_ranges):
+            continue
+
         slug = match.group(1).strip()
         description = match.group(2).strip()
         url = match.group(3).strip()
         optional_block = match.group(4)
 
-        # Parse optional parameters from the trailing block
+        # 解析可选参数
         selector = None
         wait = None
         js = None
 
         if optional_block:
-            selector_match = re.search(r'<!--\s*SELECTOR:\s*(.*?)\s*-->', optional_block)
-            if selector_match:
-                selector = selector_match.group(1).strip()
+            sel_m = re.search(r'<!--\s*SELECTOR:\s*(.*?)\s*-->', optional_block)
+            if sel_m:
+                selector = sel_m.group(1).strip()
 
-            wait_match = re.search(r'<!--\s*WAIT:\s*(\d+)\s*-->', optional_block)
-            if wait_match:
-                wait = int(wait_match.group(1))
+            wait_m = re.search(r'<!--\s*WAIT:\s*(\d+)\s*-->', optional_block)
+            if wait_m:
+                # 旧格式 WAIT 单位是 ms，转换为秒
+                wait = int(wait_m.group(1)) // 1000
 
-            js_match = re.search(r'<!--\s*JS:\s*(.*?)\s*-->', optional_block)
-            if js_match:
-                js = js_match.group(1).strip()
+            js_m = re.search(r'<!--\s*JS:\s*(.*?)\s*-->', optional_block)
+            if js_m:
+                js = js_m.group(1).strip()
 
-        # Construct filename: 使用更安全的方式，避免中文字符
-        # 1. 安全化 file_stem（去除中文字符和其他非ASCII字符）
+        # 生成文件名
         safe_file_stem = re.sub(r'[^a-zA-Z0-9-_]', '_', file_stem)
-        # 2. 安全化 slug
         safe_slug = re.sub(r'[^a-zA-Z0-9-_]', '_', slug)
-        # 3. 使用组合哈希值确保唯一性（基于文件路径和 slug）
         combined_hash = hashlib.md5(f"{file_path}_{slug}".encode('utf-8')).hexdigest()[:12]
         filename = f"{safe_file_stem}_{safe_slug}_{combined_hash}.png"
 
@@ -1656,11 +1760,21 @@ def parse_markdown_screenshots(file_path: str) -> List[tuple]:
             selector=selector,
             wait=wait,
             js=js,
-            filename=filename
+            filename=filename,
+            width=1280
         )
-        matches.append((config, full_match_text))
+        old_matches.append((config, full_match_text))
 
-    return matches
+    # 合并结果（去重：以 match_text 为 key）
+    all_matches = new_matches + old_matches
+    seen = set()
+    unique = []
+    for item in all_matches:
+        if item[1] not in seen:
+            seen.add(item[1])
+            unique.append(item)
+
+    return unique
 
 
 def update_markdown_file(file_path: str, results: Dict, matches: List[tuple],
@@ -2029,13 +2143,12 @@ def main():
             sys.exit(1)
 
     if screenshot_file_matches:
-        # Check shot-scraper availability
-        try:
-            subprocess.run(["shot-scraper", "--version"],
-                          capture_output=True, check=True, timeout=5)
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-            print("❌ shot-scraper 未安装")
-            print("   请运行: pip install shot-scraper && shot-scraper install")
+        # Check screenshot_tool.py availability
+        script_root = os.path.dirname(os.path.abspath(__file__))
+        tool_script = os.path.join(script_root, "screenshot_tool.py")
+        if not os.path.exists(tool_script):
+            print("❌ screenshot_tool.py 未找到")
+            print("   请确认 article-craft 完整安装")
             if not configs:
                 sys.exit(1)
             else:

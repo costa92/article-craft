@@ -6,7 +6,7 @@ description: "Generate and upload images for technical articles using Gemini API
 
 # Images
 
-Generate and upload images for technical articles using Gemini API, with screenshot support via shot-scraper.
+Generate and upload images for technical articles using Gemini API, with screenshot support via screenshot_tool.py (Playwright).
 
 ## Inputs
 
@@ -123,32 +123,34 @@ grep -n '<!-- IMAGE:' /ABSOLUTE/PATH/article.md
 
 ### 5. Screenshots (Independent of Gemini)
 
-Screenshots use `shot-scraper` and always work regardless of Gemini API status.
+Screenshots use `screenshot_tool.py` (Playwright) and always work regardless of Gemini API status.
 
 When using `--process-file`, screenshots (`<!-- SCREENSHOT: ... -->`) are handled automatically. For standalone screenshots:
 
 ```bash
-shot-scraper https://example.com -o /tmp/screenshot.jpg --wait 3000
-picgo upload /tmp/screenshot.jpg
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py screenshot "https://example.com" \
+  -o /tmp/screenshot.png -w 3
+picgo upload /tmp/screenshot.png
 ```
 
 Screenshot placeholder format:
 ```markdown
-<!-- SCREENSHOT: tool-name-ui - Tool Name Interface -->
-<!-- URL: https://example.com -->
-<!-- WAIT: 3000 -->
+<!-- SCREENSHOT: https://example.com -->
+<!-- SCREENSHOT: https://example.com #element-selector -->
+<!-- SCREENSHOT: https://example.com WAIT:3 -->
 ```
 
 Optional parameters:
-```markdown
-<!-- SELECTOR: .css-selector -->
-<!-- JS: document.querySelector('.cookie-banner')?.remove() -->
-```
+- `#selector` — CSS 选择器，只截取该元素
+- `WAIT:N` — 额外等待 N 秒（SPA 页面）
+- `WIDTH:N` — 视口宽度（默认 1280）
 
-**SELECTOR rules:**
-- External third-party sites -- **never use SELECTOR** (DOM changes break screenshots)
-- Local services or controlled systems -- SELECTOR is fine
-- External sites -- use `WAIT: 3000` for load delay
+**截图流程**（自动执行）：
+1. HEAD 请求预检 URL（检测 404/403/5xx）
+2. Playwright 渲染（等待网络空闲）
+3. 空页面 / 404 文本检测
+4. 智能选择器推荐（GitHub/Twitter/Stack Overflow 等）
+5. 截图 → Pillow 压缩 → CDN 上传
 
 ## CRITICAL Rules
 

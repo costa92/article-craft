@@ -97,6 +97,31 @@ Every technical section must contain **at least 2 commands/code snippets plus ex
 
 Within the same section (same `##` heading), do not include two images that serve the same purpose.
 
+#### Rule 7b: Minimum AI Image Count
+
+Verify the article meets the minimum AI image count based on word count:
+
+| 文章字数 | 最少 AI 图片数（IMAGE 占位符） |
+|---------|--------------------------|
+| ≤ 1500 字 | 1 张（封面） |
+| 1500-3000 字 | 2 张（封面 + 1 节奏图） |
+| > 3000 字 | 3 张（封面 + 2 节奏图） |
+
+> SCREENSHOT 占位符不计入此数量（截图由 screenshot skill 处理）
+
+**How to check**:
+```bash
+# 统计 IMAGE 占位符数量（不含已替换的 CDN 图片）
+grep -c '<!-- IMAGE:' /path/to/article.md
+
+# 统计文章字数（不含 frontmatter）
+wc -c /path/to/article.md  # 或目测章节长度
+```
+
+**If below minimum**:
+- If < minimum: warn user, add `<!-- IMAGE: name - description (3:2) -->` + `<!-- PROMPT: ... -->` placeholders for missing images
+- If article is short by design (e.g., quick notes): note it in the review, no enforcement
+
 #### Rule 8: External Links for WeChat
 
 WeChat does not support clickable external links. Replace external URLs with search guidance: `搜索「关键词」` or `在 GitHub 搜索 项目名`. Internal inline links (`[Name](url)`) are fine -- the WeChat converter auto-extracts them as footnote references.

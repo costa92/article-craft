@@ -148,6 +148,26 @@ Which one did you mean?
 
 Never assume which project the user means. Always ask.
 
+### Step 5: Save URL Cache (for screenshot_tool)
+
+将 Step 2 的 URL 检查结果写入共享缓存（TTL 1 小时），供 screenshot_tool.py 复用：
+
+```bash
+# 方式 A：逐步追加（每验证一个 URL 就写入）
+SCRIPT="${CLAUDE_PLUGIN_ROOT}/scripts/write_verify_cache.py"
+
+# Step 2 的 curl 检查结果追加到缓存：
+# 例如从 Step 2 提取出 code 和 url 变量后：
+python3 "$SCRIPT" --url "$url" --status "$code" --reason "checked"
+
+# 方式 B：批量写入（Step 2 结果保存到文件后一次性处理）
+# 将 Step 2 的 curl 输出保存到 /tmp/verify-results.txt
+# 格式：每行 "CODE URL"（如 "200 https://..." 或 "404 https://..."）
+python3 "$SCRIPT" --from-file /tmp/verify-results.txt
+```
+
+> screenshot_tool.py 会优先读取此缓存（1 小时内有效，路径 `~/.cache/article-craft/verify-cache.json`），避免对同一 URL 重复发起 HEAD 请求。
+
 ---
 
 ## Output: Inline Verification Report

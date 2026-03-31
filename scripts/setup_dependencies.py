@@ -21,7 +21,9 @@ def check_python_dependencies():
         'dotenv': 'python-dotenv>=1.0.0',
         'markdown': 'markdown>=3.5.0',
         'premailer': 'premailer>=3.10.0',
-        'pygments': 'Pygments>=2.17.0'
+        'pygments': 'Pygments>=2.17.0',
+        'playwright': 'playwright>=1.40.0',
+        'requests': 'requests>=2.31.0',
     }
 
     missing_packages = []

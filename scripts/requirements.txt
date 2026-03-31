@@ -11,9 +11,11 @@ tqdm>=4.65.0
 # 重试机制
 tenacity>=8.2.0
 
-# 网页截图（shot-scraper）
-# 安装后需运行: shot-scraper install（下载 Playwright 浏览器）
+# 网页截图（shot-scraper + Playwright）
+# shot-scraper: 轻量 CLI 工具
+# playwright: 完整浏览器渲染（智能截图用，安装后需运行: playwright install chromium）
 shot-scraper>=1.0
+playwright>=1.40.0
 
 # GitHub Token 验证（可选）
 requests>=2.31.0

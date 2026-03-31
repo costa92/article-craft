@@ -48,10 +48,11 @@ Detection logic:
   2. Has <!-- IMAGE: --> placeholders?  → images NOT done, run images
   3. Has <!-- SCREENSHOT: --> placeholders?  → screenshots NOT done, run screenshots
   4. File is in 02-技术/ KB directory?  → publish already done, skip publish
+  5. Ask user: "生成分享卡片？" → 用户确认后才运行 share_card
 
 Upgrade paths:
-  draft → standard:  run verify → screenshot → images → review → publish
-  draft → quick:     run screenshot → images
+  draft → standard:  run verify → screenshot → share_card → images → review → publish
+  draft → quick:     run screenshot → share_card → images
   quick → standard:  run verify → review → publish
 ```
 
@@ -88,6 +89,7 @@ Pipeline Status:
   verify:       pending
   write:        pending
   screenshot:   pending
+  share_card:   pending   # 可选，标准模式询问用户
   images:       pending
   review:       pending
   publish:      pending
@@ -121,6 +123,7 @@ Invoke `article-craft:verify` skill logic:
 - **前台阻塞执行**（不用 `run_in_background`），确保结果在 write 之前可用
 - 如果验证超时（>60s），降级为跳过，write 使用自身 WebSearch 结果
 - **缓存验证结果**：工具版本号、链接有效性等，传递给 Step 3.3
+- **URL 缓存**：verify skill 会将 URL 状态写入 `~/.cache/article-craft/verify-cache.json`，screenshot_tool.py 会优先读取此缓存（TTL 1h）
 
 **On failure:** Report failures but continue — verification is non-blocking
 **Status:** Mark `success` (even with individual link/command failures)
@@ -145,8 +148,9 @@ Invoke `article-craft:write` skill logic:
 
 Invoke `article-craft:screenshot` skill logic:
 - Pass the article.md absolute file path from Step 3.3
-- Scan for `<!-- SCREENSHOT: URL -->` placeholders
-- Take screenshots via `shot-scraper`
+- Scan for `<!-- SCREENSHOT: URL [options] -->` placeholders in the article
+- Take screenshots via `${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py` (Playwright 渲染 + URL 验证 + 智能选择器)
+- **验证流程**: HEAD 请求预检 → Playwright 渲染 → 空页面检测 → 截图 → 压缩 → CDN 上传
 - Upload to CDN and replace placeholders in-place
 - If no `<!-- SCREENSHOT: -->` placeholders found, skip silently
 
@@ -155,6 +159,33 @@ Invoke `article-craft:screenshot` skill logic:
 
 > [!note]
 > Skipped in draft mode. Mark as `skipped`.
+
+#### 3.4.5 Share Card (standard mode, 询问后执行)
+
+After screenshot step, ask user whether to generate share cards:
+```
+Question: "生成分享卡片？"
+Options:
+  - Yes — generate share cards (recommended)
+  - No — skip
+```
+
+If user declines, mark `share_card: skipped`.
+
+If yes:
+- Run `${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py`:
+  ```bash
+  python3 ${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py \
+    -f /ABSOLUTE/PATH/article.md \
+    -p wechat-cover,twitter,xiaohongshu-sq \
+    --upload
+  ```
+- 如果文章有完整 frontmatter（title, description, tags, author），直接传 `-f` 即可
+- 可选配色：tech-blue / sunset / forest / midnight / ember / deep-blue / slate（默认 tech-blue）
+- 平台默认：wechat-cover, twitter, xiaohongshu-sq
+
+**On failure:** Non-fatal — warn user, continue
+**Status:** Mark `success` if cards generated, `skipped` if user declined or no frontmatter
 
 #### 3.5 Images (standard and quick modes)
 
@@ -232,6 +263,7 @@ After all skills complete (or pipeline stops on fatal error), print a summary ta
 │ verify       │ success  │ 8/10 links OK, 2 broken       │
 │ write        │ success  │ Saved: {absolute_path}        │
 │ screenshot   │ success  │ 2/2 captured                  │
+│ share_card   │ success  │ 3 cards generated             │
 │ images       │ success  │ 4/5 uploaded, 1 placeholder   │
 │ review       │ success  │ Score: 58/70 (round 1)        │
 │ publish      │ success  │ KB: {final_path}              │
@@ -252,6 +284,7 @@ If the pipeline stops due to a fatal error (write skill failure):
 │ verify       │ success  │ All OK                        │
 │ write        │ FAILED   │ Error: {error_message}        │
 │ screenshot   │ skipped  │ (blocked by write failure)    │
+│ share_card   │ skipped  │ (blocked by write failure)    │
 │ images       │ skipped  │ (blocked by write failure)    │
 │ review       │ skipped  │ (blocked by write failure)    │
 │ publish      │ skipped  │ (blocked by write failure)    │

@@ -149,21 +149,28 @@ Clear sans-serif labels.
 
 ## Screenshots (Independent of Gemini)
 
-Screenshots use `shot-scraper` and always work:
+Screenshots use `screenshot_tool.py` (Playwright) and always work regardless of Gemini API:
 
 ```bash
 # Manual single screenshot
-shot-scraper https://example.com -o /tmp/screenshot.jpg --wait 3000
-picgo upload /tmp/screenshot.jpg
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py screenshot "https://example.com" \
+  -o /tmp/screenshot.png -w 3
+picgo upload /tmp/screenshot.png
 ```
 
-When using `--process-file`, screenshots are handled automatically alongside AI images.
+**Automated flow** (`--process-file`):
+1. HEAD 预检 URL（404/403/5xx 检测）
+2. Playwright 渲染（等待网络空闲）
+3. 空页面 / 404 文本检测
+4. 智能选择器推荐
+5. 截图 → Pillow 压缩 → CDN 上传
 
 **Execution order:** Screenshots first (always available) -> AI images second (may fail) -> upload each to CDN.
 
 **Placement rules:**
 - Never place SCREENSHOT between Markdown list items -- put after the list block
 - No images in reference sections (pure text lists)
+- 截图必须是文章直接引用的真实内容，避免装饰性截图
 
 ## Retry Strategy
 

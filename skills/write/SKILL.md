@@ -261,8 +261,13 @@ Insert image placeholders throughout the article. The `article-craft:images` ski
 
 **Screenshot placeholders** (for referencing external content):
 ```markdown
-<!-- SCREENSHOT: url=https://example.com selector=.main-content width=1200 -->
+<!-- SCREENSHOT: https://example.com -->
+<!-- SCREENSHOT: https://example.com #selector -->
+<!-- SCREENSHOT: https://example.com WAIT:3 WIDTH:800 -->
 ```
+支持的选项：`#selector`（CSS 选择器）、`WAIT:N`（等待秒数）、`WIDTH:N`（视口宽度）。
+
+> 截图原则：必须是文章直接引用的真实内容页面，避免装饰性截图。截图前会通过 HEAD 请求验证 URL 可用性，404 页面会被跳过。
 
 #### 3g. Inline Reference Links
 
