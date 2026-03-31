@@ -4,7 +4,7 @@ Modular article generation plugin for Claude Code — 11 composable skills for t
 
 ## What it does
 
-Start writing and article-craft orchestrates the complete pipeline: requirements gathering, link verification, article writing, screenshot capture, AI image generation, quality review, and knowledge base publishing.
+Start writing and article-craft orchestrates the complete pipeline: requirements gathering, link verification, article writing, screenshot capture with Playwright validation, AI image generation, quality review with image count checks, and knowledge base publishing.
 
 ## Installation
 
@@ -29,7 +29,7 @@ cd ~/.claude/plugins/article-craft
 bash install.sh
 ```
 
-This installs Python dependencies, shot-scraper, PicGo CLI, and configures your Gemini API key.
+This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and configures your Gemini API key.
 
 ### Verify Installation
 
@@ -45,7 +45,7 @@ This installs Python dependencies, shot-scraper, PicGo CLI, and configures your 
 | requirements | Smart inference + minimal questions |
 | verify | Batch link and command verification |
 | write | Generate articles with 7 writing styles |
-| screenshot | Web page capture + social cards |
+| screenshot | Web screenshots (Playwright + URL validation) + share cards |
 | images | Gemini API image generation + CDN upload |
 | review | Self-check + 7-dimension quality scoring |
 | publish | Knowledge base auto-placement |
@@ -62,15 +62,53 @@ This installs Python dependencies, shot-scraper, PicGo CLI, and configures your 
 | draft | `/article-craft --draft` | Content only, no images |
 | series | `/article-series` | Multi-article series |
 
+## Standard Pipeline
+
+```
+requirements → verify → write → screenshot → share_card? → images → review → publish
+```
+
+### Pipeline Details
+
+**requirements** — Smart inference of writing style, depth, audience from topic keywords. Only asks when genuinely ambiguous.
+
+**verify** — Batch checks tool commands, links (HTTP HEAD), and features. Non-blocking. URL results cached to `~/.cache/article-craft/verify-cache.json` (TTL 1h) for reuse by screenshot.
+
+**write** — Generates article with YAML frontmatter, Obsidian callouts, and placeholders:
+
+```markdown
+<!-- IMAGE: name - description (16:9) -->
+<!-- PROMPT: Gemini prompt for this image -->
+
+<!-- SCREENSHOT: https://example.com #selector WAIT:3 -->
+```
+
+**screenshot** — Playwright-powered with smart validation:
+- HEAD request pre-check (404/403/5xx detection)
+- Real browser rendering (networkidle + JS wait)
+- Auto-selectors for GitHub/Twitter/Stack Overflow
+- Screenshot → Pillow compress → CDN upload
+
+**share_card** — Optional. Generates platform-specific share images:
+- 9 platforms: WeChat, Xiaohongshu, Twitter/X, LinkedIn, Facebook, Juejin, Zhihu
+- 7 color presets: tech-blue, sunset, forest, midnight, ember, deep-blue, slate
+- Reads from article frontmatter automatically
+
+**images** — Gemini API batch generation with model fallback chain. Supports both `<!-- IMAGE: -->` (AI-generated) and `<!-- SCREENSHOT: -->` (web capture) placeholders.
+
+**review** — Quality gate with 12 self-check rules + content-reviewer scoring (≥55/70 to pass). Includes image count validation by word count.
+
+**publish** — Auto-detects Obsidian knowledge base, matches subdirectory, optionally runs WeChat SEO optimization.
+
 ## Standalone Commands
 
 ```bash
-/article-write        # Generate article
-/article-images       # Generate images
-/article-review       # Quality gate
-/article-lint         # Style check
-/article-screenshot   # Web screenshots
-/article-youtube     # Video to article
+/article-craft:write        # Generate article
+/article-craft:images        # Generate images
+/article-craft:review        # Quality gate
+/article-craft:lint          # Style check
+/article-craft:screenshot    # Web screenshots + share cards
+/article-craft:youtube      # Video to article
 ```
 
 ## Updating
