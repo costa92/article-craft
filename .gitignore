@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node
+node_modules/
+
+# Claude Code plugin runtime
+tmp/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Image generation outputs (local)
+*.jpg
+*.jpeg
+*.png
+!references/*.png
+
+# Temporary files
+/tmp/
+*.tmp

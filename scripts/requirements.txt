@@ -1,0 +1,22 @@
+# article-generator skill 依赖
+
+# 图片生成（nanobanana）
+google-genai>=0.1.0
+Pillow>=10.0.0
+python-dotenv>=1.0.0
+
+# 进度显示
+tqdm>=4.65.0
+
+# 重试机制
+tenacity>=8.2.0
+
+# 网页截图（shot-scraper）
+# 安装后需运行: shot-scraper install（下载 Playwright 浏览器）
+shot-scraper>=1.0
+
+# GitHub Token 验证（可选）
+requests>=2.31.0
+
+# S3 上传（可选）
+boto3>=1.26.0  # optional: S3 upload support

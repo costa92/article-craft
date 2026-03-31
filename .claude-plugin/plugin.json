@@ -1,0 +1,21 @@
+{
+  "name": "article-craft",
+  "description": "Modular article generation plugin — 11 composable skills for the full article lifecycle",
+  "version": "1.1.0",
+  "author": {
+    "name": "costalong",
+    "email": ""
+  },
+  "license": "MIT",
+  "keywords": ["article", "writing", "images", "gemini", "obsidian", "technical-blog"],
+  "dependencies": {
+    "skills": {
+      "required": [],
+      "optional": ["content-reviewer"]
+    },
+    "cli": {
+      "required": ["shot-scraper"],
+      "optional": ["yt-dlp"]
+    }
+  }
+}
