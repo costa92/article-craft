@@ -1,4 +1,4 @@
-name: Tag Release
+name: Tag & Release
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # fetch all history and tags
+          fetch-depth: 0
 
       - name: Extract version from plugin.json
         id: version
@@ -22,6 +22,7 @@ jobs:
           VERSION=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Current version: $VERSION"
 
       - name: Check if tag exists
@@ -29,9 +30,10 @@ jobs:
         run: |
           if git tag | grep -q "^${{ steps.version.outputs.tag }}$"; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag ${{ steps.version.outputs.tag }} already exists, skipping"
+            echo "Tag ${{ steps.version.outputs.tag }} already exists"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.version.outputs.tag }} will be created"
           fi
 
       - name: Get latest commit SHA
@@ -54,10 +56,10 @@ jobs:
                 object: '${{ steps.sha.outputs.sha }}',
                 type: 'commit'
               });
-              console.log('Tag ${{ steps.version.outputs.tag }} created successfully');
+              console.log('Tag ${{ steps.version.outputs.tag }} created');
             } catch (e) {
               if (e.status === 422) {
-                console.log('Tag already exists (API), skipping');
+                console.log('Tag already exists, skipping');
               } else {
                 throw e;
               }
@@ -67,4 +69,50 @@ jobs:
         if: steps.check-tag.outputs.exists == 'false'
         run: |
           git push origin refs/tags/${{ steps.version.outputs.tag }}
-          echo "✅ Tag ${{ steps.version.outputs.tag }} pushed to origin"
+          echo "✅ Tag ${{ steps.version.outputs.tag }} pushed"
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          NOTES="## v${{ steps.version.outputs.version }} 更新
+
+### 截图功能
+- 新增 screenshot_tool.py: Playwright + URL 验证 + 智能选择器
+- 新增 share_card.py: 9 平台分享卡片批量生成
+- 统一替换 shot-scraper → Playwright
+
+### 工作流优化
+- Share Card 进入 orchestrator 正式 pipeline
+- Review 新增图片数量校验规则
+- Verify URL 缓存共享 (TTL 1h)
+
+### 其他
+- 依赖更新: playwright + requests
+- GitHub Actions 自动 tag + release"
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.check-tag.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: '${{ steps.version.outputs.tag }}',
+                name: '${{ steps.version.outputs.tag }}',
+                body: `\${{ steps.release-notes.outputs.notes }}`,
+                draft: false,
+                prerelease: false
+              });
+              console.log('Release ${{ steps.version.outputs.tag }} created');
+            } catch (e) {
+              if (e.status === 409) {
+                console.log('Release already exists, skipping');
+              } else {
+                throw e;
+              }
+            }
