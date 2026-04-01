@@ -40,14 +40,9 @@ jobs:
             echo "Will create release v${{ steps.version.outputs.version }}"
           fi
 
-      - name: Get SHA
-        if: steps.check-release.outputs.skipping == 'false'
-        id: sha
-        run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
       - name: Bump version
         if: steps.check-release.outputs.skipping == 'false'
+        id: bump-version
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
@@ -60,22 +55,30 @@ jobs:
           sed -i "s/\"version\": \"$VERSION\"/\"version\": \"$NEW_VERSION\"/" .claude-plugin/plugin.json
           sed -i "s/v$VERSION/v$NEW_VERSION/" .claude-plugin/plugin.json
           echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Get SHA
+        if: steps.check-release.outputs.skipping == 'false'
+        id: sha
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create tag via API
         if: steps.check-release.outputs.skipping == 'false'
         uses: actions/github-script@v8
         with:
           script: |
+            const tag = '${{ steps.bump-version.outputs.tag }}';
             try {
               await github.rest.git.createTag({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                tag: 'v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}',
-                message: 'Release v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}',
+                tag: tag,
+                message: 'Release ' + tag,
                 object: '${{ steps.sha.outputs.sha }}',
                 type: 'commit'
               });
-              console.log('Tag created');
+              console.log('Tag created: ' + tag);
             } catch (e) {
               if (e.status !== 422) throw e;
               console.log('Tag already exists, skipping');
@@ -86,14 +89,15 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
+            const tag = '${{ steps.bump-version.outputs.tag }}';
             try {
               await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                ref: 'refs/tags/v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}',
+                ref: 'refs/tags/' + tag,
                 sha: '${{ steps.sha.outputs.sha }}'
               });
-              console.log('Tag ref created');
+              console.log('Tag ref created: ' + tag);
             } catch (e) {
               if (e.status !== 422) throw e;
               console.log('Tag ref already exists, skipping');
@@ -110,12 +114,12 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.check-release.outputs.skipping == 'false'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.6.1
         with:
-          tag_name: v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}
-          name: v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}
+          tag_name: ${{ steps.bump-version.outputs.tag }}
+          name: ${{ steps.bump-version.outputs.tag }}
           body: |
-            ## v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }} 更新
+            ## v${{ steps.bump-version.outputs.new_version }} 更新
 
             See CHANGELOG for details.
           draft: false
