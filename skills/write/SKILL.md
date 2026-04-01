@@ -518,12 +518,14 @@ Print the absolute file path after saving so subsequent skills can find it.
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py /ABSOLUTE/PATH/article.md
 ```
 
-**必须检查的 4 条规则：**
+**必须检查的 6 条规则：**
 
 1. **Rule 1（红旗词）** — 如果发现红旗词，立即用 Edit 工具替换，然后重新验证
 2. **Rule 11（占位符格式）** — 如果发现非标准占位符（`IMAGE_PLACEHOLDER_*`、不存在的本地图片路径），转换为标准 `<!-- IMAGE: name - desc (ratio) -->` 格式
 3. **Rule 12（模板化摘要）** — 如果发现"本文从...出发"等模板句式，重写为具体问题或个人经历
-4. **Rule 14（IMAGE 占位符双行格式）** ⭐ **CRITICAL** — 验证所有 `<!-- IMAGE:` 占位符匹配 images 脚本的正则格式：
+4. **Rule 14（IMAGE 占位符双行格式）** ⭐ **CRITICAL** — 验证所有 `<!-- IMAGE:` 占位符匹配 images 脚本的正则格式
+5. **Rule 15（章节深度）** ⭐ — 验证每个技术章节满足最低结构要求（≥2 代码块）
+6. **Rule 16（命令验证）** ⭐ **NEW** — 验证文章中出现的命令是否正确可执行
    ```
    <!-- IMAGE: slug - description (ratio) -->
    <!-- PROMPT: english prompt text -->
@@ -563,7 +565,44 @@ Rule 14 失败? → 补全 ratio/PROMPT/翻译 → 重新保存
    Rule 12: 0 模板化摘要
    Rule 14: N 个 IMAGE 占位符，格式合规 ✅
    Rule 15: N/N 章节深度合规 ✅
+   Rule 16: N/N 命令正确 ✅
 ```
+
+#### Rule 16: 命令验证详解
+
+从文章中提取所有命令并验证正确性：
+
+```bash
+# 1. 提取所有代码块中的命令
+python3 -c "
+import re, sys
+content = open(sys.argv[1]).read()
+# 提取 bash/python/code 命令
+commands = re.findall(r'\`\`\`(?:bash|python|sh)\n(.+?)\`\`\`', content, re.DOTALL)
+for cmd in commands:
+    print(cmd.strip())
+" article.md
+```
+
+```bash
+# 2. 验证每个命令（单独执行，不链接）
+# 验证 install 命令
+command -v gsd && gsd --version  # 验证 gsd 命令
+
+# 验证 run 命令
+command -v uv && uv --version  # 验证 uv 命令
+```
+
+**验证策略**：
+1. 每个代码块单独验证（不链多个命令）
+2. 验证命令存在性：`command -v TOOL` 或 `which TOOL`
+3. 验证帮助信息：`TOOL --help` 或 `TOOL --version`
+4. 记录验证失败的命令并修复文章
+
+**失败处理**：
+- 命令不存在 → 标记为 `[需要验证]`
+- 命令参数错误 → 修正为正确格式
+- 建议删除无法验证的命令
 
 ---
 
