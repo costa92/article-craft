@@ -69,11 +69,26 @@ jobs:
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Push tag
+      - name: Create tag ref via API
         if: steps.check-release.outputs.exists == 'false'
-        run: |
-          git push origin "${{ steps.version.outputs.tag }}"
-          echo "Tag pushed"
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: 'refs/tags/${{ steps.version.outputs.tag }}',
+                sha: '${{ steps.sha.outputs.sha }}'
+              });
+              console.log('Tag ref created');
+            } catch (e) {
+              if (e.status !== 422) throw e;
+              console.log('Tag ref already exists, skipping');
+            }
+        # Opt into Node.js 24 for this action
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Create GitHub Release
         if: steps.check-release.outputs.exists == 'false'
