@@ -1,7 +1,7 @@
 ---
 name: article-craft:write
-version: 1.2.0
-description: "Generate technical article content with style guide, Obsidian format, and image placeholders. Use when writing a technical blog article."
+version: 1.3.0
+description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 ---
 
 # article-craft:write — Technical Article Writer
@@ -202,6 +202,65 @@ If writing as part of a series, inject navigation **after the cover image and be
 > 由 images skill 生成专业图片。对比数据用 Markdown 表格（`| A | B |`），不要用 ASCII 框线表。
 >
 > **代码块只放可执行代码**：bash、yaml、go、python、json 等。
+
+**结构增强：章节深度自动检查**
+
+写作时，**每一章必须满足以下结构要求**：
+
+```
+## 章节标题
+  ↓
+内容（痛点/问题/背景）
+  ↓
+至少 2 个代码块
+  ↓
+解释/总结
+```
+
+| 结构元素 | 最低要求 | 示例 |
+|---------|---------|------|
+| 代码块 | ≥2 个/章 | 安装命令 + 运行示例 |
+| 解释文字 | ≥2 段 | 每代码块前后说明 |
+| 图片占位符 | 1 个/章 | 节奏图或架构图 |
+
+**风格特定的章节结构**：
+
+| 风格 | 最低代码 | 最低段落 | 图片 |
+|------|---------|---------|------|
+| A 教程 | 3 代码块 | 4 段 | 1 节奏图 |
+| B 分享 | 1 代码块 | 2 段 | 截图优先 |
+| C 深度 | 5+ 代码块 | 6+ 段 | 2 架构图 |
+| D 评测 | 2 代码块 | 3 段 | 对比表+图 |
+| E 资讯 | 1 代码块 | 2 段 | 截图 |
+| F 复盘 | 2 代码块 | 3 段 | before/after |
+| G 观点 | 1 代码块 | 3 段 | 1 数据图 |
+
+**自动检查命令（写作时运行）**：
+
+```bash
+# 检查每个 ## 章节下的代码块数量
+python3 -c "
+import re, sys
+content = open(sys.argv[1]).read()
+sections = re.split(r'^## ', content, flags=re.MULTILINE)
+for i, sec in enumerate(sections[1:], 1):
+    title = sec.split('\n')[0][:50]
+    blocks = len(re.findall(r'^```', sec, re.MULTILINE))
+    print(f'Section {i}: {title}')
+    print(f'  Code blocks: {blocks}')
+    print(f'  Status: {"✅ PASS" if blocks >= 2 else "❌ FAIL - need " + str(2-blocks) + " more"}')
+" article.md
+```
+
+**章节深度不足时的补救**：
+
+如果某个章节代码块不足：
+1. **添加命令示例** — `uv add requests` / `docker run ...`
+2. **添加配置片段** — `pyproject.toml` / `docker-compose.yml`
+3. **添加输出示例** — 命令输出结果
+4. **添加对比代码** — 旧写法 vs 新写法
+
+> [!tip] 不要等到 post-write validation 再检查 — 写作时实时保持结构完整，后续修复成本更高。
 
 **按选定风格的章节结构写正文。** 每种风格的具体章节模板见 `references/writing-styles.md`。
 
@@ -503,6 +562,7 @@ Rule 14 失败? → 补全 ratio/PROMPT/翻译 → 重新保存
    Rule 11: 0 占位符问题
    Rule 12: 0 模板化摘要
    Rule 14: N 个 IMAGE 占位符，格式合规 ✅
+   Rule 15: N/N 章节深度合规 ✅
 ```
 
 ---

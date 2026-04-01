@@ -1,7 +1,7 @@
 ---
 name: article-craft:verify
-version: 1.2.0
-description: "Batch verify links, commands, and tool features before writing. Use to ensure all referenced tools and URLs are accurate."
+version: 1.3.0
+description: "Batch verify links, commands, and tool features with source trust tiers. Uses T0-T5 trust classification to focus verification effort."
 ---
 
 # Pre-Writing Verification
@@ -217,3 +217,98 @@ Trust levels:
 - **Trust**: basic concepts, algorithm principles, language syntax, classic design patterns, standard protocols (HTTP, TCP/IP)
 - **Verify**: specific commands, API calls, config file formats, version-specific features
 - **Never trust without verification**: tools released after 2024, new version features, rapidly changing tech
+
+---
+
+## Source Trust Engine
+
+### Trust Tier Classification
+
+Every URL source is classified into a trust tier before verification:
+
+| Tier | Source Type | Trust Level | Verification Required |
+|------|------------|-------------|----------------------|
+| T0 | Official docs (docs.example.com, example.com/docs) | **Highest** | Skip link checks, verify commands only |
+| T1 | GitHub official repo (owner/example) | **High** | Verify commands/features via --help |
+| T2 | Official blog (blog.example.com) | **Medium-High** | Verify key claims, skip all links |
+| T3 | Community docs (github.com/wiki, community.example.com) | **Medium** | Verify all critical links |
+| T4 | Tutorial sites, blog posts | **Low-Medium** | Verify everything |
+| T5 | Social media, forums | **Low** | Verify all, assume nothing |
+
+### Auto-Detection Rules
+
+Determine trust tier automatically:
+
+```
+URL: https://docs.docker.com/engine/reference/commandline/run
+       ↓
+Extract domain: docs.docker.com
+       ↓
+Pattern match:
+  - docs.{tool}.com → T0 (official docs)
+  - {tool}.com/docs → T0 (official docs path)
+  - github.com/{owner}/{repo} → T1 if official, T3 if fork
+  - blog.{tool}.com → T2 (official blog)
+  - medium.com/@user → T4
+  - stackoverflow.com → T4
+```
+
+**Override rules:**
+- `/release` or `/changelog` path → T2 (official, but claims need verification)
+- `/blog` path → T2
+- `/en/` vs `/zh/` → same tier, verify content parity
+- `/vN.N.N/` versioned docs → T0 but verify version match
+
+### GitHub Repository Trust Scoring
+
+For GitHub URLs, calculate a trust score:
+
+| Metric | Score Weight | Good | Bad |
+|--------|-------------|------|-----|
+| Stars | 20% | >1k | <100 |
+| Last commit | 20% | <3 months | >1 year |
+| Open issues | 15% | <500 | >1000 |
+| PR merge ratio | 15% | >70% | <50% |
+| Owner type | 20% | org/owner verified | personal |
+| Releases | 10% | has recent release | none |
+
+```
+Score = Stars_wt + Recency_wt + Issues_wt + PR_wt + Owner_wt + Release_wt
+        = 20 + 20 + 15 + 15 + 20 + 10 = 100
+
+High Trust:  >= 70
+Medium:     40-69
+Low:        < 40
+```
+
+**Quick check command:**
+```bash
+gh repo view {owner}/{repo} --json name,stargazerCount,pushedAt,openIssuesCount,owner --jq '.'
+```
+
+### Official Source Indicators
+
+Detect if a source is official:
+
+**Positive indicators:**
+- URL contains official domain (docs.{tool}.com, {tool}.com/docs)
+- GitHub owner matches tool name exactly
+- README has "Official" badge
+- Description contains "official"
+- Repository is verified (GitHub check)
+
+**Negative indicators:**
+- URL is a Medium/Sponsored post
+- Author bio mentions "affiliate" or "sponsored"
+- Content is significantly older than tool version
+- Tutorial duplicates official docs without adding value
+
+---
+
+## Verification Philosophy
+
+All technical content must satisfy at least one of:
+1. **Official docs verified** (most reliable) -- found via WebSearch/WebFetch
+2. **Trusted tools whitelist** (pre-verified) -- see `${CLAUDE_PLUGIN_ROOT}/skills/verify/trusted-tools.md`
+3. **User-provided info** (needs confirmation) -- user explicitly provided and confirmed
+4. **Stable knowledge-base info** (moderate trust) -- fundamental CS concepts, standard protocols, classic algorithms

@@ -1,5 +1,5 @@
 ---
-description: Generate technical article content with style guide, Obsidian format, and image placeholders
+description: Generate technical article with structure auto-check (section depth enforcement)
 argument-hint: [topic]
 ---
 

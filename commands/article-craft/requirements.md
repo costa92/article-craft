@@ -1,5 +1,5 @@
 ---
-description: Gather article requirements through interactive questions
+description: Enhanced requirements gathering with intelligent inference + source trust detection
 argument-hint: [topic]
 ---
 

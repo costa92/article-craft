@@ -1,5 +1,5 @@
 ---
-description: Batch verify links, commands, and tool features before writing
+description: Batch verify links with source trust tiers (T0-T5 classification)
 argument-hint: [topic or tool names]
 ---
 

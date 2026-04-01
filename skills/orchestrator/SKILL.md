@@ -1,7 +1,7 @@
 ---
 name: article-craft
-version: 1.2.0
-description: "Full article generation pipeline — orchestrates requirements, verification, writing, image generation, review, and publishing. Use when creating a complete technical article end-to-end."
+version: 1.3.0
+description: "Enhanced full article generation pipeline — orchestrated with intelligent inference, source trust detection, and structure validation. Uses multi-layer requirements, T0-T5 verification focus, and section depth enforcement."
 allowed-tools:
   - Read
   - Write
@@ -86,10 +86,15 @@ Track each skill's status throughout the pipeline:
 ```
 Pipeline Status:
   requirements: pending
+    └─ multi-layer inference (5 layers)
+    └─ trusted sources: T0-T5 classification
   verify:       pending
+    └─ focus: T3-T5 sources, skip T0-T1 links
   write:        pending
+    └─ section depth check: ≥2 code blocks per ##
   screenshot:   pending
   share_card:   pending   # 可选，标准模式询问用户
+```
   images:       pending
   review:       pending
   publish:      pending
@@ -104,11 +109,13 @@ Execute each skill in order, passing context between them.
 #### 3.1 Requirements (all modes)
 
 Invoke `article-craft:requirements` skill logic:
+- **Multi-layer inference**: Intent Detection → Keyword Signals → Context Awareness → Ambiguity Resolution → Source Trust Detection
 - **Smart inference first**: Analyze the topic for writing style, depth, audience, and format signals
+- **Source trust detection**: Automatically find official docs/repo/blog, classify into T0-T5 tiers
 - If topic was provided as argument, pre-fill and skip the topic question
 - Show inferred values as a single confirmation question (not 5-7 separate questions)
-- Only ask individual questions when inference is genuinely ambiguous
 - **Mode-aware**: In draft mode, skip image-related questions entirely
+- **Output trusted sources**: Pass `_trusted_sources` to verify skill
 - Store gathered context in memory for downstream skills
 
 **On failure:** Retry (user input errors are unlikely)
@@ -117,7 +124,9 @@ Invoke `article-craft:requirements` skill logic:
 #### 3.2 Verify (standard mode only)
 
 Invoke `article-craft:verify` skill logic:
+- **Source trust focus**: Prioritize verification of T3-T5 sources, skip T0-T1 link checks
 - Extract tool names and URLs from the topic/context
+- **Use requirements' trusted sources**: T0-T1 sources from requirements are pre-verified
 - Run batch verification (links, commands, feature discovery)
 - Use Standard verification mode by default
 - **前台阻塞执行**（不用 `run_in_background`），确保结果在 write 之前可用
@@ -135,8 +144,11 @@ Invoke `article-craft:verify` skill logic:
 
 Invoke `article-craft:write` skill logic:
 - Pass requirements context from Step 3.1
-- **Pass verification results from Step 3.2**（如果 verify 返回了工具版本号，写作时应引用这些精确版本号而非自行搜索）
+- **Pass verification results**（如果 verify 返回了工具版本号，写作时应引用这些精确版本号而非自行搜索）
+- **Pass trusted sources**: Use official docs URLs for accuracy
 - Generate article with YAML frontmatter, Obsidian callouts, image placeholders
+- **Apply section depth rules**: Each technical section must have ≥2 code blocks
+- **Auto-check during writing**: Run section depth check for each ## before moving on
 - Apply self-check rules from `references/self-check-rules.md`
 - Save article.md to disk
 - **Capture the absolute file path** — this is passed to all subsequent skills
@@ -255,13 +267,16 @@ After all skills complete (or pipeline stops on fatal error), print a summary ta
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                 Article Craft — Summary                  │
+│            Article Craft v1.3.0 — Summary                 │
 ├──────────────┬──────────┬───────────────────────────────┤
 │ Skill        │ Status   │ Notes                         │
 ├──────────────┼──────────┼───────────────────────────────┤
 │ requirements │ success  │ Topic: {topic}                │
-│ verify       │ success  │ 8/10 links OK, 2 broken       │
+│              │          │ 5-layer inference ✅          │
+│              │          │ Trusted sources: N found        │
+│ verify       │ success  │ T3-T5 focused, N verified   │
 │ write        │ success  │ Saved: {absolute_path}        │
+│              │          │ Section depth: N/N ✅         │
 │ screenshot   │ success  │ 2/2 captured                  │
 │ share_card   │ success  │ 3 cards generated             │
 │ images       │ success  │ 4/5 uploaded, 1 placeholder   │
