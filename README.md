@@ -25,7 +25,7 @@ Then install the plugin:
 After installing, run the dependency installer:
 
 ```bash
-cd ~/.claude/plugins/article-craft
+cd /.claude/plugins/marketplaces/article-craft
 bash install.sh
 ```
 
