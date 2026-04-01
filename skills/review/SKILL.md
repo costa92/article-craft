@@ -1,16 +1,19 @@
 ---
 name: article-craft:review
-version: 1.2.0
-description: "Quality gate for articles -- self-check rules plus content-reviewer scoring. Use after writing to ensure article meets quality standards."
+version: 1.3.0
+description: "Quality gate for articles — built-in self-check rules + embedded content scoring. All-in-one review without external dependencies."
 ---
 
 # Article Review (Quality Gate)
 
-Run self-check rules against the article, then optionally invoke the content-reviewer for scoring. This skill is the quality gate between writing and publishing.
+Run self-check rules against the article, then perform built-in content scoring. This skill is the quality gate between writing and publishing — **no external dependencies required**.
 
 **Invoke**: `/article-craft:review`
 
-**Dependency**: requires the `/content-reviewer` skill for publish-mode scoring. If `/content-reviewer` is not available, the skill falls back to self-check only and warns the user.
+**Features**:
+- Phase 1: 15 self-check rules (embedded)
+- Phase 2: 7-dimension content scoring (embedded)
+- Self-contained: no external skill installation needed
 
 ---
 
@@ -163,35 +166,49 @@ For each match found:
 
 ---
 
-### Phase 2: Content-Reviewer Scoring (publish mode only)
+### Phase 2: Built-in Content Scoring (publish mode only)
 
 **If mode is `draft`**: skip this phase. Report self-check results only.
 
-**If mode is `publish`**:
+**If mode is `publish`**: Perform 7-dimension scoring directly.
 
-1. Invoke `/content-reviewer` on the article file.
-2. Check the score against the **55/70 threshold**.
-3. **If score >= 55/70**: pass. Proceed to output.
-4. **If score < 55/70**: auto-modify the article, then re-run `/content-reviewer`. Repeat for up to **3 rounds**.
+#### 7-Dimension Scoring (Embedded)
 
-   **Auto-modify strategy** (applied in order):
-   1. **Rule-based fixes** — Apply self-check rules: grep for red-flag words and rewrite them; fix hook length if over 100 chars; fix forbidden closings
-   2. **Dimension-targeted rewrites** — Read the reviewer's per-dimension scores. For any dimension scoring below 7/10, use the Edit tool to rewrite the weakest sections:
-      - "AI 痕迹" low → diversify paragraph structure, add personal perspective, vary openings
-      - "标题与 Hook" low → rewrite title per style-guide formula, shorten hook
-      - "内容深度" low → add code examples, expand thin sections
-      - "结构可读" low → split long paragraphs, add callouts, improve transitions
-      - "代码质量" low → add error handling, comments, type hints to code blocks
-      - "结尾行动力" low → replace generic closing with concrete next-step command
-   3. **Never regenerate the entire article** — only edit specific sections identified by the reviewer
-5. **After 3 failed rounds**: ask the user:
+Score each dimension 0-10, total 70 points. Pass threshold: **55/70**.
+
+| # | Dimension | Weight | Scoring Criteria |
+|---|-----------|--------|----------------|
+| 1 | **AI 痕迹** | 10 | 多样化段落结构、个人视角、开场变化 |
+| 2 | **标题与 Hook** | 10 | 标题公式符合、Hook 痛点清晰、100字内 |
+| 3 | **内容深度** | 10 | 每章 ≥2 代码块、技术细节充分 |
+| 4 | **结构可读** | 10 | 段落长度合理、过渡自然、层次清晰 |
+| 5 | **代码质量** | 10 | 可运行、有注释、错误处理 |
+| 6 | **结尾行动力** | 10 | 具体下一步行动、非模板化结尾 |
+| 7 | **图片配置** | 10 | 节奏图匹配、内容相关、非装饰 |
+
+#### Scoring Execution
+
+1. Read article and analyze each dimension
+2. Score each 0-10 based on criteria
+3. Sum total (70 max)
+4. **If score >= 55**: pass. Proceed to output.
+5. **If score < 55**: auto-modify and re-score. Repeat up to **3 rounds**.
+
+**Auto-modify strategy**:
+1. Score-based fixes — For dimensions <7/10, fix corresponding issues
+2. Re-score after each modification
+3. Never regenerate entire article — only edit weak sections
+
+6. **After 3 failed rounds**: ask the user:
    ```
-   Question: "The article scored [X]/70 after 3 revision rounds (threshold: 55/70). How to proceed?"
+   Question: "The article scored [X]/70 after 3 rounds (threshold: 55/70). How to proceed?"
    Options:
-     - Continue revising -- attempt another round of fixes
-     - Publish anyway -- accept the current score and proceed
-     - Abort -- stop the pipeline, return to manual editing
+     - Continue revising -- attempt another round
+     - Publish anyway -- accept current score
+     - Abort -- stop pipeline
    ```
+
+**Why embedded**: No external dependencies. Self-contained scoring.
 
 ---
 
@@ -200,7 +217,7 @@ For each match found:
 ```markdown
 ## Review Results
 
-### Self-Check
+### Phase 1: Self-Check (15 rules)
 - Rule 1 (Red-Flag Words): PASS / FIXED (N violations rewritten)
 - Rule 2 (Hook Length): PASS / FIXED
 - Rule 3 (Closing): PASS / FIXED
@@ -212,11 +229,24 @@ For each match found:
 - Rule 9 (Mermaid Residue): PASS
 - Rule 10 (References Inline): PASS / FIXED
 - Rule 11 (ASCII Diagram Check): PASS / FIXED (N diagrams converted)
+- Rule 12 (Image Count): PASS / WARNING (need N more images)
+- Rule 13 (Paragraph Length): PASS / FIXED
+- Rule 14 (Transitions): PASS / FIXED
+- Rule 15 (Code Blocks): PASS / FIXED
 
-### Content-Reviewer Score (publish mode)
-- Score: [X]/70
-- Status: PASS (>= 55) / FAIL (< 55, round N/3)
-- Key feedback: [reviewer's main points]
+### Phase 2: Built-in Scoring (7 dimensions)
+| Dimension | Score | Status |
+|-----------|-------|-------|
+| AI 痕迹 | X/10 | PASS/FAIL |
+| 标题与 Hook | X/10 | PASS/FAIL |
+| 内容深度 | X/10 | PASS/FAIL |
+| 结构可读 | X/10 | PASS/FAIL |
+| 代码质量 | X/10 | PASS/FAIL |
+| 结尾行动力 | X/10 | PASS/FAIL |
+| 图片配置 | X/10 | PASS/FAIL |
+| **Total** | **X/70** | **PASS (>=55)** |
+
+Key feedback: [main points for improvement]
 ```
 
 ---
