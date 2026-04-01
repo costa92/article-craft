@@ -5,12 +5,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Force Node.js 24 for all actions (Node.js 20 deprecated)
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   tag-release:
@@ -32,22 +32,46 @@ jobs:
       - name: Check release exists
         id: check-release
         run: |
-          # 通过 API 检查 release 是否存在
-          if gh release view v${{ steps.version.outputs.version }} --repo ${{ github.repository }} >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release v${{ steps.version.outputs.version }} already exists"
+          if gh release view "v${{ steps.version.outputs.version }}" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "skipping=true" >> "$GITHUB_OUTPUT"
+            echo "Release v${{ steps.version.outputs.version }} already exists, skipping"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "skipping=false" >> "$GITHUB_OUTPUT"
             echo "Will create release v${{ steps.version.outputs.version }}"
           fi
 
       - name: Get SHA
+        if: steps.check-release.outputs.skipping == 'false'
         id: sha
         run: |
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Bump version
+        if: steps.check-release.outputs.skipping == 'false'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "Bumping from $VERSION to $NEW_VERSION"
+          # 更新 plugin.json
+          python3 -c "
+import json
+f = open('.claude-plugin/plugin.json')
+data = json.load(f)
+f.close()
+data['version'] = '$NEW_VERSION'
+data['description'] = 'Enhanced pipeline with intelligent inference — v$NEW_VERSION'
+with open('.claude-plugin/plugin.json', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Create tag via API
-        if: steps.check-release.outputs.exists == 'false'
+        if: steps.check-release.outputs.skipping == 'false'
         uses: actions/github-script@v8
         with:
           script: |
@@ -55,8 +79,8 @@ jobs:
               await github.rest.git.createTag({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                tag: '${{ steps.version.outputs.tag }}',
-                message: 'Release ${{ steps.version.outputs.tag }}',
+                tag: 'v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}',
+                message: 'Release v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}',
                 object: '${{ steps.sha.outputs.sha }}',
                 type: 'commit'
               });
@@ -65,12 +89,9 @@ jobs:
               if (e.status !== 422) throw e;
               console.log('Tag already exists, skipping');
             }
-        # Opt into Node.js 24 for this action
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Create tag ref via API
-        if: steps.check-release.outputs.exists == 'false'
+        if: steps.check-release.outputs.skipping == 'false'
         uses: actions/github-script@v8
         with:
           script: |
@@ -78,7 +99,7 @@ jobs:
               await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                ref: 'refs/tags/${{ steps.version.outputs.tag }}',
+                ref: 'refs/tags/v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}',
                 sha: '${{ steps.sha.outputs.sha }}'
               });
               console.log('Tag ref created');
@@ -86,32 +107,26 @@ jobs:
               if (e.status !== 422) throw e;
               console.log('Tag ref already exists, skipping');
             }
-        # Opt into Node.js 24 for this action
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+      - name: Commit and push version bump
+        if: steps.check-release.outputs.skipping == 'false' && steps.bump-version.outputs.new_version
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add .claude-plugin/plugin.json
+          git commit -m "chore: bump version to ${{ steps.bump-version.outputs.new_version }}"
+          git push origin main
 
       - name: Create GitHub Release
-        if: steps.check-release.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2.6.1
+        if: steps.check-release.outputs.skipping == 'false'
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
+          tag_name: v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}
+          name: v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }}
           body: |
-            ## v${{ steps.version.outputs.version }} 更新
+            ## v${{ steps.bump-version.outputs.new_version || steps.version.outputs.version }} 更新
 
-            ### 截图功能
-            - screenshot_tool.py: Playwright + URL 验证 + 智能选择器
-            - share_card.py: 9 平台分享卡片批量生成
-            - 统一替换 shot-scraper -> Playwright
-
-            ### 工作流优化
-            - Share Card 进入 orchestrator 正式 pipeline
-            - Review 新增图片数量校验规则
-            - Verify URL 缓存共享 (TTL 1h)
-
-            ### 其他
-            - 依赖更新: playwright + requests
-            - GitHub Actions 自动 tag + release
+            See CHANGELOG for details.
           draft: false
           prerelease: false
         env:
