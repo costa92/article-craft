@@ -72,8 +72,7 @@ jobs:
       - name: Push tag
         if: steps.check-release.outputs.exists == 'false'
         run: |
-          # 直接推送已存在的 tag（简单方式）
-          git push origin ${{ steps.version.outputs.tag }}
+          git push origin "${{ steps.version.outputs.tag }}"
           echo "Tag pushed"
 
       - name: Create GitHub Release
