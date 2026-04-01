@@ -71,7 +71,17 @@ jobs:
       - name: Push tag
         if: steps.check-tag.outputs.exists == 'false'
         run: |
-          git push origin refs/tags/${{ steps.version.outputs.tag }}
+          # 确保 fetch all tags
+          git fetch --tags
+          # 检查 tag 是否存在
+          if git rev-parse "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag exists, pushing..."
+            git push origin refs/tags/${{ steps.version.outputs.tag }}
+          else
+            # 创建 tag 并推送
+            git tag ${{ steps.version.outputs.tag }} ${{ steps.sha.outputs.sha }}
+            git push origin ${{ steps.version.outputs.tag }}
+          fi
           echo "Tag pushed"
 
       - name: Create GitHub Release
