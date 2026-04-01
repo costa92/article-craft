@@ -29,15 +29,16 @@ jobs:
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Found version: $VERSION"
 
-      - name: Check tag exists
-        id: check-tag
+      - name: Check release exists
+        id: check-release
         run: |
-          if git tag | grep -q "^v${{ steps.version.outputs.version }}$"; then
+          # 通过 API 检查 release 是否存在
+          if gh release view v${{ steps.version.outputs.version }} --repo ${{ github.repository }} >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag v${{ steps.version.outputs.version }} already exists"
+            echo "Release v${{ steps.version.outputs.version }} already exists"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Will create tag v${{ steps.version.outputs.version }}"
+            echo "Will create release v${{ steps.version.outputs.version }}"
           fi
 
       - name: Get SHA
@@ -46,7 +47,7 @@ jobs:
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create tag via API
-        if: steps.check-tag.outputs.exists == 'false'
+        if: steps.check-release.outputs.exists == 'false'
         uses: actions/github-script@v7
         with:
           script: |
@@ -69,23 +70,20 @@ jobs:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Push tag
-        if: steps.check-tag.outputs.exists == 'false'
+        if: steps.check-release.outputs.exists == 'false'
         run: |
-          # 确保 fetch all tags
           git fetch --tags
-          # 检查 tag 是否存在
           if git rev-parse "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
             echo "Tag exists, pushing..."
             git push origin refs/tags/${{ steps.version.outputs.tag }}
           else
-            # 创建 tag 并推送
             git tag ${{ steps.version.outputs.tag }} ${{ steps.sha.outputs.sha }}
             git push origin ${{ steps.version.outputs.tag }}
           fi
           echo "Tag pushed"
 
       - name: Create GitHub Release
-        if: steps.check-tag.outputs.exists == 'false'
+        if: steps.check-release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2.6.1
         with:
           tag_name: ${{ steps.version.outputs.tag }}
