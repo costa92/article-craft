@@ -2,6 +2,14 @@
 name: article-craft:requirements
 version: 1.3.1
 description: "Enhanced requirements gathering with intelligent inference + source trust detection — topic analysis, intent detection, ambiguity resolution, and context-aware suggestions. Uses multi-signal matching and collaborative confirmation."
+allowed-tools:
+  - Read
+  - Write
+  - Bash
+  - Grep
+  - WebSearch
+  - WebFetch
+  - AskUserQuestion
 ---
 
 # Requirements Gathering (Enhanced)

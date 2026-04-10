@@ -2,6 +2,12 @@
 name: article-craft:review
 version: 1.3.0
 description: "Quality gate for articles — built-in self-check rules + embedded content scoring. All-in-one review without external dependencies."
+allowed-tools:
+  - Read
+  - Edit
+  - Bash
+  - Grep
+  - AskUserQuestion
 ---
 
 # Article Review (Quality Gate)
@@ -11,7 +17,7 @@ Run self-check rules against the article, then perform built-in content scoring.
 **Invoke**: `/article-craft:review`
 
 **Features**:
-- Phase 1: 15 self-check rules (embedded)
+- Phase 1: 11 self-check rules (embedded)
 - Phase 2: 7-dimension content scoring (embedded)
 - Self-contained: no external skill installation needed
 
@@ -114,15 +120,33 @@ Verify the article meets the minimum AI image count based on word count:
 
 **How to check**:
 ```bash
-# 统计 IMAGE 占位符数量（不含已替换的 CDN 图片）
+# 统计已生成的 AI 图片数量（CDN 链接）
+grep -cE '!\[[^]]*\]\(https?://[^)]*cdn' /path/to/article.md
+
+# 统计未解析的 IMAGE 占位符（images stage 失败的残留）
 grep -c '<!-- IMAGE:' /path/to/article.md
 
 # 统计文章字数（不含 frontmatter）
-wc -c /path/to/article.md  # 或目测章节长度
+wc -c /path/to/article.md
 ```
 
-**If below minimum**:
-- If < minimum: warn user, add `<!-- IMAGE: name - description (3:2) -->` + `<!-- PROMPT: ... -->` placeholders for missing images
+**Degradation detection (CRITICAL)**:
+Before enforcing the minimum, check for **unresolved `<!-- IMAGE: -->` placeholders** in the article body. If any exist, this means the `images` stage **partially or fully failed** (graceful degradation path in orchestrator).
+
+```
+unresolved_placeholders = grep -c '<!-- IMAGE:' article.md
+
+if unresolved_placeholders > 0:
+    # Images stage degraded — DO NOT add more placeholders
+    → Rule 7b result: WARNING (not FAIL)
+    → Message: "images stage degraded — {N} unresolved placeholders.
+                Re-run `/article-craft:images` to retry generation."
+    → Skip any placeholder injection
+```
+
+**If below minimum AND no unresolved placeholders** (clean state):
+- **DO NOT** add placeholders automatically — see Rule 11 orphan-image warning above. review runs **after** images stage; any new `<!-- IMAGE: -->` it inserts will never be generated.
+- Instead: mark Rule 7b as **WARNING** with actionable message: "Article has {N} AI images but needs {M}. To add more: edit the article to insert `<!-- IMAGE: -->` + `<!-- PROMPT: -->` placeholders, then re-run `/article-craft:images`."
 - If article is short by design (e.g., quick notes): note it in the review, no enforcement
 
 #### Rule 8: External Links for WeChat
@@ -137,32 +161,30 @@ Verify that **no Mermaid code blocks** (```` ```mermaid ... ``` ````) remain. Al
 
 All reference links must be **inlined** at first mention using `[Name](url)` format. Do NOT create a standalone "参考资料" or "参考链接" section at the end. The WeChat converter auto-generates footnotes from inline links; a manual section causes duplication.
 
-#### Rule 11: ASCII Diagram Check ⭐ CRITICAL
+#### Rule 11: ASCII Diagram Check ⭐ CRITICAL (detect-only)
 
-**Scan all code blocks for ASCII diagrams** — these must be converted to `<!-- IMAGE -->` placeholders.
+**Scan all code blocks for ASCII diagrams** — these must be converted to `<!-- IMAGE -->` placeholders **before reaching review**.
 
 Run this detection command:
 ```bash
-Use Python regular expressions to scan for ASCII diagrams
+grep -nE '│|├|└|┌|┐|─|▼|▶|←|→|↑|↓' /path/to/article.md
 ```
 
 For each match found:
 1. Check if it's inside a code block (between ` ``` `)
 2. If yes, verify it's **executable code** (bash/python/json/etc.)
-3. If NOT executable code (e.g., ASCII flowchart, state machine, architecture diagram):
-   - This is a **violation** — must convert to IMAGE placeholder
-   - Extract the diagram description and content
-   - Replace with: `<!-- IMAGE: name - description (16:9) -->` + `<!-- PROMPT: ... -->`
+3. If NOT executable code (e.g., ASCII flowchart, state machine, architecture diagram) → **FAIL**
 
-**Why critical**: ASCII diagrams render poorly on mobile, break visual consistency, and are unprofessional. All diagrams must be AI-generated images.
+> **Why review does NOT auto-convert**: By the time review runs, the `images` stage has already generated and uploaded all `<!-- IMAGE: -->` placeholders. Any new placeholder review inserts here would be **orphaned** (never generated, article ships broken). ASCII-to-IMAGE conversion is the responsibility of `write` Step 6 (pre-save GATE check) — if a diagram survives into review, write's GATE failed and the problem is structural, not cosmetic.
 
-**Action**: If violations found, convert all ASCII diagrams to image placeholders before proceeding to content-reviewer.
+**Action when violations found**:
+- Do **NOT** auto-convert to placeholders (that would create orphans)
+- Mark Rule 11 as **FAIL — escalate**
+- Report: "ASCII diagram survived write's pre-save GATE. Manual fix required: convert to `<!-- IMAGE: -->` placeholder and re-run `/article-craft:images`, or replace with inline description"
+- **BLOCK the article from proceeding to Phase 2 scoring**
+- Use AskUserQuestion to offer: (a) open the article for manual fix, (b) re-run write stage, (c) abort
 
-**If after conversion attempt, ASCII diagrams still remain**:
-- This is a **CRITICAL FAILURE**
-- Report: "ASCII diagram conversion failed"
-- **BLOCK the article from proceeding to content-reviewer**
-- Require manual fixing or explicit user override
+**Why critical**: ASCII diagrams render poorly on mobile and break visual consistency — but more importantly, any fix attempted by review at this point will create orphan placeholders because images stage is upstream.
 
 ---
 
@@ -190,20 +212,27 @@ Score each dimension 0-10, total 70 points. Pass threshold: **55/70**.
 
 1. Read article and analyze each dimension
 2. Score each 0-10 based on criteria
-3. Sum total (70 max)
+3. Sum total (70 max); record as `score_0`
 4. **If score >= 55**: pass. Proceed to output.
-5. **If score < 55**: auto-modify and re-score. Repeat up to **3 rounds**.
+5. **If score < 55**: auto-modify and re-score. Repeat up to **3 rounds**, with oscillation guard.
 
 **Auto-modify strategy**:
 1. Score-based fixes — For dimensions <7/10, fix corresponding issues
-2. Re-score after each modification
+2. Re-score after each modification; call the result `score_{round}`
 3. Never regenerate entire article — only edit weak sections
+4. **Preserve handoff contracts** — never touch `<!-- IMAGE: -->`, `<!-- PROMPT: -->`, `<!-- SCREENSHOT: -->` comments or CDN image URLs during auto-modify. Revisions must not orphan existing images (see Rule 11 warning above).
 
-6. **After 3 failed rounds**: ask the user:
+**Oscillation guard** — after each round, compare `score_{round}` to `score_{round-1}`:
+- If `score_{round} > score_{round-1}` and still < 55: continue to next round
+- If `score_{round} <= score_{round-1}`: **break the loop immediately**, do not burn the remaining rounds. The revision is not improving things, likely oscillating between conflicting fixes (e.g., fixing "AI 痕迹" introduces a red-flag word, which the next round fixes by reintroducing AI-pattern phrasing). Jump to the user-decision step.
+
+6. **After loop ends** (3 rounds exhausted OR oscillation detected): ask the user:
    ```
-   Question: "The article scored [X]/70 after 3 rounds (threshold: 55/70). How to proceed?"
+   Question: "The article scored {current}/70 after {N} rounds (threshold: 55/70).
+              {If oscillation: 'Score stopped improving at round {N}.'}
+              How to proceed?"
    Options:
-     - Continue revising -- attempt another round
+     - Continue revising -- attempt another round (ignores oscillation guard)
      - Publish anyway -- accept current score
      - Abort -- stop pipeline
    ```
@@ -217,7 +246,7 @@ Score each dimension 0-10, total 70 points. Pass threshold: **55/70**.
 ```markdown
 ## Review Results
 
-### Phase 1: Self-Check (15 rules)
+### Phase 1: Self-Check (11 rules)
 - Rule 1 (Red-Flag Words): PASS / FIXED (N violations rewritten)
 - Rule 2 (Hook Length): PASS / FIXED
 - Rule 3 (Closing): PASS / FIXED
@@ -225,14 +254,11 @@ Score each dimension 0-10, total 70 points. Pass threshold: **55/70**.
 - Rule 5 (Anti-AI Structure): PASS / FIXED
 - Rule 6 (Chapter Depth): PASS / WARNING (section X is thin)
 - Rule 7 (Duplicate Images): PASS
+- Rule 7b (Minimum AI Image Count): PASS / WARNING (need N more images)
 - Rule 8 (WeChat Links): PASS / FIXED
 - Rule 9 (Mermaid Residue): PASS
 - Rule 10 (References Inline): PASS / FIXED
 - Rule 11 (ASCII Diagram Check): PASS / FIXED (N diagrams converted)
-- Rule 12 (Image Count): PASS / WARNING (need N more images)
-- Rule 13 (Paragraph Length): PASS / FIXED
-- Rule 14 (Transitions): PASS / FIXED
-- Rule 15 (Code Blocks): PASS / FIXED
 
 ### Phase 2: Built-in Scoring (7 dimensions)
 | Dimension | Score | Status |
@@ -260,8 +286,8 @@ When invoked directly (not as part of the orchestrator pipeline):
    ```
    Question: "Review mode?"
    Options:
-     - Publish -- full review with content-reviewer scoring (>= 55/70 required)
-     - Draft -- self-check only, skip content-reviewer
+     - Publish -- full review with embedded 7-dim scoring (>= 55/70 required)
+     - Draft -- self-check only, skip scoring phase
    ```
 3. Execute the review steps above.
 4. Output the report.

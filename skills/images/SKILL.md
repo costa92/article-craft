@@ -1,7 +1,13 @@
 ---
 name: article-craft:images
-version: 1.2.0
+version: 1.3.0
 description: "Generate and upload images for technical articles using Gemini API. Use when adding cover images, rhythm images, or screenshots to an article."
+allowed-tools:
+  - Read
+  - Edit
+  - Bash
+  - Grep
+  - AskUserQuestion
 ---
 
 # Images
@@ -99,7 +105,6 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate_and_upload_images.py \
 > `generate_and_upload_images.py --process-file` only matches `<!-- IMAGE: -->` comments.
 > Already-replaced images (now `![...](url)`) are not matched. So re-running the
 > batch processor on a partially-processed article is inherently incremental.
-```
 
 This script performs the full pipeline:
 1. Parses `<!-- IMAGE: ... -->` and `<!-- PROMPT: ... -->` placeholders from the article

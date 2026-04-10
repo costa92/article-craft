@@ -1,7 +1,13 @@
 ---
 name: article-craft:lint
-version: 1.2.0
+version: 1.3.0
 description: "Check and auto-fix article style violations — red-flag words, hook length, closing patterns, AI traces. Use to clean up articles before review."
+allowed-tools:
+  - Read
+  - Edit
+  - Bash
+  - Grep
+  - AskUserQuestion
 ---
 
 # Lint — Style Check & Auto-Fix
@@ -167,7 +173,7 @@ When invoked directly:
 
 ## Integration with Review Skill
 
-The lint skill is a **lightweight pre-check** — run it before the full review to eliminate mechanical issues. The review skill's Phase 1 (self-check) covers the same rules, but lint is faster because it skips content-reviewer scoring.
+The lint skill is a **lightweight pre-check** — run it before the full review to eliminate mechanical issues. The review skill's Phase 1 (self-check) covers the same rules, but lint is faster because it skips Phase 2 (7-dim scoring) and the 3-round auto-revision loop.
 
 Recommended flow:
 ```

@@ -21,7 +21,7 @@ be used independently via `/article-craft:<skill-name>`.
 
 ## Workflow Modes
 
-Three modes, selected at invocation:
+Five modes, selected at invocation:
 
 | Mode | Skills Executed | Use Case |
 |------|----------------|----------|
@@ -29,6 +29,7 @@ Three modes, selected at invocation:
 | **quick** (`--quick`) | requirements → write → screenshot → images | Fast output, skip verification and review |
 | **draft** (`--draft`) | requirements → write | Content only, no images or review |
 | **series** (`--series FILE`) | Read series.md → requirements (pre-filled) → standard pipeline | Write the next article in a series |
+| **upgrade** (`--upgrade PATH`) | Detect existing state → run only missing stages | Upgrade a draft/quick article to full standard output |
 
 ## Inputs
 
@@ -48,7 +49,7 @@ Detection logic:
   2. Has <!-- IMAGE: --> placeholders?  → images NOT done, run images
   3. Has <!-- SCREENSHOT: --> placeholders?  → screenshots NOT done, run screenshots
   4. File is in 02-技术/ KB directory?  → publish already done, skip publish
-  5. Ask user: "生成分享卡片？" → 用户确认后才运行 share_card
+  5. share_card: apply 3.4.5 auto-inference (frontmatter completeness + --share-cards flag)
 
 Upgrade paths:
   draft → standard:  run verify → screenshot → share_card → images → review → publish
@@ -69,6 +70,37 @@ Upgrading: /path/to/article.md
 ```
 
 ## Pipeline Execution
+
+### Step 0: Preflight Dependency Check
+
+Before running any skill, verify that the tools downstream stages depend on are actually available. Fail fast with a specific error naming the missing piece — do **not** let the user sit through `requirements → verify → write → screenshot` only to have `images` explode because `GEMINI_API_KEY` was never configured.
+
+Run these checks in parallel via Bash:
+
+```bash
+# 1. Gemini API key — required by images + nanobanana.py
+python3 -c "import json, os; e=json.load(open(os.path.expanduser('~/.claude/env.json'))); assert e.get('gemini_api_key'), 'GEMINI_API_KEY missing'" 2>&1
+
+# 2. Playwright chromium — required by screenshot_tool.py
+python3 -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); p.chromium.executable_path; p.stop()" 2>&1
+
+# 3. PicGo (optional — only fail if the user has configured PicGo as upload mode)
+command -v picgo 2>&1 || echo "picgo not on PATH (only needed if upload_mode=picgo in env.json)"
+```
+
+**Skip rules**:
+- **draft mode** (`--draft`): skip all three — draft produces a markdown file only, no images or screenshots are needed
+- **quick mode** (`--quick`): skip PicGo check if `upload_mode=s3`
+- **upgrade mode** (`--upgrade`): run only the checks relevant to the stages that will actually run after state detection
+
+**On failure**: report the specific missing dependency and point to `ENV.md` / `install.sh` for remediation. Do not continue the pipeline.
+
+Example failure output:
+```
+❌ Preflight failed: GEMINI_API_KEY missing from ~/.claude/env.json
+   → Fix: add `"gemini_api_key": "..."` to ~/.claude/env.json
+   → See: ENV.md
+```
 
 ### Step 1: Determine Mode
 
@@ -94,7 +126,6 @@ Pipeline Status:
     └─ section depth check: ≥2 code blocks per ##
   screenshot:   pending
   share_card:   pending   # 可选，标准模式询问用户
-```
   images:       pending
   review:       pending
   publish:      pending
@@ -172,32 +203,51 @@ Invoke `article-craft:screenshot` skill logic:
 > [!note]
 > Skipped in draft mode. Mark as `skipped`.
 
-#### 3.4.5 Share Card (standard mode, 询问后执行)
+#### 3.4.5 Share Card (standard mode, auto-inferred)
 
-After screenshot step, ask user whether to generate share cards:
+**Do NOT ask the user mid-pipeline.** Share card generation is inferred from frontmatter completeness and an optional CLI flag, so autonomous runs never block on interactive prompts.
+
+**Decision logic**:
+
 ```
-Question: "生成分享卡片？"
-Options:
-  - Yes — generate share cards (recommended)
-  - No — skip
+share_cards_flag = parse "--share-cards=yes|no|auto" (default: auto)
+
+if share_cards_flag == "no":
+    mark share_card: skipped
+    done
+
+if share_cards_flag == "yes":
+    run share_card.py (force)
+
+if share_cards_flag == "auto":
+    required_frontmatter = {title, description, tags, author}
+    if article_frontmatter has all of required_frontmatter:
+        run share_card.py
+    else:
+        mark share_card: skipped (reason: "incomplete frontmatter for auto mode")
 ```
 
-If user declines, mark `share_card: skipped`.
+Example `auto` skip reasons printed in the summary:
+- `share_card: skipped (auto — missing: description, author)`
+- `share_card: skipped (auto — missing: tags)`
+- `share_card: skipped (--share-cards=no)`
 
-If yes:
-- Run `${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py`:
-  ```bash
-  python3 ${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py \
-    -f /ABSOLUTE/PATH/article.md \
-    -p wechat-cover,twitter,xiaohongshu-sq \
-    --upload
-  ```
-- 如果文章有完整 frontmatter（title, description, tags, author），直接传 `-f` 即可
+**Execution** (when the decision is to run):
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py \
+  -f /ABSOLUTE/PATH/article.md \
+  -p wechat-cover,twitter,xiaohongshu-sq \
+  --upload
+```
+
+- `-f` 会自动从 frontmatter 读 title/description/tags/author
 - 可选配色：tech-blue / sunset / forest / midnight / ember / deep-blue / slate（默认 tech-blue）
 - 平台默认：wechat-cover, twitter, xiaohongshu-sq
 
 **On failure:** Non-fatal — warn user, continue
-**Status:** Mark `success` if cards generated, `skipped` if user declined or no frontmatter
+**Status:** Mark `success` if cards generated, `skipped` with a reason string as shown above
+
+> **Why no interactive prompt**: Mid-pipeline `AskQuestion` calls break autonomous / scheduled runs, CI integration, and `--series` batch mode. Inference from frontmatter is deterministic and pre-answerable. If you want explicit control, use `--share-cards=yes|no`.
 
 #### 3.5 Images (standard and quick modes)
 
@@ -223,24 +273,17 @@ images failed, continue to review. Do NOT stop the pipeline.
 
 #### 3.6 Review (standard mode only)
 
-直接调用 `/article-craft:review`（review skill 内部已包含 Phase 1 self-check + Phase 2 content-reviewer，不需要独立运行 self-check 脚本）：
+直接调用 `/article-craft:review`（review skill 是 self-contained：内部已包含 Phase 1 self-check + Phase 2 embedded 7 维评分 + 最多 3 轮自动修订循环）：
 - Pass the article.md absolute file path
-- review skill 自动执行：self-check（15 条规则）→ content-reviewer（7 维评分）
+- review skill 自动执行：self-check（11 条规则）→ embedded scoring（7 维）→ 若得分 < 55/70 自动最多重试 3 轮，仍不过则用 AskQuestion 询问用户
 - **不要单独调用 `review_selfcheck.py`**——review skill 内部会调用它
+- orchestrator 不要再嵌套一层重试循环，信任 review skill 的返回结果即可
 
-**Review retry loop:**
-1. If score ≥ 55/70 → PASS, continue to publish
-2. If score < 55/70 and rounds ≤ 3:
-   - Auto-modify the article based on reviewer feedback
-   - Re-run review
-   - Increment round counter
-3. If score < 55/70 and rounds > 3:
-   - Use AskQuestion: "Article scored {score}/70 after 3 rounds. Proceed anyway or abort?"
-   - If proceed → continue to publish
-   - If abort → stop pipeline, report status
+**Outcome:**
+- Review skill returns `PASS` (score ≥ 55 或用户选择 proceed) → continue to publish
+- Review skill returns `ABORT` (用户选择 abort) → stop pipeline, report status
 
-**On failure (content-reviewer unavailable):** Warn user, proceed with self-check only
-**Status:** Mark `success` when score ≥ 55 or user approves
+**Status:** Mark `success` on PASS, `failed` on ABORT
 
 > [!note]
 > Skipped in quick and draft modes. Mark as `skipped`.
@@ -287,6 +330,24 @@ After all skills complete (or pipeline stops on fatal error), print a summary ta
 └─────────────────────────────────────────────────────────┘
 ```
 
+**Quick mode — unverified citation warning**: if the run used `--quick` (verify was skipped) **and** the article cites any T3-T5 community sources, append this warning block to the summary:
+
+```
+⚠️  UNVERIFIED CITATIONS
+   This run used --quick mode, so verify stage was skipped.
+   The article cites {N} T3-T5 community sources (tutorials, blog posts,
+   Medium articles) that were NOT link-checked or fact-vetted.
+
+   Trusted tiers cited:
+     T3 (Technical blog):    {n3} sources
+     T4 (Medium/Dev.to):     {n4} sources
+     T5 (Unverified):        {n5} sources
+
+   → To vet them, run: /article-craft:verify {article_path}
+```
+
+Omit the warning if write only cited T0-T2 (official docs, tool source, standards).
+
 ## Error Recovery
 
 If the pipeline stops due to a fatal error (write skill failure):
@@ -326,5 +387,5 @@ if no arguments are provided.
 ## Integration
 
 - **content-pipeline agent**: Already updated to use `article-craft` as the writing skill
-- **content-reviewer**: Delegated to by the review skill (dependency declared in plugin.json)
+- **review skill**: Self-contained — embeds the 11 self-check rules plus 7-dim scoring inline. No external `content-reviewer` dependency in `plugin.json`.
 - **wechat-seo-optimizer**: Called by publish skill for WeChat optimization

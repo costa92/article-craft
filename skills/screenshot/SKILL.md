@@ -1,7 +1,13 @@
 ---
 name: article-craft:screenshot
-version: 1.2.0
+version: 1.3.0
 description: "Take web page screenshots with intelligent validation + generate social share cards. Uses Playwright for real browser rendering, validates URLs before capture, detects 404/empty pages, optimizes image size. Supports WeChat, Xiaohongshu, Twitter/X, LinkedIn, and more."
+allowed-tools:
+  - Read
+  - Edit
+  - Bash
+  - Grep
+  - AskUserQuestion
 ---
 
 # Screenshot — 智能网页截图 & 分享卡片
@@ -90,7 +96,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py screenshot "https://git
 
 **完整参数：**
 ```bash
-python3 screenshot_tool.py screenshot "URL" \
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py screenshot "URL" \
   -o /tmp/output.png \        # 输出路径（默认 /tmp/）
   -s ".markdown-body" \       # CSS 选择器
   -w 2 \                      # 额外等待秒数
@@ -106,13 +112,13 @@ python3 screenshot_tool.py screenshot "URL" \
 echo '{"url": "https://github.com/user/repo"}' > /tmp/batch.jsonl
 echo '{"url": "https://npmjs.com/package/react", "wait": 2}' >> /tmp/batch.jsonl
 
-python3 screenshot_tool.py batch /tmp/batch.jsonl -o /tmp/screenshots/
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py batch /tmp/batch.jsonl -o /tmp/screenshots/
 ```
 
 ### 只验证 URL（不截图）
 
 ```bash
-python3 screenshot_tool.py check "https://github.com/user/repo"
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py check "https://github.com/user/repo"
 ```
 
 ---
@@ -267,7 +273,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py \
   -o /tmp/cards
 
 # 从 Markdown 文件自动读取 frontmatter
-python3 share_card.py -f /path/to/article.md -p wechat-cover,twitter
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py -f /path/to/article.md -p wechat-cover,twitter
 ```
 
 ### 从文章 frontmatter 自动读取
@@ -285,7 +291,7 @@ author: 月影
 
 ```bash
 # 生成后自动上传（需安装 picgo）
-python3 share_card.py -t "标题" -p wechat-cover,twitter --upload
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py -t "标题" -p wechat-cover,twitter --upload
 ```
 
 ### 卡片设计规范

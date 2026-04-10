@@ -2,6 +2,13 @@
 name: article-craft:verify
 version: 1.3.0
 description: "Batch verify links, commands, and tool features with source trust tiers. Uses T0-T5 trust classification to focus verification effort."
+allowed-tools:
+  - Read
+  - Bash
+  - Grep
+  - WebSearch
+  - WebFetch
+  - AskUserQuestion
 ---
 
 # Pre-Writing Verification
@@ -150,7 +157,7 @@ Never assume which project the user means. Always ask.
 
 ### Step 5: Save URL Cache (for screenshot_tool)
 
-将 Step 2 的 URL 检查结果写入共享缓存（TTL 1 小时），供 screenshot_tool.py 复用：
+将 Step 2 的 URL 检查结果写入共享缓存,供 screenshot_tool.py 复用:
 
 ```bash
 # 方式 A：逐步追加（每验证一个 URL 就写入）
@@ -166,7 +173,17 @@ python3 "$SCRIPT" --url "$url" --status "$code" --reason "checked"
 python3 "$SCRIPT" --from-file /tmp/verify-results.txt
 ```
 
-> screenshot_tool.py 会优先读取此缓存（1 小时内有效，路径 `~/.cache/article-craft/verify-cache.json`），避免对同一 URL 重复发起 HEAD 请求。
+> screenshot_tool.py 会优先读取此缓存（路径 `~/.cache/article-craft/verify-cache.json`），避免对同一 URL 重复发起 HEAD 请求。
+
+**Cache TTL (configurable)**:
+
+| Mode | Default TTL | Rationale |
+|---|---|---|
+| Standard single-article run | **1 hour** | Single session won't cross boundary; freshness matters more |
+| `--series FILE` | **24 hours** | Auto-extended so all articles in a multi-hour series share vetting |
+| Custom | via `~/.claude/env.json` key `verify_cache_ttl_seconds` | Overrides both defaults; useful for CI / batch runs |
+
+Behavior: `VerificationCache` in `scripts/config.py` reads `verify_cache_ttl_seconds` from env.json at load time. If unset, it falls back to 3600 (1h). Orchestrator detects `--series` and temporarily sets `VERIFY_CACHE_TTL_SECONDS=86400` in the environment for the duration of the run.
 
 ---
 
@@ -302,13 +319,3 @@ Detect if a source is official:
 - Author bio mentions "affiliate" or "sponsored"
 - Content is significantly older than tool version
 - Tutorial duplicates official docs without adding value
-
----
-
-## Verification Philosophy
-
-All technical content must satisfy at least one of:
-1. **Official docs verified** (most reliable) -- found via WebSearch/WebFetch
-2. **Trusted tools whitelist** (pre-verified) -- see `${CLAUDE_PLUGIN_ROOT}/skills/verify/trusted-tools.md`
-3. **User-provided info** (needs confirmation) -- user explicitly provided and confirmed
-4. **Stable knowledge-base info** (moderate trust) -- fundamental CS concepts, standard protocols, classic algorithms

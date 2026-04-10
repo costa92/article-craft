@@ -1,7 +1,15 @@
 ---
 name: article-craft:publish
-version: 1.2.0
+version: 1.3.0
 description: "Place article in knowledge base and optimize for distribution. Use after review to save the article to its final location."
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Glob
+  - Grep
+  - AskUserQuestion
 ---
 
 # Publish
@@ -16,6 +24,10 @@ Place a reviewed article into the knowledge base at the correct category directo
 
 - **Article file path**: absolute path to the `.md` file to publish
 - **Review score** (optional): passed from `article-craft:review` if run in pipeline
+- **`--output DIR`** (optional): explicit output directory. If provided, **bypass KB auto-detection entirely** and save the article under `DIR`. Use this when:
+  - You are inside an Obsidian KB but want a one-off scratch article saved elsewhere
+  - You want to publish to a custom location that doesn't match the `02-技术/` convention
+  - You are publishing programmatically and want deterministic output
 
 If invoked standalone (file path not provided), use AskQuestion:
 ```
@@ -27,13 +39,22 @@ Question: "Which article file should I publish?"
 
 ## Execution Steps
 
-### Step 1: Knowledge Base Auto-Detect
+### Step 1: Determine Output Mode
 
+Two modes, selected by presence of `--output`:
+
+**Mode A — Explicit output** (`--output DIR` passed):
+1. Validate `DIR` exists and is writable. If not, fail with a clear error.
+2. Skip KB detection entirely.
+3. Skip Smart Directory Matching (Step 2).
+4. Move the article to `DIR/<filename>.md` and jump to Step 4.
+
+**Mode B — Auto-detect KB** (no `--output`):
 Check if the current working directory (or a known parent) is an Obsidian knowledge base by looking for the `02-技术/` directory.
 
 ```bash
 # Check from current directory upward
-ls -d "02-技术" 2>/dev/null || ls -d "../02-技术" 2>/dev/null || ls -d "../../02-技术" 2>/dev/null
+[ -d "02-技术" ] || [ -d "../02-技术" ] || [ -d "../../02-技术" ]
 ```
 
 Also check for `.obsidian/` directory or numbered directories (`01-工作/`, `03-创作/`).
@@ -50,8 +71,9 @@ When a knowledge base is detected, determine the best subdirectory under `02-技
 The `SmartDirectoryMatcher` class is located at `${CLAUDE_PLUGIN_ROOT}/scripts/utils.py`. It performs keyword matching, pattern matching, and history-based matching to find the best directory.
 
 ```python
+import os
 import sys
-sys.path.insert(0, os.path.expanduser("${CLAUDE_PLUGIN_ROOT}/scripts"))
+sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "scripts"))
 from utils import SmartDirectoryMatcher
 
 matcher = SmartDirectoryMatcher(kb_root=PROJECT_ROOT)

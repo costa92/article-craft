@@ -2,6 +2,13 @@
 name: article-craft:write
 version: 1.3.0
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Grep
+  - AskUserQuestion
 ---
 
 # article-craft:write — Technical Article Writer
@@ -510,22 +517,20 @@ Print the absolute file path after saving so subsequent skills can find it.
 
 **Critical**: This GATE check is mandatory. If violations remain, the article cannot be saved. Inform the user and require fixing or conversion before saving.
 
-### Step 7: Post-Write Validation (自动验证)
+### Step 7: Handoff Contract Validation (自动验证)
 
-**文件保存后，立即运行自动化验证** — 不等用户手动触发 review：
+**文件保存后，立即运行自动化验证** — 这是交给 screenshot / images 前的 handoff 契约检查，确保下游 skill 能正确消费。
 
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py /ABSOLUTE/PATH/article.md
-```
+> **职责分工**:
+> - write Step 7 **只检查下游 skill 的硬契约**(格式、占位符、命令正确性),即使被触发 review 也无法从格式层面修复的问题。
+> - **内容质量规则**(红旗词、模板化句式、章节深度、结尾行动力等)由 `review` skill 的 Phase 1 (11 条 self-check rules) 统一执行,write 不再重复做。
+> - 不要调用 `${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py` —— 那是 review skill 内部使用的。
 
-**必须检查的 6 条规则：**
+**必须检查的 3 项 handoff 契约（精简,只保留真正的下游阻断项）：**
 
-1. **Rule 1（红旗词）** — 如果发现红旗词，立即用 Edit 工具替换，然后重新验证
-2. **Rule 11（占位符格式）** — 如果发现非标准占位符（`IMAGE_PLACEHOLDER_*`、不存在的本地图片路径），转换为标准 `<!-- IMAGE: name - desc (ratio) -->` 格式
-3. **Rule 12（模板化摘要）** — 如果发现"本文从...出发"等模板句式，重写为具体问题或个人经历
-4. **Rule 14（IMAGE 占位符双行格式）** ⭐ **CRITICAL** — 验证所有 `<!-- IMAGE:` 占位符匹配 images 脚本的正则格式
-5. **Rule 15（章节深度）** ⭐ — 验证每个技术章节满足最低结构要求（≥2 代码块）
-6. **Rule 16（命令验证）** ⭐ **NEW** — 验证文章中出现的命令是否正确可执行
+1. **Check A（占位符格式）** — 如果发现非标准占位符（`IMAGE_PLACEHOLDER_*`、不存在的本地图片路径），转换为标准 `<!-- IMAGE: name - desc (ratio) -->` 格式。没转就跑 images 会直接 skip 这些位置。
+2. **Check B（IMAGE 占位符双行格式）** ⭐ **CRITICAL** — 验证所有 `<!-- IMAGE:` 占位符匹配 images 脚本的正则格式。这是与下游 images skill 的硬契约，不通过会导致图片生成失败。
+
    ```
    <!-- IMAGE: slug - description (ratio) -->
    <!-- PROMPT: english prompt text -->
@@ -538,37 +543,37 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py /ABSOLUTE/PATH/article
    - PROMPT 不是英文 → 翻译为英文
    - 两行之间有空行 → 删除空行使其紧邻
 
+3. **Check C（命令可执行性）** — 验证文章中出现的命令是否正确可执行。这是唯一 review 不做的语义验证,属于 write 的责任。详见下方 "Check C 详解"。
+
 **自动修复流程：**
 ```
 保存文件
   ↓
-运行 review_selfcheck.py
+inline Grep/Bash 检查 3 项 handoff 契约
   ↓
-Rule 1 失败? → grep 红旗词 → Edit 替换 → 重新保存
+Check A 失败? → 转换为标准占位符格式 → 重新保存
   ↓
-Rule 11 失败? → 转换为标准占位符格式 → 重新保存
+Check B 失败? → 补全 ratio/PROMPT/翻译 → 重新保存
   ↓
-Rule 12 失败? → 重写模板句式 → 重新保存
+Check C 失败? → 标记 [需要验证] 或 Edit 修正 → 重新保存
   ↓
-Rule 14 失败? → 补全 ratio/PROMPT/翻译 → 重新保存
-  ↓
-再次运行 review_selfcheck.py 确认修复
+再次 grep 确认修复
   ↓
 输出验证结果
 ```
 
 **验证通过后输出：**
 ```
-✅ Post-Write Validation PASSED
-   Rule 1: 0 红旗词
-   Rule 11: 0 占位符问题
-   Rule 12: 0 模板化摘要
-   Rule 14: N 个 IMAGE 占位符，格式合规 ✅
-   Rule 15: N/N 章节深度合规 ✅
-   Rule 16: N/N 命令正确 ✅
+✅ Handoff Contract Validation PASSED
+   Check A (占位符格式): 0 问题
+   Check B (IMAGE 占位符双行格式): N 个，合规 ✅
+   Check C (命令正确性): N/N ✅
+
+   Content quality checks (red-flag words, anti-AI structure, chapter depth,
+   closing cadence) are deferred to the review skill.
 ```
 
-#### Rule 16: 命令验证详解
+#### Check C: 命令验证详解
 
 从文章中提取所有命令并验证正确性：
 
@@ -617,7 +622,25 @@ command -v uv && uv --version  # 验证 uv 命令
 
 ## Hand-off
 
-After writing and post-write validation are complete, **automatically generate images**:
+After writing and post-write validation are complete, hand-off depends on the pipeline mode:
+
+**Standard / quick modes (orchestrated)**: the orchestrator handles the hand-off automatically — write just returns the article path, and the next stage runs.
+
+**Draft mode** (`--draft`): do **NOT** auto-run images. Draft mode's contract is "content only, user decides when to resume." After saving, print this completion message:
+
+```
+✅ Draft saved: /ABSOLUTE/PATH/article.md
+   Words: ~NNNN  |  Placeholders: N IMAGE, N SCREENSHOT
+
+To resume and finish the article, run:
+  /article-craft --upgrade /ABSOLUTE/PATH/article.md
+
+This will detect what's missing (images, screenshots, review, publish)
+and run only the stages that still need to run. You can safely edit
+the article by hand between draft and upgrade.
+```
+
+**Standalone mode** (invoked via `/article-craft:write` outside orchestrator): also auto-run images after save (same logic as standard mode), unless the user explicitly said "no images" or "article only":
 
 1. **检查是否有 IMAGE 占位符**：`grep -c '<!-- IMAGE:' /path/to/article.md`
 2. **如果有占位符（count > 0）**，立即执行图片生成：
@@ -633,8 +656,6 @@ After writing and post-write validation are complete, **automatically generate i
    ```
 3. **如果探测失败**（所有模型不可用），保留占位符并告知用户
 4. **如果用户明确说** "no images" 或 "article only"，跳过图片生成
-
-In orchestrated mode, the orchestrator handles the hand-off automatically.
 
 ---
 
@@ -707,5 +728,4 @@ Use it as a structural reference. Adapt sections to fit the specific article —
 
 ---
 
-**Version:** 1.1.0 (2026-03-31)
 **Ported from:** article-generator v3.3 (Phase B + style guide + self-check rules)
