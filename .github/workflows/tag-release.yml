@@ -31,31 +31,22 @@ jobs:
 
       - name: Check release exists
         id: check-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view "v${{ steps.version.outputs.version }}" --repo ${{ github.repository }} >/dev/null 2>&1; then
             echo "skipping=true" >> "$GITHUB_OUTPUT"
-            echo "Release v${{ steps.version.outputs.version }} already exists, skipping"
+            echo "Release v${{ steps.version.outputs.version }} already exists — skipping (idempotent no-op)"
           else
             echo "skipping=false" >> "$GITHUB_OUTPUT"
             echo "Will create release v${{ steps.version.outputs.version }}"
           fi
 
-      - name: Bump version
-        if: steps.check-release.outputs.skipping == 'false'
-        id: bump-version
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          PATCH=$(echo "$VERSION" | cut -d. -f3)
-          PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-          echo "Bumping from $VERSION to $NEW_VERSION"
-          # 更新 plugin.json 版本号
-          sed -i "s/\"version\": \"$VERSION\"/\"version\": \"$NEW_VERSION\"/" .claude-plugin/plugin.json
-          sed -i "s/v$VERSION/v$NEW_VERSION/" .claude-plugin/plugin.json
-          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$NEW_VERSION" >> "$GITHUB_OUTPUT"
+      # NOTE: No auto-bump. plugin.json is the source of truth for the release
+      # version. If you push to main without bumping plugin.json and the release
+      # already exists, this workflow is a clean no-op (see check-release above).
+      # To cut a new release, bump `.claude-plugin/plugin.json` first, update
+      # all SKILL.md and marketplace.json in the same commit, then push.
 
       - name: Get SHA
         if: steps.check-release.outputs.skipping == 'false'
@@ -63,33 +54,12 @@ jobs:
         run: |
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Create tag via API
-        if: steps.check-release.outputs.skipping == 'false'
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const tag = '${{ steps.bump-version.outputs.tag }}';
-            try {
-              await github.rest.git.createTag({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag: tag,
-                message: 'Release ' + tag,
-                object: '${{ steps.sha.outputs.sha }}',
-                type: 'commit'
-              });
-              console.log('Tag created: ' + tag);
-            } catch (e) {
-              if (e.status !== 422) throw e;
-              console.log('Tag already exists, skipping');
-            }
-
       - name: Create tag ref via API
         if: steps.check-release.outputs.skipping == 'false'
         uses: actions/github-script@v8
         with:
           script: |
-            const tag = '${{ steps.bump-version.outputs.tag }}';
+            const tag = '${{ steps.version.outputs.tag }}';
             try {
               await github.rest.git.createRef({
                 owner: context.repo.owner,
@@ -107,12 +77,12 @@ jobs:
         if: steps.check-release.outputs.skipping == 'false'
         uses: softprops/action-gh-release@v2.6.1
         with:
-          tag_name: ${{ steps.bump-version.outputs.tag }}
-          name: ${{ steps.bump-version.outputs.tag }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           body: |
-            ## v${{ steps.bump-version.outputs.new_version }} 更新
+            ## v${{ steps.version.outputs.version }}
 
-            See CHANGELOG for details.
+            See CHANGELOG.md for details.
           draft: false
           prerelease: false
         env:
