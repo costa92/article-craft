@@ -1,6 +1,6 @@
 ---
 name: article-craft:youtube
-version: 1.3.4
+version: 1.4.0
 description: "Transform YouTube video content into structured technical articles. Extracts transcript, analyzes content, and generates polished articles. Use when converting video to article."
 allowed-tools:
   - Read

@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.4.0] - 2026-04-15
+
+### Added
+
+- **Style H — 爆料自媒体 / 公众号爆款** in `references/writing-styles.md`: new writing style modeled on 新智元/量子位/机器之心 voice — 戏剧性标题、H2 钩子句、源图直引、竞争对垒叙事、泄露代号对照、极短段落。Includes auto-detect signals ("曝光"、"爆料"、"突袭"、"泄露"、"一夜"、"硬刚"、股价/竞品对垒) and hard constraints enforced by the write skill.
+- **New `evidence` skill** (`skills/evidence/SKILL.md` + `commands/article-craft/evidence.md` + `scripts/evidence.py`): collects source evidence for Style H. Parses `materials.md` (public URLs / local paths / gated citations), batches `harvest` calls across all public sources, outputs `_evidence.json` consumed by write. BLOCKS the pipeline for Style H when materials are missing or evidence-image count < 2.
+- **`screenshot_tool.py harvest` subcommand**: extracts all `<img>` URLs + alt + width/height + surrounding context from a source URL. **Playwright primary** (fast, JS-rendered) with **baoyu-fetch fallback** for CAPTCHA / login walls / paywalls (auto-detects 微信公众号 / Cloudflare gates and switches engines). Output JSON is directly consumed by `evidence.py`.
+- **`<!-- HARVEST: url idx= | alt= [caption=] -->` placeholder**: expands in-place to `![caption](远端 url)` without downloading or re-uploading. Implements the 新智元-style "直引源站图片" pattern — the remote CDN stays the source of truth, article-craft never becomes the image host. Processed by screenshot skill alongside existing `<!-- SCREENSHOT: -->` placeholders.
+
+### Changed
+
+- **orchestrator/SKILL.md**: pipeline is now 8 skills (added `evidence` between `verify` and `write`). Style H makes `evidence` mandatory in every mode (standard / quick / draft); other styles mark it `skipped`. Pipeline BLOCKS if `_evidence.json` is missing or has < 2 images when Style H is selected.
+- **write/SKILL.md**: adds Style H branch — 【导读】加粗 H5 替代 `> [!abstract]` callout, consumes `_evidence.json`, enforces ≥2 evidence images, requires hook-style H2 titles (感叹号 / 动词 / 代号 / 数字), forbids Obsidian callouts + "综上所述" collider phrases + 客观中性 H2 描述, requires 参考资料 section + 公众号三板斧 ending.
+- **screenshot/SKILL.md**: adds HARVEST placeholder scan alongside SCREENSHOT; documents the remote-URL inlining contract; adds `harvest` subcommand docs.
+
+### Design notes
+
+- HARVEST vs SCREENSHOT distinction is now the canonical way to decide "reuse remote image" vs "capture new image". Use HARVEST for 源文章已有的图; SCREENSHOT for 空的页面需要自己截；manual 本地路径走 `SCREENSHOT: /abs/path`.
+- baoyu-fetch fallback is opt-out (`--no-fallback`) but only triggers when Playwright hits an auto-detected gate (CAPTCHA markers, HTTP >= 400, login walls). Keeps the happy path fast while giving the unhappy path a real escape hatch.
+
 ## [1.3.4] - 2026-04-13
 
 ### Fixed

@@ -1,6 +1,6 @@
 ---
 name: article-craft
-version: 1.3.4
+version: 1.4.0
 description: "Enhanced full article generation pipeline — orchestrated with intelligent inference, source trust detection, and structure validation. Uses multi-layer requirements, T0-T5 verification focus, and section depth enforcement."
 allowed-tools:
   - Read
@@ -16,7 +16,7 @@ allowed-tools:
 
 # Article Craft — Orchestrator
 
-Composes 7 skills into a complete article generation pipeline. Each skill can also
+Composes 8 skills into a complete article generation pipeline. Each skill can also
 be used independently via `/article-craft:<skill-name>`.
 
 ## Workflow Modes
@@ -25,11 +25,15 @@ Five modes, selected at invocation:
 
 | Mode | Skills Executed | Use Case |
 |------|----------------|----------|
-| **standard** (default) | requirements → verify → write → screenshot → images → review → publish | Full article with quality gate |
-| **quick** (`--quick`) | requirements → write → screenshot → images | Fast output, skip verification and review |
-| **draft** (`--draft`) | requirements → write | Content only, no images or review |
+| **standard** (default) | requirements → verify → [evidence if Style H] → write → screenshot → images → review → publish | Full article with quality gate |
+| **quick** (`--quick`) | requirements → [evidence if Style H] → write → screenshot → images | Fast output, skip verification and review |
+| **draft** (`--draft`) | requirements → [evidence if Style H] → write | Content only, no images or review |
 | **series** (`--series FILE`) | Read series.md → requirements (pre-filled) → standard pipeline | Write the next article in a series |
 | **upgrade** (`--upgrade PATH`) | Detect existing state → run only missing stages | Upgrade a draft/quick article to full standard output |
+
+> **Style H 特例**：当 requirements 判定为 Style H（爆料自媒体）时，**evidence skill
+> 必跑**（在 write 之前）；任何模式都不可跳过。evidence 失败 / materials.md 缺失
+> → pipeline BLOCK，提示用户补证据包。
 
 ## Inputs
 
@@ -120,10 +124,14 @@ Pipeline Status:
   requirements: pending
     └─ multi-layer inference (5 layers)
     └─ trusted sources: T0-T5 classification
+    └─ writing style: A/B/C/D/E/F/G/H
   verify:       pending
     └─ focus: T3-T5 sources, skip T0-T1 links
+  evidence:     pending   # Style H 必跑，其它 skipped
+    └─ materials.md → _evidence.json
   write:        pending
     └─ section depth check: ≥2 code blocks per ##
+    └─ Style H: consume _evidence.json, ≥2 evidence images
   screenshot:   pending
   share_card:   pending   # 可选，标准模式询问用户
   images:       pending
@@ -170,6 +178,41 @@ Invoke `article-craft:verify` skill logic:
 
 > [!note]
 > Skipped in quick and draft modes. Mark as `skipped`.
+
+#### 3.2.5 Evidence (Style H only, all modes)
+
+**触发条件**：requirements skill 的 `_writing_style` 为 `H`（爆料自媒体）。
+非 Style H 直接标记 `skipped`。
+
+Invoke `article-craft:evidence` skill logic:
+
+1. **定位 materials.md**（优先级）：
+   - requirements skill 已向用户索取并记录的路径
+   - article 保存目录下的 `materials.md`
+   - `/tmp/materials.md`
+   - 都找不到 → AskUserQuestion 索取，拒绝则 **BLOCK** pipeline
+2. 调用 `scripts/evidence.py collect <materials.md> -o <article_dir>/_evidence.json`
+3. 校验输出：
+   - `summary.total_images + len(manual)` ≥ 2 → 通过
+   - 否则 **BLOCK**，提示用户补 materials.md 并重跑
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/evidence.py collect \
+  /ABSOLUTE/PATH/materials.md \
+  -o /ABSOLUTE/PATH/_evidence.json \
+  -w 2
+```
+
+**On failure:**
+- materials.md 缺失 / 证据图 < 2 → **BLOCK** pipeline，报告原因
+- 部分源 harvest 失败但总数达标 → 警告继续
+
+**Status:** Mark `success` if `_evidence.json` written and threshold met,
+`failed` if blocked, `skipped` if not Style H.
+
+> **Why it blocks**: Style H 的整个叙事依赖源站截图 + 爆料引用。没有证据包，
+> 产出的文章既没法直引源图，也没法落实"据 X 爆料"的引用句式，只会退化成
+> 抽象营销稿。见 `references/writing-styles.md` 中 Style H 的硬约束。
 
 #### 3.3 Write (all modes)
 
@@ -374,6 +417,7 @@ Each skill can be used independently without the orchestrator:
 ```
 /article-craft:requirements   # Just gather requirements
 /article-craft:verify         # Just verify links/commands
+/article-craft:evidence       # Collect source evidence for Style H
 /article-craft:write          # Just write an article
 /article-craft:screenshot     # Just take screenshots / generate share cards
 /article-craft:images         # Just generate images for existing article

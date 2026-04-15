@@ -613,6 +613,276 @@ def upload_to_cdn(image_path: str) -> str:
         return image_path
 
 
+# ─── Harvest：从源文章提取图片清单（直引远端 URL，不截图不下载）───────────────
+
+# Style H (爆料自媒体) 依赖：新智元等公众号爆款的"图"其实都是直引源站，
+# 不是自己去截。harvest 就是把这件事自动化——给一个源页面 URL，列出
+# 页面里所有 <img> 的 src + alt + 上下文文字 + 顺序索引。
+# 返回的 JSON 给 write skill 消费，最终生成 `![desc](远端 url)`。
+
+HARVEST_IMG_MIN_WIDTH = 200   # 忽略小于此宽度的图（多半是图标/按钮）
+HARVEST_IMG_MAX_COUNT = 80    # 单页最多收集的图数量
+
+
+def harvest_images(source_url: str, wait: int = 2,
+                   width: int = DEFAULT_VIEWPORT_WIDTH,
+                   min_width: int = HARVEST_IMG_MIN_WIDTH,
+                   use_fallback: bool = True) -> dict:
+    """
+    从源文章 URL 提取图片清单（直引远端 URL）。
+
+    Playwright 优先（快、支持 JS 渲染）。如遇 CAPTCHA / 登录墙 /
+    HTTP 错误，自动尝试 baoyu-fetch CLI 兜底（处理微信/X/HN 等）。
+
+    Returns:
+        {
+          "source_url": ...,
+          "title": ...,
+          "captured_at": ISO8601,
+          "method": "playwright" | "baoyu-fetch" | "none",
+          "images": [
+            {"idx": 0, "url": "...", "alt": "...", "context": "...",
+             "width": 800, "height": 600}
+          ],
+          "warnings": [...],
+          "error": "" (on failure)
+        }
+    """
+    result = {
+        "source_url": source_url,
+        "title": "",
+        "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "method": "none",
+        "images": [],
+        "warnings": [],
+        "error": "",
+    }
+
+    # ── Step 1: Playwright 优先 ────────────────────────────────────────────
+    print(f"  🌾 Harvesting images from: {source_url}")
+
+    playwright_ok = False
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                viewport={"width": width, "height": DEFAULT_VIEWPORT_HEIGHT},
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                locale="zh-CN",
+            )
+            page = context.new_page()
+
+            response = page.goto(source_url, timeout=SCREENSHOT_TIMEOUT_MS,
+                                 wait_until="domcontentloaded")
+            actual_status = response.status if response else 0
+
+            if actual_status >= 400:
+                result["warnings"].append(
+                    f"Playwright got HTTP {actual_status}, will try baoyu-fetch fallback"
+                )
+            else:
+                try:
+                    page.wait_for_load_state("networkidle",
+                                              timeout=NETWORK_IDLE_WAIT_MS + wait * 1000)
+                except Exception:
+                    pass
+                if wait > 0:
+                    page.wait_for_timeout(wait * 1000)
+
+                result["title"] = page.title() or ""
+
+                # 检 CAPTCHA / 登录墙
+                page_text = (page.inner_text("body")[:800] if page.query_selector("body") else "")
+                gate_markers = [
+                    "环境异常", "完成验证", "去验证", "Log in", "Sign in",
+                    "Just a moment", "cf-challenge", "verify you are human",
+                    "需要登录", "微信公众平台", "Enable JavaScript",
+                ]
+                gated = any(m in page_text for m in gate_markers)
+
+                if gated:
+                    result["warnings"].append(
+                        "Playwright 命中验证/登录墙，尝试 baoyu-fetch 兜底"
+                    )
+                else:
+                    # 取所有 <img>
+                    raw_imgs = page.evaluate("""() => {
+                        const imgs = Array.from(document.querySelectorAll('img'));
+                        return imgs.map((img, idx) => {
+                            const rect = img.getBoundingClientRect();
+                            const parent = img.closest('figure, p, div') || img.parentElement;
+                            const ctx = parent ? (parent.innerText || '').trim().slice(0, 200) : '';
+                            return {
+                                idx,
+                                url: img.currentSrc || img.src || '',
+                                alt: img.alt || '',
+                                context: ctx,
+                                width: Math.round(rect.width || img.naturalWidth || 0),
+                                height: Math.round(rect.height || img.naturalHeight || 0),
+                            };
+                        });
+                    }""")
+
+                    filtered = _filter_harvest_images(raw_imgs, min_width)
+                    result["images"] = filtered[:HARVEST_IMG_MAX_COUNT]
+                    result["method"] = "playwright"
+                    playwright_ok = True
+                    print(f"     ✅ Playwright harvested {len(result['images'])} images")
+
+            browser.close()
+    except PlaywrightError as e:
+        result["warnings"].append(f"Playwright error: {e}")
+    except Exception as e:
+        result["warnings"].append(f"Playwright unexpected error: {e}")
+
+    if playwright_ok and result["images"]:
+        return result
+
+    # ── Step 2: baoyu-fetch 兜底（处理 CAPTCHA/微信/X/付费墙）─────────────
+    if not use_fallback:
+        result["error"] = result.get("error") or "Playwright 失败，且未启用 fallback"
+        return result
+
+    print(f"  🔄 Falling back to baoyu-fetch...")
+    try:
+        fb = _harvest_via_baoyu_fetch(source_url, min_width)
+        if fb.get("images"):
+            result["images"] = fb["images"][:HARVEST_IMG_MAX_COUNT]
+            result["title"] = fb.get("title") or result["title"]
+            result["method"] = "baoyu-fetch"
+            result["warnings"].extend(fb.get("warnings", []))
+            print(f"     ✅ baoyu-fetch harvested {len(result['images'])} images")
+        else:
+            result["error"] = fb.get("error") or "baoyu-fetch 未返回图片"
+            result["warnings"].extend(fb.get("warnings", []))
+    except Exception as e:
+        result["error"] = f"baoyu-fetch error: {e}"
+
+    return result
+
+
+def _filter_harvest_images(raw_imgs: list, min_width: int) -> list:
+    """按尺寸、URL 去重、过滤 data:/base64/小图标。"""
+    seen = set()
+    out = []
+    for img in raw_imgs or []:
+        url = (img.get("url") or "").strip()
+        if not url:
+            continue
+        if url.startswith("data:") or url.startswith("blob:"):
+            continue
+        if url in seen:
+            continue
+        w = int(img.get("width") or 0)
+        h = int(img.get("height") or 0)
+        # 小图标/emoji/头像：跳过
+        if w and w < min_width:
+            continue
+        if w and h and (w < 100 or h < 100):
+            continue
+        seen.add(url)
+        out.append({
+            "idx": len(out),
+            "url": url,
+            "alt": (img.get("alt") or "").strip()[:200],
+            "context": (img.get("context") or "").strip()[:200],
+            "width": w,
+            "height": h,
+        })
+    return out
+
+
+def _harvest_via_baoyu_fetch(source_url: str, min_width: int) -> dict:
+    """
+    调 baoyu-fetch CLI 作为兜底。仅当 baoyu-fetch 可用时成功。
+    返回同 harvest_images 的 images/title 子集。
+    """
+    import subprocess, shutil
+
+    # 寻找 baoyu-fetch vendor 目录（按 CLAUDE_PLUGIN_ROOT 或已知缓存路径）
+    candidates = []
+    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
+    if plugin_root:
+        candidates.append(Path(plugin_root) / "scripts" / "vendor" / "baoyu-fetch" / "src" / "cli.ts")
+    # 已知 baoyu-skills 缓存路径（skills 之间共享 bun vendor）
+    home = Path.home()
+    for p in home.glob(".claude/plugins/cache/baoyu-skills/*/skills/baoyu-url-to-markdown/scripts/vendor/baoyu-fetch/src/cli.ts"):
+        candidates.append(p)
+
+    cli_path = next((c for c in candidates if c.exists()), None)
+    if not cli_path:
+        return {
+            "images": [],
+            "error": "baoyu-fetch CLI 未安装",
+            "warnings": ["install baoyu-skills plugin or vendor baoyu-fetch into scripts/vendor/"],
+        }
+
+    bun = shutil.which("bun")
+    if not bun:
+        return {
+            "images": [],
+            "error": "bun 未安装，无法运行 baoyu-fetch",
+            "warnings": ["run: curl -fsSL https://bun.sh/install | bash"],
+        }
+
+    tmp_json = tempfile.mktemp(suffix=".json")
+    try:
+        proc = subprocess.run(
+            [bun, str(cli_path), source_url, "--format", "json",
+             "--output", tmp_json, "--wait-for", "interaction",
+             "--interaction-timeout", "60000"],
+            capture_output=True, text=True, timeout=180,
+        )
+        if proc.returncode != 0:
+            return {
+                "images": [],
+                "error": f"baoyu-fetch exit {proc.returncode}",
+                "warnings": [proc.stderr.strip()[:300]],
+            }
+        if not os.path.exists(tmp_json):
+            return {"images": [], "error": "baoyu-fetch 未输出 JSON"}
+
+        with open(tmp_json) as f:
+            data = json.load(f)
+
+        raw_imgs = []
+        for m in (data.get("media") or []):
+            if m.get("kind") != "image":
+                continue
+            raw_imgs.append({
+                "url": m.get("url") or "",
+                "alt": m.get("alt") or m.get("role") or "",
+                "context": m.get("caption") or "",
+                "width": m.get("width") or 0,
+                "height": m.get("height") or 0,
+            })
+
+        # 兜底：从 markdown 里正则扒 ![alt](url)
+        if not raw_imgs and data.get("markdown"):
+            md = data["markdown"]
+            for m in re.finditer(r"!\[([^\]]*)\]\((https?://[^)\s]+)\)", md):
+                raw_imgs.append({
+                    "url": m.group(2),
+                    "alt": m.group(1),
+                    "context": "",
+                    "width": 0, "height": 0,
+                })
+
+        filtered = _filter_harvest_images(raw_imgs, min_width)
+        return {
+            "images": filtered,
+            "title": (data.get("document", {}) or {}).get("title", ""),
+            "warnings": [],
+        }
+    except subprocess.TimeoutExpired:
+        return {"images": [], "error": "baoyu-fetch 超时"}
+    finally:
+        try:
+            os.unlink(tmp_json)
+        except Exception:
+            pass
+
+
 # ─── CLI 入口 ─────────────────────────────────────────────────────────────────
 
 def main():
@@ -643,11 +913,45 @@ def main():
     ck.add_argument("url", help="要检查的 URL")
     ck.add_argument("--timeout", type=int, default=10, help="超时秒数")
 
+    # harvest 子命令（Style H 爆料型）
+    hv = sub.add_parser("harvest",
+                         help="从源文章提取图片清单（直引远端 URL，不截图）")
+    hv.add_argument("url", help="源文章 URL")
+    hv.add_argument("-o", "--output", default="",
+                     help="输出 JSON 路径（默认 stdout）")
+    hv.add_argument("-w", "--wait", type=int, default=2,
+                     help="额外等待秒数")
+    hv.add_argument("--min-width", type=int, default=HARVEST_IMG_MIN_WIDTH,
+                     help=f"最小图片宽度（默认 {HARVEST_IMG_MIN_WIDTH}px）")
+    hv.add_argument("--no-fallback", action="store_true",
+                     help="禁用 baoyu-fetch 兜底")
+
     args = parser.parse_args()
 
     if args.command == "check":
         status = check_url_status(args.url, timeout=args.timeout)
         print(json.dumps(status, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "harvest":
+        res = harvest_images(
+            source_url=args.url,
+            wait=args.wait,
+            min_width=args.min_width,
+            use_fallback=not args.no_fallback,
+        )
+        out_json = json.dumps(res, indent=2, ensure_ascii=False)
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(out_json)
+            print(f"\n  💾 Saved harvest → {args.output}")
+            print(f"     method={res['method']}, images={len(res['images'])}")
+            if res.get("error"):
+                print(f"     ❌ error: {res['error']}")
+            for w in res.get("warnings", []):
+                print(f"     ⚠️  {w}")
+        else:
+            print(out_json)
         return
 
     if args.command == "screenshot":

@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.3.4
+version: 1.4.0
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -68,6 +68,7 @@ If no requirements context is provided, apply the same **smart inference** as th
 | **E: 资讯快报** | 新版本发布、更新解读 | 极简段落 + 截图 + 链接密集 |
 | **F: 项目复盘** | 踩坑记录、架构演进 | 叙事驱动 + before/after 数据 |
 | **G: 观点输出** | 技术观点、趋势判断 | 鲜明立场 + 论据充分 + 预设反驳 |
+| **H: 爆料自媒体** | 公众号爆款、AI 发布爆料、竞争对垒 | 戏剧标题 + 钩子 H2 + 源图直引 + 必须 `_evidence.json` |
 
 ### 自动判断规则
 
@@ -80,6 +81,7 @@ If no requirements context is provided, apply the same **smart inference** as th
 | "更新"、"发布"、"新版本"、"changelog" | E |
 | "复盘"、"踩坑"、"迁移"、"优化了"、"从X到Y" | F |
 | "为什么"、"我认为"、"不推荐"、"应该" | G |
+| "曝光"、"爆料"、"突袭"、"泄露"、"一夜"、"刚刚"、"硬刚"、"神仙打架"、股价/竞品对垒 | H |
 | 来自 YouTube 视频转文章 | B |
 | 默认 | A |
 
@@ -197,6 +199,56 @@ If writing as part of a series, inject navigation **after the cover image and be
 ```
 
 **Style B / E / F / G** — skip this callout,直接进入正文。
+
+**Style H (爆料自媒体)** — 严禁 Obsidian callouts。替换为加粗【导读】块：
+
+```markdown
+##### 【新智元导读】太疯狂了！Anthropic 刚刚发布 XX 新版，上线神秘功能 YY……直接变身「云端员工」。更刺激的是，Opus 4.7 即将本周闪电发布。
+```
+
+导读必须：1-3 句、加粗 H5 标题、至少含 1 个爆点 + 1 个预告 + 1 个戏剧形容词（太疯狂/更刺激/直接变身）。
+
+#### 3d-H. Style H 硬约束检查（仅 Style H）
+
+写作**开始前**必须满足：
+
+1. **`_evidence.json` 必须存在**（与 article.md 同目录 / 或 materials.md 同目录）
+   - 不存在 → **BLOCK**，提示用户先跑 `/article-craft:evidence <materials.md>`
+2. **至少 2 张可用证据图**（`sources[].images` 总数 + `manual[].path` 存在 ≥ 2）
+   - 不足 → **BLOCK**，提示补 materials.md
+3. **至少 1 条竞争/对手叙事素材**（`gated` 或 `sources` 中含竞品名 / 股价 / 对垒描述）
+   - 不足 → 警告，允许继续但 review 会扣分
+
+写作**中**消费 `_evidence.json`：
+
+- **源图直引**：正文写 `<!-- HARVEST: <sources[i].url> idx=<N> caption="..." -->`
+  screenshot skill 阶段会展开成 `![caption](远端 url)`
+- **本地截图**：走标准 `<!-- SCREENSHOT: /abs/path caption="..." -->`
+- **付费墙源**：不配图，用引用句式
+  - `据 The Information 独家爆料，…`
+  - `知情人士透露，…`
+  - `泄露文件显示，…`
+
+写作**结尾**必须：
+
+1. `## 参考资料` 小节列出所有 `sources[].url`，按 tier 排序（T0/T1 官方在前）
+2. 公众号三板斧：
+   ```markdown
+   **⭐点赞、转发、在看一键三连⭐**
+
+   **点亮星标，锁定 [账号名] 极速推送！**
+   ```
+
+**Style H H2 钩子句检查**：每个 `## ` 标题必须满足以下至少一条，否则 review 会标记：
+- 含感叹号或问号
+- 含动词/动作（"直捅"、"闪电"、"变身"、"突袭"、"把活干了"）
+- 含代号/数字/爆点（"两周前泄露的 KAIROS"、"Opus 4.7 本周上线"）
+
+**禁止**（Style H 特有）：
+- 学术收尾："综上所述"、"总的来说"、"值得注意的是"
+- 客观中性 H2："功能介绍"、"使用方法"、"工作原理"
+- Obsidian callouts（> [!note] 等全部禁用）
+- blockquote（`>` 前缀除代码内引用外禁用）
 
 #### 3e. Body Sections
 

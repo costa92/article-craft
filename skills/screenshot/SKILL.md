@@ -1,6 +1,6 @@
 ---
 name: article-craft:screenshot
-version: 1.3.4
+version: 1.4.0
 description: "Take web page screenshots with intelligent validation + generate social share cards. Uses Playwright for real browser rendering, validates URLs before capture, detects 404/empty pages, optimizes image size. Supports WeChat, Xiaohongshu, Twitter/X, LinkedIn, and more."
 allowed-tools:
   - Read
@@ -22,6 +22,40 @@ allowed-tools:
 1. **截图前验证** — HEAD 请求检查 URL 可用性，追踪重定向链，检测 404/403/5xx
 2. **渲染后检测** — Playwright 渲染后再次检查页面内容，过滤空页面和 404 页面
 3. **按需截图** — 只截取与文章真正相关的页面，避免堆砌无意义截图
+
+---
+
+## 占位符扫描优先级
+
+scan article.md 时同时识别两种占位符：
+
+| 占位符 | 处理方式 |
+|--------|----------|
+| `<!-- SCREENSHOT: url [opts] -->` | 走下面的"核心流程（截图处理）"完整管线 |
+| `<!-- HARVEST: url idx= \| alt= [caption=] -->` | 读 `_evidence.json` 就地替换为 `![caption](远端 url)`，**不截图不压缩不上 CDN** |
+
+HARVEST 扩展示例处理：
+
+```python
+# 伪代码
+with open(article_dir / "_evidence.json") as f:
+    evidence = json.load(f)
+
+for match in re.finditer(r"<!-- HARVEST: (\S+)(.*?)-->", article_md):
+    src_url, opts = match.group(1), match.group(2)
+    source = find_source_by_url(evidence["sources"], src_url)
+    if not source:
+        warn(f"HARVEST: source {src_url} not in _evidence.json")
+        continue
+    img = pick_image(source["images"], opts)  # 按 idx / alt
+    if not img:
+        warn(f"HARVEST: no matching image for {opts}")
+        continue
+    caption = parse_caption(opts) or img.get("alt") or ""
+    replace(match, f"![{caption}]({img['url']})")
+```
+
+若 `_evidence.json` 不存在 → 保留 HARVEST 占位符，提示用户先跑 `/article-craft:evidence`。
 
 ---
 
@@ -84,6 +118,49 @@ allowed-tools:
 | `WAIT:N` | 额外等待 N 秒（SPA 页面） |
 | `WIDTH:N` | 视口宽度（默认 1280） |
 
+### HARVEST 占位符（Style H 爆料自媒体专用）
+
+和 `SCREENSHOT` 不同，`HARVEST` **不重截图**，而是从源文章直引远端图片 URL：
+
+```markdown
+<!-- HARVEST: https://mp.weixin.qq.com/s/xxx idx=3 -->
+<!-- HARVEST: https://mp.weixin.qq.com/s/xxx alt="Claude Code 并行界面" -->
+<!-- HARVEST: https://mp.weixin.qq.com/s/xxx idx=5 caption="KAIROS 代号泄露" -->
+```
+
+**解析语法：**
+| 字段 | 说明 |
+|------|------|
+| `idx=N` | `_evidence.json` 中该源的 `images[N]`（0-indexed） |
+| `alt="…"` | 按 alt 文本模糊匹配图片（优先级低于 idx） |
+| `caption="…"` | 最终输出到 markdown 的图注文字 |
+
+**展开规则：**
+
+1. 必须先跑 `evidence` skill 生成 `_evidence.json`（同目录）
+2. HARVEST 占位符展开为直接的 markdown 图片引用：
+   ```markdown
+   ![caption](远端 URL)
+   ```
+3. **不下载、不转存、不上 CDN** — 直接用源站 URL，和新智元的做法一致
+4. 源站失效时才警告，不自动补救
+
+**与 SCREENSHOT 的选择：**
+
+| 场景 | 用哪个 |
+|------|--------|
+| 引用源文章里已有的图 | `HARVEST`（直引，省带宽） |
+| 截一个还没有图的页面（GitHub 仓库、文档） | `SCREENSHOT`（自己截、自己上 CDN） |
+| 登录墙 / 付费墙的图 | 都不行，用 manual 本地路径 + `SCREENSHOT: /abs/path` |
+
+**占位符处理阶段：**
+
+screenshot skill 在扫描 `<!-- SCREENSHOT: -->` 的同时扫 `<!-- HARVEST: -->`：
+- 读同目录 `_evidence.json`
+- 按 `url + idx / alt` 查出目标图片 URL
+- 原地替换为 `![caption](远端 url)`
+- 查不到 → 警告 + 保留占位符
+
 ---
 
 ## 使用截图工具脚本
@@ -120,6 +197,22 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py batch /tmp/batch.jsonl 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py check "https://github.com/user/repo"
 ```
+
+### Harvest：从源文章抓图片清单（Style H 专用）
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py harvest \
+  "https://mp.weixin.qq.com/s/xxx" \
+  -o /tmp/harvest.json \
+  -w 2 \
+  --min-width 200
+```
+
+- **Playwright 优先**：快、可 JS 渲染
+- **baoyu-fetch 兜底**：遇 CAPTCHA / 登录墙 / 付费墙自动切换（需 `bun` + `baoyu-skills` 插件）
+- 输出 JSON：`{source_url, title, method, images: [{idx, url, alt, context, width, height}], warnings, error}`
+- `--no-fallback`：禁用兜底（纯 Playwright）
+- 批量跑建议用 `evidence` skill 的 `evidence.py collect`，它会对 materials.md 里每条 URL 自动调用此命令
 
 ---
 
