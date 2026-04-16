@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.4.9] - 2026-04-16
+
+### Added
+
+- **`expand-harvest --dry-run`** — preview mode. Parses placeholders, resolves images against `_evidence.json`, and reports what would happen (including whether each URL matches the rehost whitelist), but **skips all network calls and never writes `article.md`**. Added after an integration test accidentally uploaded 3 real images to the project's CDN during a hand-run check — `--dry-run` is the "no side effects" escape hatch.
+- **`expand-harvest --strict`** — preflight quality gate. If any placeholder resolves to `source_not_in_evidence` or `no_matching_image`, the subcommand exits `1` and **does not modify `article.md`**. Intended as an orchestrator / CI gate before the (irreversible, network-spending) real expand. Works in combination with `--dry-run` to validate materials.md correctness without any upload.
+- **New `trace[].rehost` states for dry-run**: `would_rehost` / `skipped_mode_never` / `skipped_not_whitelisted`. Makes the preview output actionable — you can see exactly which images would flow through rehost vs pass through.
+- **Summary fields `dry_run` / `strict` / `would_write`** in the JSON output, so downstream tooling can distinguish preview from real runs.
+
+### Design note
+
+`--strict` wraps around `--dry-run` cleanly: one to confirm the article parses correctly, the other to commit. Recommended orchestrator flow:
+
+```bash
+# preflight
+expand-harvest --dry-run --strict   # exit 1 → fix materials first
+# real run
+expand-harvest                       # network calls + article mutation
+```
+
 ## [1.4.8] - 2026-04-16
 
 ### Fixed
