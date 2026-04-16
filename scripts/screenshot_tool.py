@@ -757,6 +757,133 @@ def rehost_image(url: str, mode: str = "auto") -> dict:
     return result
 
 
+# ─── Expand-harvest：把 article.md 里的 <!-- HARVEST: --> 占位符就地替换为图片 ──
+#
+# 替代 screenshot/SKILL.md 里的 pseudocode：在一个原子、可测试、带完整日志的
+# 子命令里做查表 + rehost + 替换。SKILL.md 只需要 subprocess.run 一下。
+
+HARVEST_PLACEHOLDER_RE = re.compile(
+    r"<!--\s*HARVEST:\s*(\S+)(.*?)-->",
+    re.DOTALL,
+)
+
+
+def _parse_harvest_opts(opts_str: str) -> dict:
+    """Parse `idx=N alt=\"…\" caption=\"…\" rehost=auto|always|never --cover`."""
+    out: dict = {}
+    if re.search(r"(?:^|\s)(?:--cover|cover\s*=\s*(?:1|true|yes))(?=\s|$)", opts_str, re.IGNORECASE):
+        out["cover"] = True
+    m = re.search(r"\bidx\s*=\s*(\d+)", opts_str)
+    if m:
+        out["idx"] = int(m.group(1))
+    m = re.search(r'\balt\s*=\s*"([^"]+)"', opts_str)
+    if m:
+        out["alt"] = m.group(1)
+    m = re.search(r'\bcaption\s*=\s*"([^"]+)"', opts_str)
+    if m:
+        out["caption"] = m.group(1)
+    m = re.search(r"\brehost\s*=\s*(auto|always|never)\b", opts_str)
+    if m:
+        out["rehost"] = m.group(1)
+    return out
+
+
+def _pick_harvest_image(source: dict, opts: dict) -> dict | None:
+    """Return `{url, alt?}` or None. Cover beats idx beats alt."""
+    if opts.get("cover"):
+        cover_url = source.get("cover")
+        return {"url": cover_url, "alt": "cover"} if cover_url else None
+    imgs = source.get("images") or []
+    if "idx" in opts:
+        i = opts["idx"]
+        return imgs[i] if 0 <= i < len(imgs) else None
+    if opts.get("alt"):
+        needle = opts["alt"].lower()
+        for img in imgs:
+            if needle in (img.get("alt") or "").lower():
+                return img
+    return None
+
+
+def expand_harvest(article_path: str, evidence_path: str | None = None) -> dict:
+    """
+    Resolve every `<!-- HARVEST: url ... -->` in article.md against `_evidence.json`,
+    optionally rehost the image URL, and rewrite the article in place.
+
+    Returns a summary dict: counts + per-placeholder trace.
+    """
+    article = Path(article_path).resolve()
+    if not article.exists():
+        return {"ok": False, "error": f"article not found: {article}"}
+
+    ev_path = Path(evidence_path) if evidence_path else article.parent / "_evidence.json"
+    if not ev_path.exists():
+        return {"ok": False, "error": f"_evidence.json not found: {ev_path}"}
+
+    evidence = json.loads(ev_path.read_text(encoding="utf-8"))
+    sources_by_url: dict[str, dict] = {
+        s.get("url"): s for s in (evidence.get("sources") or []) if s.get("url")
+    }
+
+    body = article.read_text(encoding="utf-8")
+    summary = {
+        "ok": True,
+        "article": str(article),
+        "evidence": str(ev_path),
+        "expanded": 0,
+        "rehosted": 0,
+        "failed": 0,
+        "total": 0,
+        "trace": [],
+    }
+
+    def replace_one(match: re.Match) -> str:
+        summary["total"] += 1
+        src_url = match.group(1).strip()
+        opts_str = match.group(2) or ""
+        opts = _parse_harvest_opts(opts_str)
+        trace: dict = {"src_url": src_url, "opts": opts, "status": "", "final_url": ""}
+
+        source = sources_by_url.get(src_url)
+        if source is None:
+            trace["status"] = "source_not_in_evidence"
+            summary["failed"] += 1
+            summary["trace"].append(trace)
+            return match.group(0)  # keep placeholder intact
+
+        img = _pick_harvest_image(source, opts)
+        if img is None or not img.get("url"):
+            trace["status"] = "no_matching_image"
+            summary["failed"] += 1
+            summary["trace"].append(trace)
+            return match.group(0)
+
+        final_url = img["url"]
+        rehost_mode = opts.get("rehost", "auto")
+        if rehost_mode != "never":
+            rh = rehost_image(img["url"], mode=rehost_mode)
+            if rh.get("ok") and rh.get("rehosted"):
+                final_url = rh["final_url"]
+                summary["rehosted"] += 1
+                trace["rehost"] = "yes"
+                trace["rehost_reason"] = rh.get("reason", "")
+            elif not rh.get("ok"):
+                trace["rehost"] = "failed_degraded"
+                trace["rehost_reason"] = rh.get("reason", "")
+
+        caption = opts.get("caption") or img.get("alt") or ""
+        trace["status"] = "expanded"
+        trace["final_url"] = final_url
+        summary["expanded"] += 1
+        summary["trace"].append(trace)
+        return f"![{caption}]({final_url})"
+
+    new_body = HARVEST_PLACEHOLDER_RE.sub(replace_one, body)
+    if new_body != body:
+        article.write_text(new_body, encoding="utf-8")
+    return summary
+
+
 # ─── Harvest：从源文章提取图片清单（直引远端 URL，不截图不下载）───────────────
 
 # Style H (爆料自媒体) 依赖：新智元等公众号爆款的"图"其实都是直引源站，
@@ -795,6 +922,7 @@ def harvest_images(source_url: str, wait: int = 2,
     result = {
         "source_url": source_url,
         "title": "",
+        "cover": "",
         "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "method": "none",
         "images": [],
@@ -849,6 +977,23 @@ def harvest_images(source_url: str, wait: int = 2,
                         "Playwright 命中验证/登录墙，尝试 baoyu-fetch 兜底"
                     )
                 else:
+                    # og:image / twitter:image → source cover
+                    cover = page.evaluate("""() => {
+                        const sel = [
+                            'meta[property="og:image"]',
+                            'meta[name="og:image"]',
+                            'meta[name="twitter:image"]',
+                            'meta[property="twitter:image"]',
+                        ];
+                        for (const s of sel) {
+                            const el = document.querySelector(s);
+                            if (el && el.content) return el.content;
+                        }
+                        return '';
+                    }""")
+                    if cover:
+                        result["cover"] = cover
+
                     # 取所有 <img>
                     raw_imgs = page.evaluate("""() => {
                         const imgs = Array.from(document.querySelectorAll('img'));
@@ -871,7 +1016,8 @@ def harvest_images(source_url: str, wait: int = 2,
                     result["images"] = filtered[:HARVEST_IMG_MAX_COUNT]
                     result["method"] = "playwright"
                     playwright_ok = True
-                    print(f"     ✅ Playwright harvested {len(result['images'])} images")
+                    print(f"     ✅ Playwright harvested {len(result['images'])} images"
+                          + (f" (cover: yes)" if cover else ""))
 
             browser.close()
     except PlaywrightError as e:
@@ -893,6 +1039,7 @@ def harvest_images(source_url: str, wait: int = 2,
         if fb.get("images"):
             result["images"] = fb["images"][:HARVEST_IMG_MAX_COUNT]
             result["title"] = fb.get("title") or result["title"]
+            result["cover"] = fb.get("cover") or result["cover"]
             result["method"] = "baoyu-fetch"
             result["warnings"].extend(fb.get("warnings", []))
             print(f"     ✅ baoyu-fetch harvested {len(result['images'])} images")
@@ -1013,9 +1160,18 @@ def _harvest_via_baoyu_fetch(source_url: str, min_width: int) -> dict:
                 })
 
         filtered = _filter_harvest_images(raw_imgs, min_width)
+        doc = data.get("document", {}) or {}
+        cover = doc.get("coverImage") or doc.get("featuredMedia") or ""
+        # baoyu-fetch may put cover in media[] with role="cover"
+        if not cover:
+            for m in (data.get("media") or []):
+                if m.get("role") == "cover" and m.get("url"):
+                    cover = m["url"]
+                    break
         return {
             "images": filtered,
-            "title": (data.get("document", {}) or {}).get("title", ""),
+            "title": doc.get("title", ""),
+            "cover": cover,
             "warnings": [],
         }
     except subprocess.TimeoutExpired:
@@ -1078,6 +1234,13 @@ def main():
                      choices=["auto", "always", "never"],
                      help="auto=仅白名单 CDN (默认), always=全部, never=跳过")
 
+    # expand-harvest 子命令（把 article.md 里的 HARVEST 占位符原地展开）
+    eh = sub.add_parser("expand-harvest",
+                         help="查 _evidence.json 展开 article.md 里的 HARVEST 占位符")
+    eh.add_argument("--article", required=True, help="article.md 绝对路径")
+    eh.add_argument("--evidence", default="",
+                     help="_evidence.json 路径，默认取 article 同目录")
+
     args = parser.parse_args()
 
     if args.command == "check":
@@ -1110,6 +1273,11 @@ def main():
         res = rehost_image(args.url, mode=args.mode)
         print(json.dumps(res, indent=2, ensure_ascii=False))
         sys.exit(0 if res["ok"] else 1)
+
+    if args.command == "expand-harvest":
+        res = expand_harvest(args.article, args.evidence or None)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        sys.exit(0 if res.get("ok") else 1)
 
     if args.command == "screenshot":
         res = capture_screenshot(

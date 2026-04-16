@@ -1,6 +1,6 @@
 ---
 name: article-craft:screenshot
-version: 1.4.6
+version: 1.4.7
 description: "Take web page screenshots with intelligent validation + generate social share cards. Uses Playwright for real browser rendering, validates URLs before capture, detects 404/empty pages, optimizes image size. Supports WeChat, Xiaohongshu, Twitter/X, LinkedIn, and more."
 allowed-tools:
   - Read
@@ -34,42 +34,44 @@ scan article.md 时同时识别两种占位符：
 | `<!-- SCREENSHOT: url [opts] -->` | 走下面的"核心流程（截图处理）"完整管线 |
 | `<!-- HARVEST: url idx= \| alt= [caption=] -->` | 读 `_evidence.json` 就地替换为 `![caption](远端 url)`，**不截图不压缩不上 CDN** |
 
-HARVEST 扩展示例处理（含 v1.4.6 rehost）：
+HARVEST 展开由 `expand-harvest` 子命令原子处理（v1.4.7+，替代之前的
+SKILL.md 伪代码）：
 
-```python
-# 伪代码
-with open(article_dir / "_evidence.json") as f:
-    evidence = json.load(f)
-
-for match in re.finditer(r"<!-- HARVEST: (\S+)(.*?)-->", article_md):
-    src_url, opts = match.group(1), match.group(2)
-    source = find_source_by_url(evidence["sources"], src_url)
-    if not source:
-        warn(f"HARVEST: source {src_url} not in _evidence.json")
-        continue
-    img = pick_image(source["images"], opts)  # 按 idx / alt
-    if not img:
-        warn(f"HARVEST: no matching image for {opts}")
-        continue
-    caption = parse_caption(opts) or img.get("alt") or ""
-    # v1.4.6: rehost step — auto-detect hotlink-blocked CDNs (mmbiz, sinaimg,
-    # zhimg) and re-upload to our own CDN. Non-whitelist URLs pass through.
-    # Per-placeholder override `rehost=never|always` in opts beats the default.
-    rehost_mode = parse_rehost(opts) or "auto"
-    final_url = img["url"]
-    if rehost_mode != "never":
-        result = subprocess.run([
-            "python3", f"{CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py",
-            "rehost", "--url", img["url"], "--mode", rehost_mode,
-        ], capture_output=True, text=True)
-        payload = json.loads(result.stdout)
-        if payload["ok"] and payload["rehosted"]:
-            final_url = payload["final_url"]
-        # else: graceful degradation — keep original img["url"] (warn in log)
-    replace(match, f"![{caption}]({final_url})")
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py expand-harvest \
+  --article /ABSOLUTE/PATH/article.md \
+  [--evidence /ABSOLUTE/PATH/_evidence.json]   # 默认 article 同目录
 ```
 
-若 `_evidence.json` 不存在 → 保留 HARVEST 占位符，提示用户先跑 `/article-craft:evidence`。
+内部流程（从 SKILL.md 抽到 Python 实现，确定性可测）：
+
+1. 读 `_evidence.json`，按 `source.url` 建索引
+2. 正则扫 article.md 的 `<!-- HARVEST: url opts -->`
+3. 每条占位符：
+   - 解析 `idx=N` / `alt="…"` / `caption="…"` / `--cover` / `rehost=auto|always|never`
+   - `--cover` 优先于 `idx` 优先于 `alt` 命中图片
+   - 选中图 → 按 `rehost` 模式跑 `rehost_image()`（auto 默认，白名单 CDN 换托管）
+   - 替换为 `![caption](final_url)`；失败 / 源不在 evidence / idx 越界 → **保留占位符**
+4. 原地写回 article.md，返回 JSON 摘要：
+
+```json
+{
+  "ok": true, "article": "...", "evidence": "...",
+  "total": 7, "expanded": 4, "rehosted": 3, "failed": 3,
+  "trace": [
+    {"src_url": "...", "opts": {"idx": 0, "caption": "封面"},
+     "status": "expanded", "final_url": "...", "rehost": "yes", "rehost_reason": "..."},
+    {"src_url": "...", "status": "source_not_in_evidence"},
+    {"src_url": "...", "opts": {"idx": 99}, "status": "no_matching_image"}
+  ]
+}
+```
+
+`status` 值：`expanded` / `source_not_in_evidence` / `no_matching_image`。
+
+退出码：`0` = 整体流程跑完（即使 failed > 0）；`1` = article 或 evidence 文件缺失。
+
+若 `_evidence.json` 不存在 → `ok=false`，提示用户先跑 `/article-craft:evidence`。
 
 ---
 
@@ -141,15 +143,21 @@ for match in re.finditer(r"<!-- HARVEST: (\S+)(.*?)-->", article_md):
 <!-- HARVEST: https://mp.weixin.qq.com/s/xxx alt="Claude Code 并行界面" -->
 <!-- HARVEST: https://mp.weixin.qq.com/s/xxx idx=5 caption="KAIROS 代号泄露" -->
 <!-- HARVEST: https://mp.weixin.qq.com/s/xxx idx=3 rehost=never -->
+<!-- HARVEST: https://mp.weixin.qq.com/s/xxx --cover caption="源文封面" -->
 ```
 
 **解析语法：**
 | 字段 | 说明 |
 |------|------|
-| `idx=N` | `_evidence.json` 中该源的 `images[N]`（0-indexed） |
+| `--cover` 或 `cover=1` | 使用源页面的 `og:image` / `twitter:image` / baoyu-fetch `coverImage` — 不走 `images[]` 列表 |
+| `idx=N` | `_evidence.json` 中该源的 `images[N]`（0-indexed，过滤后的序号） |
 | `alt="…"` | 按 alt 文本模糊匹配图片（优先级低于 idx） |
 | `caption="…"` | 最终输出到 markdown 的图注文字 |
 | `rehost=auto\|always\|never` | 覆盖默认 rehost 策略（默认 `auto`） |
+
+**优先级**：`--cover` > `idx=` > `alt=`。同一占位符里可叠加 `caption=` 和 `rehost=`。
+
+> **注意**：`idx=N` 的 N 是 `_evidence.json` 里 `images[]` 过滤后的序号（按出现顺序排，尺寸低于 `min_width` 已被剔除），不是源页面原始的 `imgIndex`。以 evidence JSON 为准，不要数源页面。
 
 **展开规则（v1.4.6+）：**
 
@@ -233,7 +241,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py harvest \
 
 - **Playwright 优先**：快、可 JS 渲染
 - **baoyu-fetch 兜底**：遇 CAPTCHA / 登录墙 / 付费墙自动切换（需 `bun` + `baoyu-skills` 插件）
-- 输出 JSON：`{source_url, title, method, images: [{idx, url, alt, context, width, height}], warnings, error}`
+- 输出 JSON：`{source_url, title, cover, method, images: [{idx, url, alt, context, width, height}], warnings, error}` — `cover` 字段自 v1.4.7 起填充 og:image / baoyu-fetch coverImage
 - `--no-fallback`：禁用兜底（纯 Playwright）
 - 批量跑建议用 `evidence` skill 的 `evidence.py collect`，它会对 materials.md 里每条 URL 自动调用此命令
 

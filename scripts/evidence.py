@@ -35,6 +35,7 @@ materials.md 格式（简易）:
       "note": "...",
       "title": "...",
       "method": "playwright" | "baoyu-fetch",
+      "cover": "url or ''",            # og:image / twitter:image / coverImage
       "images": [{ "idx", "url", "alt", "context", "width", "height" }, ...]
     }
   ],
@@ -203,6 +204,7 @@ def harvest_public_sources(public: list, wait: int = 2,
             results.append({
                 **item,
                 "title": data.get("title", ""),
+                "cover": data.get("cover", ""),
                 "method": data.get("method", "unknown"),
                 "images": data.get("images", []),
                 "warnings": data.get("warnings", []),
