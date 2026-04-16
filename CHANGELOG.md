@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.4.7] - 2026-04-16
+
+### Added
+
+- **`--cover` HARVEST syntax** (gap 3 from the v1.4.6 scoping). Source pages' cover image is now extracted during `harvest` (Playwright reads `og:image` / `twitter:image` meta tags; baoyu-fetch fallback reads `document.coverImage` / `media[]` role=cover) and stored at `source.cover` in `_evidence.json`. HARVEST placeholders gain `--cover` / `cover=1` to pick this instead of an `images[N]` entry. Priority: `--cover` > `idx=` > `alt=`.
+- **`expand-harvest` subcommand** on `scripts/screenshot_tool.py` — real Python implementation of what used to be pseudocode in `screenshot/SKILL.md`. Takes `--article` and optional `--evidence`, reads `_evidence.json`, walks every `<!-- HARVEST: ... -->` placeholder, resolves the image (`--cover` / `idx=` / `alt=`), invokes `rehost_image()` per the placeholder's mode, rewrites `article.md` in place. Returns a JSON summary with per-placeholder trace: `status ∈ {expanded, source_not_in_evidence, no_matching_image}`, plus counts for `expanded` / `rehosted` / `failed`.
+- **HARVEST opts parser** `_parse_harvest_opts()` — handles `idx=N`, `alt="…"`, `caption="…"`, `rehost=auto|always|never`, and `--cover` / `cover=1|true|yes`. Tested against 11 syntax variants.
+- **`_pick_harvest_image()`** resolver with explicit priority: cover beats idx beats alt. alt uses case-insensitive substring match against `images[].alt`.
+
+### Changed
+
+- **screenshot/SKILL.md**: the HARVEST expansion section drops the ~25 lines of Python pseudocode, replaced by a single `subprocess.run` against `expand-harvest`. The SKILL.md now just documents what the subcommand does and what its JSON trace means — the actual loop / rehost / substitute logic lives in a testable Python function.
+- **`harvest` CLI output**: result JSON now includes a `cover` field (empty string when not available).
+- **`evidence.py` `_evidence.json` schema**: `sources[i]` gains `cover` field, pass-through from `harvest_images()` result.
+
+### Why this pairs well
+
+The v1.4.6 rehost pipeline added non-trivial decision logic (whitelist matching, per-placeholder mode override, graceful degradation). Leaving that logic as pseudocode in SKILL.md meant Claude would re-derive the flow each run, with risk of drift. Moving it into a subcommand:
+
+1. Makes rehost failures observable per-placeholder via the `trace[]` array
+2. Lets `--cover` slot in as one more resolver case with zero prompt-engineering
+3. Reduces SKILL.md token cost (~25 lines of code → 1 subprocess call)
+4. Unit-testable: the 7-placeholder end-to-end run exercises expanded / source-missing / idx-out-of-range / alt-substring / --cover / rehost=never / graceful-degradation in one article
+
 ## [1.4.6] - 2026-04-16
 
 ### Added
