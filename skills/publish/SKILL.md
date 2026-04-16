@@ -1,6 +1,6 @@
 ---
 name: article-craft:publish
-version: 1.4.16
+version: 1.4.17
 description: "Place article in knowledge base and optimize for distribution. Use after review to save the article to its final location."
 allowed-tools:
   - Read

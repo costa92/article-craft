@@ -9,7 +9,7 @@
     {
       "name": "article-craft",
       "description": "Modular article generation plugin — 11 composable skills for the full article lifecycle",
-      "version": "1.4.16",
+      "version": "1.4.17",
       "source": "./"
     }
   ]

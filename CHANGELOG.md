@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.4.17] - 2026-04-16
+
+### Fixed
+
+- **Screenshot skill was capturing entire scrolling pages instead of the relevant content.** Two compounding bugs:
+  1. `suggest_selector()` for `github.com/<user>/<repo>` returned `#repo-content-pjax-container` (the entire repo content pane incl. file tree + sidebar = basically full page). Changed to `"article#readme, #readme, article.markdown-body, .markdown-body"` — try in order, pick the first that exists and is ≥ 400px tall.
+  2. When `suggest_selector()` returned an empty string (no pattern matched), `capture_screenshot()` fell through to `full_page=True`. For an unknown URL with no writer-supplied selector, this silently produced a giant scrolling capture. Changed default to `full_page=False` (viewport only / above-the-fold) so the image stays manageable and obviously "the main thing" on that page.
+- **Candidate selector iteration.** Previously `.split(",")[0]` used only the first comma-separated candidate; if it didn't match, the code stopped. Now iterates all candidates, rejecting any whose bounding box height is < 400px so too-narrow elements (e.g., a single feature card) don't get picked as the "content zone" on landing pages.
+- **Extended doc-pattern match list** in `suggest_selector()`: adds `official.`, `/guide/`, `/reference/`, `/getting-started`, `/quickstart`, `/tutorial`, `/manual` so product docs sites like `mempalaceofficial.com/guide/hooks.html` resolve to `article, main, ...` instead of falling through to the viewport fallback.
+
+### Added
+
+- **Recommended-selectors table in `skills/write/SKILL.md`** Section 3f — writer now has an explicit reference for which selectors to pair with which URL types (GitHub repo → `#readme`, docs site → `main` or `article`, Twitter status → `[data-testid="tweet"]`, etc.).
+
+### How it was caught
+
+User reported that a published tutorial article (`mempalace-local-memory-tutorial.md`) had two screenshots captured as entire scrolling pages instead of the key sections described in their captions ("README with scam alert + benchmark", "docs homepage hero"). Live end-to-end rescreenshot validated:
+- `github.com/MemPalace/mempalace` → `article.markdown-body` (3597px tall — the full README, matching caption)
+- `mempalaceofficial.com` → viewport (1280×800 hero section — the actual landing page, not a feature card)
+
+### Takeaway
+
+Any "smart selector" path that returns nothing or a null-match needs an opinionated narrow-ish default (viewport beats full-page for unattended captures). Writer guidance table prevents this from recurring as a quiet regression.
+
 ## [1.4.16] - 2026-04-16
 
 ### Fixed

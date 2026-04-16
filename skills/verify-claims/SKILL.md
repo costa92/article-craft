@@ -1,6 +1,6 @@
 ---
 name: article-craft:verify-claims
-version: 1.4.16
+version: 1.4.17
 description: "Post-write claim verification — scan article body for shell commands and check they exist on PATH. Runs after images, before review. Companion to the pre-write verify stage (source vetting)."
 allowed-tools:
   - Read
