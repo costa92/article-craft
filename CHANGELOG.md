@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.4.14] - 2026-04-16
+
+### Added
+
+- **Drop-in HARVEST placeholder block** in `_harvest_menu.md`. For each source, a fenced markdown code block renders the recommended picks as ready-to-paste `<!-- HARVEST: url idx=N caption="..." -->` lines. Writer copies the block, replaces `...` with actual captions, deletes unused lines. GIF picks carry an inline `# GIF / 动图` comment.
+
+### Why
+
+v1.4.13 gave the writer recommended idx values. But the writer still had to manually compose `<!-- HARVEST: {url} idx={N} caption="..." -->` — typing the URL, remembering `--cover` syntax, deciding GIF vs still. This removes all that boilerplate. The full recommendation structure (1 cover + up to 5 main + all GIF demos) ships pre-wired; writer only types captions.
+
+### Impact
+
+Pipeline progression for the writer now looks like:
+1. `cat _harvest_menu.md` — see 28 images summarized + recommendations
+2. Copy the "🧱 Drop-in HARVEST placeholders" block
+3. Paste into article.md at the chosen narrative positions
+4. Replace `...` with captions (the only non-mechanical step)
+5. Delete unused lines
+6. Save — write Step 7 Check C validates against `_evidence.json` via `expand-harvest --dry-run --strict`
+
+Zero URL typing, zero idx guessing, zero cover-syntax recall. The remaining cognitive load is exactly what it should be: where each image goes in the narrative and what its caption says.
+
 ## [1.4.13] - 2026-04-16
 
 ### Added
