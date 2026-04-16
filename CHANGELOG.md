@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.4.11] - 2026-04-16
+
+### Added
+
+- **New `harvest-menu` subcommand** — emits a writer-facing cheat-sheet from `_evidence.json` listing every HARVEST option with its exact `idx=N` value. Default output is markdown (a table per source with `idx | dim | fmt | alt` + ready-to-paste placeholder examples); `--json` emits structured data. Cover availability, paywall citations, and local manual files are each their own section.
+- **write Step 3d-H now requires reading the menu** before emitting HARVEST placeholders. Replaces the previous "consume `_evidence.json` from memory" approach with a mechanical lookup: `idx` values in the menu are guaranteed to match what `expand-harvest --dry-run --strict` will validate downstream. write is explicitly told: cover from menu example, main images by scanning the `dim` column for the largest, GIFs by filtering `fmt=gif`, and to **not** use `alt="..."` matching for WeChat sources (where all alts are the generic "图片").
+
+### Why this was needed
+
+Running `harvest-menu` against the real 新智元 `_evidence.json` surfaced a subtle systemic issue: all 28 WeChat `<img>` alts come back as "图片" (the generic fallback). A writer guessing "pick the Claude Code UI image by alt" would never match. The menu makes this visible — writer sees 27 identical "图片" alt entries and automatically switches to `idx=` by dimension. No more silent mismatches piling up for v1.4.10's Check C preflight to catch.
+
+### Design note
+
+Three-way purpose split now locked in:
+- `harvest`: crawls a source page, returns list + cover to evidence.py
+- `harvest-menu`: formats that list for the writer, no side effects
+- `expand-harvest`: consumes the placeholders the writer emitted, applies rehost
+
+Each speaks to exactly one actor (collector, writer, expander) and never crosses wires.
+
 ## [1.4.10] - 2026-04-16
 
 ### Added
