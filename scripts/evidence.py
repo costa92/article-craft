@@ -302,6 +302,19 @@ def collect(materials_path: str, output_path: str,
         for f_entry in failed:
             print(f"      {f_entry['url']} — {f_entry['error'][:80]}")
 
+    # Also emit the writer-facing HARVEST menu next to the evidence JSON.
+    # write skill Step 3d-H reads it instead of parsing _evidence.json from memory.
+    menu_path = str(Path(output_path).with_name("_harvest_menu.md"))
+    try:
+        sys.path.insert(0, str(SCRIPT_DIR))
+        from screenshot_tool import harvest_menu  # type: ignore
+        menu_md = harvest_menu(output_path, as_json=False)
+        if isinstance(menu_md, str):
+            Path(menu_path).write_text(menu_md, encoding="utf-8")
+            print(f"   📋 Harvest menu:   {menu_path}")
+    except Exception as e:
+        print(f"   ⚠️  harvest-menu generation failed: {type(e).__name__}: {e}")
+
     return evidence
 
 

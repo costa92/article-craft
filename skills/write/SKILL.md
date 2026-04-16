@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.4.11
+version: 1.4.12
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -220,6 +220,14 @@ If writing as part of a series, inject navigation **after the cover image and be
    - 不足 → 警告，允许继续但 review 会扣分
 
 写作**前**读菜单（v1.4.11+，替代凭记忆猜 idx）：
+
+**优先**读同目录的 `_harvest_menu.md`（evidence.py 自 v1.4.12 起自动生成）：
+
+```bash
+cat /ABSOLUTE/PATH/_harvest_menu.md
+```
+
+**如果菜单文件缺失**（兼容旧版或手动生成 evidence 的情况），回落到命令行生成：
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py harvest-menu \

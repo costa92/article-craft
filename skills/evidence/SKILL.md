@@ -1,6 +1,6 @@
 ---
 name: article-craft:evidence
-version: 1.4.11
+version: 1.4.12
 description: "Collect source evidence (images, quotes, leak references) for Style H (爆料自媒体). Parses materials.md, runs batch harvest on public sources, records manual screenshots and paywalled citations, outputs _evidence.json for write skill."
 allowed-tools:
   - Read
@@ -106,7 +106,14 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/evidence.py parse /path/to/materials.md
 
 ---
 
-## 输出：_evidence.json
+## 输出：两个文件
+
+1. `_evidence.json` — 结构化证据包，供 `expand-harvest` 展开占位符时查表
+2. `_harvest_menu.md` — writer 友好的菜单（v1.4.12+ 自动生成），write Step 3d-H 直接 `cat`
+
+两者在 `-o` 指定的同目录下生成。
+
+## _evidence.json 结构
 
 ```json
 {
