@@ -316,6 +316,20 @@ except ImportError:
     BOTO3_AVAILABLE = False
 
 
+class RateLimitExhausted(Exception):
+    """Raised when every model in the Gemini fallback chain hit 429/503.
+
+    Signals to batch loops that a wait-and-retry is appropriate, whereas
+    other (returned False) failures should fail immediately on that image.
+    """
+
+    def __init__(self, last_error: str, models_tried: list):
+        self.last_error = last_error
+        self.models_tried = models_tried
+        super().__init__(
+            f"All models rate-limited ({len(models_tried)} tried): {last_error[:100]}"
+        )
+
 
 class ImageConfig:
     """图片配置"""
@@ -705,7 +719,8 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
         except Exception:
             pass
 
-    # 遍历模型链，尝试生成图片
+    last_error_was_rate_limit = False
+    last_error_msg = ""
     for i, current_model in enumerate(model_chain, 1):
         try:
             cmd = [
@@ -722,7 +737,6 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
 
             print(f"   尝试 {i}/{len(model_chain)}: 使用 {current_model}")
 
-            # 重试机制：最多3次重试，每次间隔2秒
             @tenacity.retry(
                 stop=tenacity.stop_after_attempt(3),
                 wait=tenacity.wait_exponential(multiplier=1, min=2, max=10),
@@ -755,9 +769,16 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
 
         except Exception as e:
             error_msg = str(e)
+            last_error_msg = error_msg
+            is_rate_limit = (
+                "rate limit" in error_msg.lower()
+                or "503" in error_msg
+                or "429" in error_msg
+                or "resource_exhausted" in error_msg.lower()
+            )
+            last_error_was_rate_limit = is_rate_limit
 
-            # 判断是否是503/429错误，需要降级到下一个模型
-            if "rate limit" in error_msg.lower() or "503" in error_msg or "429" in error_msg:
+            if is_rate_limit:
                 print(f"   ⚠️  {current_model} 遇到限流/服务不可用，尝试降级: {error_msg[:50]}")
             elif "invalid" in error_msg.lower() or "api key" in error_msg.lower():
                 print(f"   ⚠️  {current_model} 遇到API错误，尝试降级: {error_msg[:50]}")
@@ -766,6 +787,8 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
             else:
                 print(f"   ❌ 所有模型都失败: {error_msg}")
 
+    if last_error_was_rate_limit:
+        raise RateLimitExhausted(last_error_msg, model_chain)
     return False
 
 
@@ -1088,6 +1111,44 @@ def dry_run_preview(configs: List[ImageConfig],
     print("=" * 70)
 
 
+BATCH_BACKOFF_DELAYS_SEC = (30, 60, 120)
+
+
+def _generate_with_batch_backoff(config: ImageConfig, resolution: str, model: str) -> bool:
+    """Wrap generate_image() with exponential batch-level backoff on rate-limit exhaustion.
+
+    The model fallback chain (inside generate_image) handles intra-model retries.
+    This wrapper handles the case where EVERY model in the chain is rate-limited —
+    pause the batch, let Gemini's quota reset, then retry the same image.
+
+    Non-rate-limit failures fall through immediately (False), preserving existing
+    "fail that image, continue the batch" semantics.
+    """
+    import random
+
+    for attempt in range(len(BATCH_BACKOFF_DELAYS_SEC) + 1):
+        try:
+            return generate_image(config, resolution, model)
+        except RateLimitExhausted as e:
+            if attempt >= len(BATCH_BACKOFF_DELAYS_SEC):
+                print(
+                    f"   ❌ 批量级退避已用尽（{len(BATCH_BACKOFF_DELAYS_SEC)} 次），"
+                    f"放弃此图: {config.name}"
+                )
+                print(f"      last error: {e.last_error[:80]}")
+                return False
+            delay = BATCH_BACKOFF_DELAYS_SEC[attempt]
+            jitter = random.uniform(0, 5)
+            total = delay + jitter
+            print(
+                f"   ⏳ Rate-limit exhausted — batch-level backoff "
+                f"(retry {attempt + 1}/{len(BATCH_BACKOFF_DELAYS_SEC)}): "
+                f"sleeping {total:.0f}s before retry"
+            )
+            time.sleep(total)
+    return False
+
+
 def generate_and_upload_batch(configs: List[ImageConfig],
                                upload: bool = True,
                                resolution: str = "2K",
@@ -1123,8 +1184,7 @@ def generate_and_upload_batch(configs: List[ImageConfig],
             print(f"\n[{i}/{len(configs)}] 处理: {config.name}")
             print("-" * 70)
 
-            # 生成图片
-            if generate_image(config, resolution, model):
+            if _generate_with_batch_backoff(config, resolution, model):
                 results["generated"] += 1
 
                 # 先记录结果（确保即使上传失败也有记录）
