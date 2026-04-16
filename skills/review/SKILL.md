@@ -1,6 +1,6 @@
 ---
 name: article-craft:review
-version: 1.4.3
+version: 1.4.4
 description: "Quality gate for articles — built-in self-check rules + embedded content scoring. All-in-one review without external dependencies."
 allowed-tools:
   - Read
@@ -75,15 +75,31 @@ rules here — the review skill's job is to apply them, not re-state them.
 
 ---
 
-### Phase 2: Built-in Content Scoring (publish mode only)
+### Phase 2: Built-in Content Scoring (publish mode only) — diagnostic
 
 **If mode is `draft`**: skip this phase. Report self-check results only.
 
-**If mode is `publish`**: Perform 7-dimension scoring directly.
+**If mode is `publish`**: score the article on 7 dimensions, surface actionable
+feedback, let the user decide what to do. **No auto-modify loop.**
+
+#### Why scoring-only
+
+Prior versions (≤ v1.4.3) ran up to 3 rounds of auto-modify whenever `score < 55`,
+with an "oscillation guard" to break early when revisions stopped improving. In
+practice the auto-modify instruction — "for dimensions <7/10, fix corresponding
+issues" — was too open-ended to reliably converge. Rounds often regressed one
+dimension while fixing another (the very oscillation the guard detected), and
+auto-modify risked editing the article after the images stage had shipped, which
+could orphan `<!-- IMAGE: -->` placeholders or CDN URLs (see Rule 11 warning).
+
+v1.4.4 reframes Phase 2 as **diagnostic only**: score it, tell the user
+exactly what's weak and where, let them pick the fix. If they want review to
+also edit, they invoke `/article-craft:review` with a targeted hint (e.g. the
+"AI 痕迹" dimension) or re-run `/article-craft:write` on specific sections.
 
 #### 7-Dimension Scoring (Embedded)
 
-Score each dimension 0-10, total 70 points. Pass threshold: **55/70**.
+Score each dimension 0-10, total 70. Threshold: **55/70**.
 
 | # | Dimension | Weight | Scoring Criteria |
 |---|-----------|--------|----------------|
@@ -97,34 +113,48 @@ Score each dimension 0-10, total 70 points. Pass threshold: **55/70**.
 
 #### Scoring Execution
 
-1. Read article and analyze each dimension
-2. Score each 0-10 based on criteria
-3. Sum total (70 max); record as `score_0`
-4. **If score >= 55**: pass. Proceed to output.
-5. **If score < 55**: auto-modify and re-score. Repeat up to **3 rounds**, with oscillation guard.
+1. Read the article.
+2. For each dimension, assign a 0–10 score and a one-line justification citing
+   specific line numbers or section headings where the deduction came from.
+3. Sum to a `/70` total.
+4. Build a per-dimension feedback list. For every dimension scoring `<7/10`, emit:
+   - **What failed** (one line, concrete — e.g. "Section 「为什么选 uv」 has only 1 code block, Rule 6 wants ≥2")
+   - **Where to fix** (file:line or section heading — actionable)
+   - **Suggested action** (e.g. "re-run /article-craft:write on this section with depth=deep", or "replace 综上所述 in L47")
 
-**Auto-modify strategy**:
-1. Score-based fixes — For dimensions <7/10, fix corresponding issues
-2. Re-score after each modification; call the result `score_{round}`
-3. Never regenerate entire article — only edit weak sections
-4. **Preserve handoff contracts** — never touch `<!-- IMAGE: -->`, `<!-- PROMPT: -->`, `<!-- SCREENSHOT: -->` comments or CDN image URLs during auto-modify. Revisions must not orphan existing images (see Rule 11 warning above).
+5. **Return verdict based on score, not auto-edit:**
+   - `score >= 55` → return **PASS** with full scorecard
+   - `score < 55` → return **NEEDS_REVISION** with scorecard + actionable feedback list + AskUserQuestion
 
-**Oscillation guard** — after each round, compare `score_{round}` to `score_{round-1}`:
-- If `score_{round} > score_{round-1}` and still < 55: continue to next round
-- If `score_{round} <= score_{round-1}`: **break the loop immediately**, do not burn the remaining rounds. The revision is not improving things, likely oscillating between conflicting fixes (e.g., fixing "AI 痕迹" introduces a red-flag word, which the next round fixes by reintroducing AI-pattern phrasing). Jump to the user-decision step.
+#### NEEDS_REVISION prompt
 
-6. **After loop ends** (3 rounds exhausted OR oscillation detected): ask the user:
-   ```
-   Question: "The article scored {current}/70 after {N} rounds (threshold: 55/70).
-              {If oscillation: 'Score stopped improving at round {N}.'}
-              How to proceed?"
-   Options:
-     - Continue revising -- attempt another round (ignores oscillation guard)
-     - Publish anyway -- accept current score
-     - Abort -- stop pipeline
-   ```
+Use AskUserQuestion with these options:
 
-**Why embedded**: No external dependencies. Self-contained scoring.
+```
+Question: "Article scored {score}/70 (threshold: 55/70). Phase 2 is diagnostic
+           — pick how to proceed:"
+Options:
+  - Publish anyway — accept current score and continue to publish stage
+  - Abort — stop pipeline, keep article at current path for manual edit
+  - Re-run write with hints — re-invoke /article-craft:write targeting the
+    weakest dimension(s) listed above (user is shown which dimensions)
+```
+
+Do NOT embed an auto-revision loop. Each round of edits is a new, explicit user
+decision. If the user picks "Re-run write with hints", the orchestrator drops
+back to the write stage with the feedback list as input; it does not stay inside
+review.
+
+**Invariants** (apply to every path):
+
+- Review never touches handoff-contract comments (`<!-- IMAGE: -->`,
+  `<!-- PROMPT: -->`, `<!-- SCREENSHOT: -->`, `<!-- HARVEST: -->`) or CDN image
+  URLs. Images have already been generated by the time review runs; any edit
+  would risk orphaning them.
+- Review never regenerates the whole article.
+- Phase 2 outputs a scorecard + feedback list; mutations only happen if the
+  user explicitly chose "Publish anyway" (no mutation) or "Re-run write with hints"
+  (mutation happens in write, not review).
 
 ---
 
@@ -147,19 +177,30 @@ Score each dimension 0-10, total 70 points. Pass threshold: **55/70**.
 - Rule 10 (References Inline): PASS / FIXED
 - Rule 11 (ASCII Diagram Check): PASS / FIXED (N diagrams converted)
 
-### Phase 2: Built-in Scoring (7 dimensions)
-| Dimension | Score | Status |
+### Phase 2: Diagnostic Scoring (7 dimensions)
+| Dimension | Score | Notes |
 |-----------|-------|-------|
-| AI 痕迹 | X/10 | PASS/FAIL |
-| 标题与 Hook | X/10 | PASS/FAIL |
-| 内容深度 | X/10 | PASS/FAIL |
-| 结构可读 | X/10 | PASS/FAIL |
-| 代码质量 | X/10 | PASS/FAIL |
-| 结尾行动力 | X/10 | PASS/FAIL |
-| 图片配置 | X/10 | PASS/FAIL |
-| **Total** | **X/70** | **PASS (>=55)** |
+| AI 痕迹 | X/10 | L47 has "综上所述"; section 2 repeats "另外" 3× in a row |
+| 标题与 Hook | X/10 | Hook is 118 chars (Rule 2 wants ≤100) |
+| 内容深度 | X/10 | "为什么选 uv" section has only 1 code block (Rule 6 wants ≥2) |
+| 结构可读 | X/10 | ... |
+| 代码质量 | X/10 | ... |
+| 结尾行动力 | X/10 | ... |
+| 图片配置 | X/10 | ... |
+| **Total** | **X/70** | **PASS (≥55) / NEEDS_REVISION (<55)** |
 
-Key feedback: [main points for improvement]
+### Feedback (dimensions scoring <7/10 only)
+For each weak dimension, print:
+- **What failed**: one-line concrete issue
+- **Where**: file:line or section heading
+- **Suggested action**: e.g. "re-run /article-craft:write on section X",
+  "delete L47 redundant sentence", "add a second code block to section Y"
+
+### Verdict
+- **PASS** — score ≥ 55, or score < 55 but user chose "Publish anyway"
+- **NEEDS_REVISION_RERUN_WRITE** — user chose "Re-run write with hints"
+  (orchestrator drops back to write stage with feedback as input)
+- **ABORT** — user chose "Abort"
 ```
 
 ---

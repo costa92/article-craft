@@ -1,6 +1,6 @@
 ---
 name: article-craft
-version: 1.4.3
+version: 1.4.4
 description: "Enhanced full article generation pipeline — orchestrated with intelligent inference, source trust detection, and structure validation. Uses multi-layer requirements, T0-T5 verification focus, and section depth enforcement."
 allowed-tools:
   - Read
@@ -430,17 +430,31 @@ images failed, continue to review. Do NOT stop the pipeline.
 
 #### 3.6 Review (standard mode only)
 
-直接调用 `/article-craft:review`（review skill 是 self-contained：内部已包含 Phase 1 self-check + Phase 2 embedded 7 维评分 + 最多 3 轮自动修订循环）：
+直接调用 `/article-craft:review`。自 v1.4.4 起 review **不再自动修订**，Phase 2
+是诊断性评分，结果直接返回给 orchestrator。
+
 - Pass the article.md absolute file path
-- review skill 自动执行：self-check（11 条规则）→ embedded scoring（7 维）→ 若得分 < 55/70 自动最多重试 3 轮，仍不过则用 AskQuestion 询问用户
+- review 内部执行：Phase 1 self-check（11 条规则，按 `references/self-check-rules.md`）
+  → Phase 2 embedded 7 维评分 → 若得分 < 55/70 用 AskUserQuestion 询问用户
 - **不要单独调用 `review_selfcheck.py`**——review skill 内部会调用它
-- orchestrator 不要再嵌套一层重试循环，信任 review skill 的返回结果即可
+- review 不再嵌套重试循环；每一轮修改都是一次新的显式用户决定
 
 **Outcome:**
-- Review skill returns `PASS` (score ≥ 55 或用户选择 proceed) → continue to publish
-- Review skill returns `ABORT` (用户选择 abort) → stop pipeline, report status
 
-**Status:** Mark `success` on PASS, `failed` on ABORT
+| Return value | Meaning | Orchestrator action |
+|--------------|---------|---------------------|
+| `PASS` | score ≥ 55，或 score < 55 但用户选 "Publish anyway" | 继续到 publish |
+| `NEEDS_REVISION_RERUN_WRITE` | 用户选 "Re-run write with hints" | **回跳到 Step 3.3**，把 review 的 feedback 列表作为输入重跑 write；回跑后 screenshot / images / review 按正常顺序继续。最多回跳 2 次（避免无限循环）；第 3 次 NEEDS_REVISION 强制 AskUserQuestion 不含 rerun 选项 |
+| `ABORT` | 用户选 "Abort" | 停止 pipeline，在 summary 中报告"review ABORT @ score X/70" |
+
+**Rerun loop guard:** track `review_rerun_count` in state file; if ≥ 2 when the
+next review round NEEDS_REVISION, drop "Re-run write with hints" from the
+AskUserQuestion options and surface only "Publish anyway / Abort". This prevents
+the pipeline from cycling write ↔ review indefinitely when the user keeps
+picking rerun.
+
+**Status:** Mark `success` on PASS, `failed` on ABORT, `success` on the
+intermediate rerun (review didn't fail, the user chose to iterate).
 
 > [!note]
 > Skipped in quick and draft modes. Mark as `skipped`.
