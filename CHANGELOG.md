@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.12] - 2026-04-16
+
+### Added
+
+- **`evidence.py collect` now also emits `_harvest_menu.md`** next to `_evidence.json`. Calls `screenshot_tool.harvest_menu()` as a side effect; failure is non-fatal (printed warning, evidence still written).
+- **write Step 3d-H now reads `_harvest_menu.md` by `cat`**, with CLI fallback when the file is missing (compat for legacy evidence output or manual invocations).
+
+### Why
+
+v1.4.11 gave writers a cheat-sheet command (`harvest-menu`) but relied on the writer to remember to run it. That's another step between "evidence exists" and "writer knows what's available" — one the writer can skip. Making the menu a **file** next to `_evidence.json` means it's always present, always fresh, and write skill consumes it with a trivial `cat` rather than a subcommand call.
+
+### Design note
+
+The menu is a pure view of `_evidence.json`. When someone regenerates evidence, menu regenerates too; when evidence is up-to-date, menu is up-to-date. Coupling generation this way avoids "menu out of sync with evidence" — a failure mode you'd otherwise need cache invalidation to prevent.
+
 ## [1.4.11] - 2026-04-16
 
 ### Added

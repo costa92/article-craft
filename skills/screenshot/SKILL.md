@@ -1,6 +1,6 @@
 ---
 name: article-craft:screenshot
-version: 1.4.11
+version: 1.4.12
 description: "Take web page screenshots with intelligent validation + generate social share cards. Uses Playwright for real browser rendering, validates URLs before capture, detects 404/empty pages, optimizes image size. Supports WeChat, Xiaohongshu, Twitter/X, LinkedIn, and more."
 allowed-tools:
   - Read
