@@ -1,6 +1,6 @@
 ---
 name: article-craft
-version: 1.4.1
+version: 1.4.2
 description: "Enhanced full article generation pipeline — orchestrated with intelligent inference, source trust detection, and structure validation. Uses multi-layer requirements, T0-T5 verification focus, and section depth enforcement."
 allowed-tools:
   - Read
@@ -45,32 +45,63 @@ Five modes, selected at invocation:
 
 ## Upgrade Mode
 
-When invoked with `--upgrade /path/to/article.md`, determine what's already done and run only the missing stages:
+When invoked with `--upgrade /path/to/article.md`, use the **state file first,
+heuristics second** strategy. Never trust state over article content — the
+article body is always ground truth.
 
-```
-Detection logic:
-  1. Has CDN image URLs?  → images already done, skip images
-  2. Has <!-- IMAGE: --> placeholders?  → images NOT done, run images
-  3. Has <!-- SCREENSHOT: --> placeholders?  → screenshots NOT done, run screenshots
-  4. File is in 02-技术/ KB directory?  → publish already done, skip publish
-  5. share_card: apply 3.4.5 auto-inference (frontmatter completeness + --share-cards flag)
+### Detection via pipeline_state.py
 
-Upgrade paths:
-  draft → standard:  run verify → screenshot → share_card → images → review → publish
-  draft → quick:     run screenshot → share_card → images
-  quick → standard:  run verify → review → publish
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py missing-stages \
+  --article /ABSOLUTE/PATH/article.md \
+  --mode standard
 ```
 
-Skip stages that have already been completed. Show the upgrade plan before executing:
+Output (JSON):
+
+```json
+{
+  "missing": ["verify", "review", "publish"],
+  "done": ["requirements", "write", "screenshot", "images"],
+  "stale": [],
+  "skipped": [],
+  "source": "state_file" | "hybrid" | "heuristic",
+  "article_scan": {
+    "image_placeholders": 0, "screenshot_placeholders": 0,
+    "harvest_placeholders": 0, "cdn_images": 4,
+    "has_frontmatter": true, "in_kb": false
+  }
+}
+```
+
+**Source field semantics:**
+- `state_file` — the `.article-craft-state.json` exists and article content agrees
+- `hybrid` — state exists but at least one stage is `stale` (state says completed,
+  article content contradicts — re-run it)
+- `heuristic` — no state file; fell back to scanning the article directly
+  (preserves backward compat for articles created before v1.4.2)
+
+**Conflict resolution:** any stage listed in `stale` is re-added to `missing`.
+The article's actual content (placeholders, CDN URLs, KB location) wins.
+
+### Show the plan
 
 ```
 Upgrading: /path/to/article.md
+  Detection source: state_file (hybrid: images marked completed but 1 placeholder remains)
   verify:     will run (not done)
-  screenshot: will run (2 placeholders found)
-  images:     will run (3 placeholders found)
+  screenshot: done ✓
+  images:     will run (stale — 1 placeholder)
   review:     will run (not done)
   publish:    will run (not in KB)
   Proceed? [Y/n]
+```
+
+If no state file exists (pure `heuristic` source), print a note:
+
+```
+No .article-craft-state.json found — using content heuristics.
+(Articles created with article-craft ≥ v1.4.2 have state files; older ones fall back here.)
 ```
 
 ## Pipeline Execution
@@ -115,7 +146,7 @@ Parse the invocation arguments:
 - If a file path to an existing `.md` file is provided → skip requirements/verify/write,
   start from images skill
 
-### Step 2: Initialize Status Tracker
+### Step 2: Initialize Status Tracker + State File
 
 Track each skill's status throughout the pipeline:
 
@@ -141,9 +172,92 @@ Pipeline Status:
 
 Update status as each skill runs: `pending → running → success | failed | skipped`
 
+**Persistent state file (new in v1.4.2):** in addition to the in-chat tracker,
+write machine-readable stage status to `.article-craft-state.json` next to
+the article. This is what `--upgrade` mode reads to resume interrupted runs.
+
+Once Step 3.3 has produced an `article.md` path, init the state file:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py init \
+  --article /ABSOLUTE/PATH/article.md \
+  --mode standard \
+  --writing-style H
+```
+
+### State Write Protocol (applies to every stage in Step 3)
+
+For each stage invocation below, bracket it with state-file writes so that
+interrupted pipelines can resume cleanly.
+
+**Before calling the skill** (stage transitions from pending → running):
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py start \
+  --article /ABSOLUTE/PATH/article.md \
+  --stage <stage-name>
+```
+
+**After the skill returns successfully:**
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py complete \
+  --article /ABSOLUTE/PATH/article.md \
+  --stage <stage-name> \
+  --result '{"<stage-specific metrics>": ...}'
+```
+
+**On skill failure (non-fatal — pipeline continues with degradation):**
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py fail \
+  --article /ABSOLUTE/PATH/article.md \
+  --stage <stage-name> \
+  --error "<short error message>" \
+  --partial '{"<any partial progress>": ...}'
+```
+
+**On mode-based skip (stage doesn't apply to the current mode):**
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py skip \
+  --article /ABSOLUTE/PATH/article.md \
+  --stage <stage-name> \
+  --reason "<why — e.g. 'quick mode' or 'not Style H'>"
+```
+
+Result payloads per stage (pass as JSON to `--result` / `--partial`):
+
+| Stage | Payload keys |
+|-------|-------------|
+| `requirements` | `topic`, `audience`, `depth`, `writing_style`, `trusted_sources_count`, `materials_path` |
+| `verify` | `sources_checked`, `sources_passed`, `cache_file` |
+| `evidence` | `evidence_json`, `total_images`, `manual_count`, `gated_count` |
+| `write` | `article_path`, `word_count`, `section_count`, `image_placeholders`, `screenshot_placeholders`, `harvest_placeholders` |
+| `screenshot` | `screenshots_captured`, `harvest_expanded` |
+| `share_card` | `cards_generated`, `platforms`, `skip_reason` (if skipped) |
+| `images` | `images_generated`, `images_failed`, `unresolved_placeholders` |
+| `review` | `score_0`, `final_score`, `rounds`, `verdict` |
+| `publish` | `final_path`, `kb_dir` |
+
+**Path updates:** if a stage moves the article (publish), pass the new path as
+`--article` to subsequent calls. The state file is rewritten at the new location.
+
+**Cleanup:** on successful `publish` completion (standard mode only), delete
+the state file:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py cleanup \
+  --article /ABSOLUTE/NEW/PATH/article.md
+```
+
+`draft` and `quick` modes **preserve** the state file so future `--upgrade`
+invocations can resume from it.
+
 ### Step 3: Execute Skills Sequentially
 
-Execute each skill in order, passing context between them.
+Execute each skill in order, passing context between them. Bracket each stage
+with the state write protocol above.
 
 #### 3.1 Requirements (all modes)
 
