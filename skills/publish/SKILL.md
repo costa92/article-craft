@@ -1,6 +1,6 @@
 ---
 name: article-craft:publish
-version: 1.4.14
+version: 1.4.15
 description: "Place article in knowledge base and optimize for distribution. Use after review to save the article to its final location."
 allowed-tools:
   - Read
@@ -123,6 +123,36 @@ Rules:
   - If exists and content differs → rename new file with timestamp suffix (e.g., `article_20260322.md`) and warn user
   - Never silently overwrite an existing file
 
+### Step 3.5: Copy Style H sidecars (v1.4.15+)
+
+If the source directory contains `_evidence.json` and/or `_harvest_menu.md`
+next to the article (Style H signal), **copy them** alongside the article into
+`${ARTICLE_DIR}`. This preserves the evidence context so a future
+`/article-craft --upgrade ${ARTICLE_DIR}/article.md` can resume HARVEST
+operations (re-rehost a rotted CDN URL, regenerate menu, etc.).
+
+```bash
+SRC_DIR="$(dirname /path/to/article.md)"
+
+for sidecar in _evidence.json _harvest_menu.md; do
+  if [ -f "${SRC_DIR}/${sidecar}" ]; then
+    # Collision policy matches the article: identical → skip, different → rename with timestamp
+    cp "${SRC_DIR}/${sidecar}" "${ARTICLE_DIR}/${sidecar}"
+    echo "   ✓ copied sidecar: ${sidecar}"
+  fi
+done
+```
+
+> **Note**: do **not** copy `.article-craft-state.json`. That file is
+> per-pipeline-run and the orchestrator deletes it on publish success (v1.4.2
+> cleanup rule).  `_evidence.json` and `_harvest_menu.md`, by contrast, are
+> **article-level** artifacts that outlive the pipeline run — they're how the
+> writer originally picked HARVEST placeholders, and a future `--upgrade` needs
+> them to interpret those placeholders.
+
+**Non-Style-H articles** have no `_evidence.json`; this step is a silent no-op
+and adds zero overhead.
+
 ### Step 4: WeChat Distribution (optional)
 
 If the user wants to publish to WeChat, invoke `/wechat-seo-optimizer` for title and abstract optimization.
@@ -149,6 +179,7 @@ Output a summary table with all relevant information:
 |------|-------|
 | **File path** | `/absolute/path/to/02-技术/.../article.md` |
 | **KB directory** | `02-技术/<matched-subdirectory>/` |
+| **Sidecars** | `_evidence.json`, `_harvest_menu.md` (copied / none) |
 | **Image status** | N/M uploaded (or "no images" / "N placeholders remaining") |
 | **Review score** | X/70 (PASS/FAIL) |
 | **WeChat** | optimized / skipped |

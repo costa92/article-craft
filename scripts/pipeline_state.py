@@ -199,6 +199,11 @@ def _scan_article(article_path: Path) -> dict[str, Any]:
         "cdn_images": len(re.findall(r"!\[[^\]]*\]\(https?://[^)]*cdn", text)),
         "has_frontmatter": text.lstrip().startswith("---"),
         "in_kb": "/02-技术/" in str(article_path),
+        # Style H signals: publish (v1.4.15+) copies these sidecars into the KB
+        # alongside the article, so their presence lets --upgrade know Style H
+        # even when no state file exists.
+        "has_evidence": (article_path.parent / "_evidence.json").exists(),
+        "has_harvest_menu": (article_path.parent / "_harvest_menu.md").exists(),
     }
 
 
@@ -206,6 +211,10 @@ def _stage_done_heuristic(stage: str, scan: dict[str, Any]) -> bool:
     """Infer whether a stage has been run by inspecting article content."""
     if stage == "requirements":
         return scan.get("has_frontmatter", False)
+    if stage == "evidence":
+        # Presence of _evidence.json sidecar (v1.4.15+ survives publish) means
+        # evidence was run for this article.
+        return scan.get("has_evidence", False)
     if stage == "write":
         return scan.get("has_frontmatter", False)
     if stage == "screenshot":
@@ -234,10 +243,14 @@ def _compute_missing(state: PipelineState, mode: str) -> dict[str, Any]:
     pipeline_mode = mode if mode in MODE_STAGES else "standard"
     want = list(MODE_STAGES[pipeline_mode])
     writing_style = state.state.get("writing_style")
+    scan = _scan_article(state.article_path)
+    # Style H inference: if state doesn't know the style but sidecars exist on
+    # disk (v1.4.15+ publish-preserved _evidence.json), treat as H so evidence
+    # stage is retained in `want` instead of pruned.
+    if writing_style is None and scan.get("has_evidence"):
+        writing_style = "H"
     if writing_style != "H" and "evidence" in want:
         want.remove("evidence")
-
-    scan = _scan_article(state.article_path)
     stages = state.state.get("stages", {})
     have_any_state = bool(stages)
 
