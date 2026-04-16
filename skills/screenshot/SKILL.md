@@ -1,6 +1,6 @@
 ---
 name: article-craft:screenshot
-version: 1.4.5
+version: 1.4.6
 description: "Take web page screenshots with intelligent validation + generate social share cards. Uses Playwright for real browser rendering, validates URLs before capture, detects 404/empty pages, optimizes image size. Supports WeChat, Xiaohongshu, Twitter/X, LinkedIn, and more."
 allowed-tools:
   - Read
@@ -34,7 +34,7 @@ scan article.md 时同时识别两种占位符：
 | `<!-- SCREENSHOT: url [opts] -->` | 走下面的"核心流程（截图处理）"完整管线 |
 | `<!-- HARVEST: url idx= \| alt= [caption=] -->` | 读 `_evidence.json` 就地替换为 `![caption](远端 url)`，**不截图不压缩不上 CDN** |
 
-HARVEST 扩展示例处理：
+HARVEST 扩展示例处理（含 v1.4.6 rehost）：
 
 ```python
 # 伪代码
@@ -52,7 +52,21 @@ for match in re.finditer(r"<!-- HARVEST: (\S+)(.*?)-->", article_md):
         warn(f"HARVEST: no matching image for {opts}")
         continue
     caption = parse_caption(opts) or img.get("alt") or ""
-    replace(match, f"![{caption}]({img['url']})")
+    # v1.4.6: rehost step — auto-detect hotlink-blocked CDNs (mmbiz, sinaimg,
+    # zhimg) and re-upload to our own CDN. Non-whitelist URLs pass through.
+    # Per-placeholder override `rehost=never|always` in opts beats the default.
+    rehost_mode = parse_rehost(opts) or "auto"
+    final_url = img["url"]
+    if rehost_mode != "never":
+        result = subprocess.run([
+            "python3", f"{CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py",
+            "rehost", "--url", img["url"], "--mode", rehost_mode,
+        ], capture_output=True, text=True)
+        payload = json.loads(result.stdout)
+        if payload["ok"] and payload["rehosted"]:
+            final_url = payload["final_url"]
+        # else: graceful degradation — keep original img["url"] (warn in log)
+    replace(match, f"![{caption}]({final_url})")
 ```
 
 若 `_evidence.json` 不存在 → 保留 HARVEST 占位符，提示用户先跑 `/article-craft:evidence`。
@@ -126,6 +140,7 @@ for match in re.finditer(r"<!-- HARVEST: (\S+)(.*?)-->", article_md):
 <!-- HARVEST: https://mp.weixin.qq.com/s/xxx idx=3 -->
 <!-- HARVEST: https://mp.weixin.qq.com/s/xxx alt="Claude Code 并行界面" -->
 <!-- HARVEST: https://mp.weixin.qq.com/s/xxx idx=5 caption="KAIROS 代号泄露" -->
+<!-- HARVEST: https://mp.weixin.qq.com/s/xxx idx=3 rehost=never -->
 ```
 
 **解析语法：**
@@ -134,22 +149,30 @@ for match in re.finditer(r"<!-- HARVEST: (\S+)(.*?)-->", article_md):
 | `idx=N` | `_evidence.json` 中该源的 `images[N]`（0-indexed） |
 | `alt="…"` | 按 alt 文本模糊匹配图片（优先级低于 idx） |
 | `caption="…"` | 最终输出到 markdown 的图注文字 |
+| `rehost=auto\|always\|never` | 覆盖默认 rehost 策略（默认 `auto`） |
 
-**展开规则：**
+**展开规则（v1.4.6+）：**
 
 1. 必须先跑 `evidence` skill 生成 `_evidence.json`（同目录）
-2. HARVEST 占位符展开为直接的 markdown 图片引用：
+2. 根据 `rehost` 模式决定是否改写 URL：
+   - `auto`（默认）：URL 命中白名单 CDN（`mmbiz.qpic.cn` / `mmbiz.qlogo.cn` / `*.sinaimg.cn` / `pic*.zhimg.com`）→ 下载（带正确 Referer）→ 上传我方 CDN → 用新 URL。其他 URL 保持远端。
+   - `always`：每张图都 rehost（不推荐，违背 v1.4.0 "远端 CDN 保持真源"哲学）
+   - `never`：跳过 rehost，永远用远端 URL（写作者明确知道目标平台能直接加载时用）
+3. HARVEST 展开为 markdown 图片引用：
    ```markdown
-   ![caption](远端 URL)
+   ![caption](最终 URL)
    ```
-3. **不下载、不转存、不上 CDN** — 直接用源站 URL，和新智元的做法一致
-4. 源站失效时才警告，不自动补救
+4. rehost 任一步失败 → **降级保留远端 URL + 警告**（不阻断 pipeline）。
+
+**GIF 保留：** 源图若为 GIF（URL 含 `wx_fmt=gif` 或 `.gif` 后缀），rehost 直传原 bytes，不走 Pillow 压缩通道，动图不变静图。
+
+**为什么需要 rehost：** 微信 `mmbiz.qpic.cn` 对非 `mp.weixin.qq.com` 的 Referer **静默**返回 ~2KB 占位 JPEG（HTTP 200！没法看状态码判断）。文章发布到非公众号平台（Obsidian / 博客 / 知乎）时，读者浏览器 Referer 不匹配 → 图变糊占位符。rehost 把图挪到自家 CDN，彻底摆脱源站 Referer 检查。经验证：同 URL 用 `mp.weixin.qq.com` Referer 返回 96KB 原图，用 `google.com` Referer 返回 2086B 占位图。
 
 **与 SCREENSHOT 的选择：**
 
 | 场景 | 用哪个 |
 |------|--------|
-| 引用源文章里已有的图 | `HARVEST`（直引，省带宽） |
+| 引用源文章里已有的图 | `HARVEST`（直引，若源站 hotlink 友好则省带宽；否则 auto rehost） |
 | 截一个还没有图的页面（GitHub 仓库、文档） | `SCREENSHOT`（自己截、自己上 CDN） |
 | 登录墙 / 付费墙的图 | 都不行，用 manual 本地路径 + `SCREENSHOT: /abs/path` |
 
@@ -213,6 +236,23 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py harvest \
 - 输出 JSON：`{source_url, title, method, images: [{idx, url, alt, context, width, height}], warnings, error}`
 - `--no-fallback`：禁用兜底（纯 Playwright）
 - 批量跑建议用 `evidence` skill 的 `evidence.py collect`，它会对 materials.md 里每条 URL 自动调用此命令
+
+### Rehost：给带 hotlink 保护的远端图换托管（v1.4.6+）
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py rehost \
+  --url "https://mmbiz.qpic.cn/xxx?wx_fmt=jpeg" \
+  --mode auto
+```
+
+- `--mode auto`（默认）：仅白名单 CDN（`mmbiz.qpic.cn` / `mmbiz.qlogo.cn` / `*.sinaimg.cn` / `pic*.zhimg.com`）才 rehost
+- `--mode always`：每张图都 rehost
+- `--mode never`：直接返回原 URL（占位符 `rehost=never` 的内部实现路径）
+- 输出 JSON：`{ok, rehosted, original_url, final_url, reason, is_animated}`
+- **exit code**：`0` = ok（含 rehosted=false 的跳过情况），`1` = 失败（final_url 回退到 original_url）
+- 带正确 Referer 下载原图 → 自动识别扩展名（`wx_fmt` 查询参数 / URL 后缀 / Content-Type）→ 传给 `upload_image()` 上传到项目已配置的 CDN（PicGo 或 S3）
+- **GIF 保留**：扩展名为 `.gif` 时，bytes 原样上传，S3 `Content-Type` 正确标为 `image/gif`，不走 Pillow 压缩通道
+- **防静默占位符**：内容 < 4KB 视为 hotlink 挡回来的占位图，fail 且 final_url 回退
 
 ---
 

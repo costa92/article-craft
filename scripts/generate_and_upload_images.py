@@ -911,11 +911,16 @@ def upload_to_s3(image_path: str) -> str:
         date_prefix = datetime.now().strftime("%Y/%m/%d")
         key = f"articles/{date_prefix}/{filename}"
 
+        import mimetypes
+        content_type, _ = mimetypes.guess_type(image_path)
+        if not content_type or not content_type.startswith("image/"):
+            content_type = "image/jpeg"
+
         s3_client.upload_file(
             image_path,
             S3_CONFIG["bucket_name"],
             key,
-            ExtraArgs={'ContentType': 'image/jpeg'}
+            ExtraArgs={'ContentType': content_type}
         )
 
         # Construct public URL

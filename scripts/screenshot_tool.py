@@ -613,6 +613,150 @@ def upload_to_cdn(image_path: str) -> str:
         return image_path
 
 
+# ─── Rehost：下载远端 CDN 图片（带正确 Referer），重新上传到自己图床 ───────────
+#
+# 缘起：微信 mmbiz.qpic.cn 等 CDN 对非同源 Referer 会**静默**返回 ~2KB 占位图
+# （HTTP 200，没法用状态码判断坏掉）。当 HARVEST 出来的文章发布到非公众号
+# 平台（Obsidian / 博客 / 知乎），读者浏览器带的 Referer 不匹配 → 图片糊成
+# 灰占位。rehost 的工作：下载原图（带正确 Referer）→ 上传我方 CDN → 返回新
+# URL，由 HARVEST 占位符 expander 替换进 article.md。
+#
+# 默认 mode=auto：只对白名单 CDN 做 rehost，其他 URL 保持现状。
+
+REHOST_CDN_WHITELIST: dict[str, str] = {
+    # (url-substring → canonical Referer)
+    "mmbiz.qpic.cn":   "https://mp.weixin.qq.com/",
+    "mmbiz.qlogo.cn":  "https://mp.weixin.qq.com/",
+    "sinaimg.cn":      "https://weibo.com/",      # covers ww1/ww2/tva*/wx1-4.sinaimg.cn
+    "zhimg.com":       "https://www.zhihu.com/",  # covers pic1-4.zhimg.com
+}
+
+REHOST_MIN_BYTES = 4096   # defensive stub-detection bar; real source images are 20KB+
+
+
+def _rehost_match_whitelist(url: str) -> tuple[bool, str]:
+    for cdn, referer in REHOST_CDN_WHITELIST.items():
+        if cdn in url:
+            return True, referer
+    return False, ""
+
+
+def _infer_image_extension(url: str, content_type: str = "") -> tuple[str, bool]:
+    """Return (extension-with-dot, is_animated)."""
+    m = re.search(r"[?&]wx_fmt=(gif|png|jpeg|jpg|webp)", url)
+    if m:
+        fmt = m.group(1).lower()
+        if fmt == "gif":
+            return ".gif", True
+        if fmt in ("jpeg", "jpg"):
+            return ".jpg", False
+        return f".{fmt}", False
+    path = url.split("?", 1)[0].split("#", 1)[0].lower()
+    for ext in (".gif", ".png", ".webp", ".jpg", ".jpeg"):
+        if path.endswith(ext):
+            return (".jpg" if ext == ".jpeg" else ext), ext == ".gif"
+    ct = content_type.lower()
+    if "gif" in ct: return ".gif", True
+    if "png" in ct: return ".png", False
+    if "webp" in ct: return ".webp", False
+    return ".jpg", False
+
+
+def rehost_image(url: str, mode: str = "auto") -> dict:
+    """
+    Download a remote image with the correct Referer and re-upload via our CDN.
+
+    Args:
+        url: remote image URL
+        mode: 'auto' (rehost only if URL matches CDN whitelist, DEFAULT),
+              'always' (rehost every URL),
+              'never' (short-circuit, return unchanged).
+
+    Returns:
+        dict with keys: ok, rehosted, original_url, final_url, reason, is_animated.
+        On any failure (network, upload, suspected hotlink stub), ok=False,
+        final_url=original_url (graceful degradation — caller can keep remote URL).
+    """
+    result = {
+        "ok": True, "rehosted": False,
+        "original_url": url, "final_url": url,
+        "reason": "", "is_animated": False,
+    }
+
+    if mode == "never":
+        result["reason"] = "mode=never"
+        return result
+
+    matched, referer = _rehost_match_whitelist(url)
+    if mode == "auto" and not matched:
+        result["reason"] = "url not in rehost whitelist"
+        return result
+
+    # At this point: mode=always OR (mode=auto AND matched)
+    ext, is_animated = _infer_image_extension(url)
+    result["is_animated"] = is_animated
+
+    headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
+    if referer:
+        headers["Referer"] = referer
+
+    try:
+        r = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+    except requests.exceptions.RequestException as e:
+        result["ok"] = False
+        result["reason"] = f"download error: {type(e).__name__}: {e}"
+        return result
+
+    if r.status_code != 200:
+        result["ok"] = False
+        result["reason"] = f"HTTP {r.status_code}"
+        return result
+
+    content = r.content
+    # Silent-hotlink-stub guard: mmbiz returns ~2KB placeholder w/ HTTP 200 on
+    # wrong Referer. A real Style H source image is basically never < 2KB.
+    if len(content) < REHOST_MIN_BYTES:
+        result["ok"] = False
+        result["reason"] = f"suspected hotlink stub ({len(content)}B < {REHOST_MIN_BYTES}B)"
+        return result
+
+    # Refine extension from Content-Type if we couldn't decide from URL
+    ct = r.headers.get("content-type", "")
+    if not is_animated and "gif" in ct.lower():
+        ext, is_animated = ".gif", True
+        result["is_animated"] = True
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix="rehost-", suffix=ext, delete=False) as f:
+            f.write(content)
+            tmp_path = f.name
+    except OSError as e:
+        result["ok"] = False
+        result["reason"] = f"tempfile error: {e}"
+        return result
+
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from generate_and_upload_images import upload_image  # type: ignore
+        cdn_url = upload_image(tmp_path)
+    except Exception as e:
+        result["ok"] = False
+        result["reason"] = f"upload error: {type(e).__name__}: {e}"
+        return result
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    result["rehosted"] = True
+    result["final_url"] = cdn_url
+    result["reason"] = f"rehosted (referer={referer or 'none'}, ext={ext}, {len(content)}B)"
+    return result
+
+
 # ─── Harvest：从源文章提取图片清单（直引远端 URL，不截图不下载）───────────────
 
 # Style H (爆料自媒体) 依赖：新智元等公众号爆款的"图"其实都是直引源站，
@@ -926,6 +1070,14 @@ def main():
     hv.add_argument("--no-fallback", action="store_true",
                      help="禁用 baoyu-fetch 兜底")
 
+    # rehost 子命令（带正确 Referer 重新下载并上传到自己 CDN）
+    rh = sub.add_parser("rehost",
+                         help="把带 hotlink 保护的远端图重新托管到我方 CDN")
+    rh.add_argument("--url", required=True, help="远端图片 URL")
+    rh.add_argument("--mode", default="auto",
+                     choices=["auto", "always", "never"],
+                     help="auto=仅白名单 CDN (默认), always=全部, never=跳过")
+
     args = parser.parse_args()
 
     if args.command == "check":
@@ -953,6 +1105,11 @@ def main():
         else:
             print(out_json)
         return
+
+    if args.command == "rehost":
+        res = rehost_image(args.url, mode=args.mode)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        sys.exit(0 if res["ok"] else 1)
 
     if args.command == "screenshot":
         res = capture_screenshot(
