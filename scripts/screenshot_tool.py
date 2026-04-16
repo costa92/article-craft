@@ -961,6 +961,30 @@ def harvest_images(source_url: str, wait: int = 2,
                 if wait > 0:
                     page.wait_for_timeout(wait * 1000)
 
+                # Lazy-load kick: many Style H sources (WeChat, Weibo) defer
+                # <img src> until the element scrolls into view. Without this,
+                # a 31-image 新智元 article returns only 6. Scroll the page
+                # incrementally from top to bottom so every lazy <img> fires
+                # its IntersectionObserver / manual-trigger loader.
+                try:
+                    page.evaluate("""async () => {
+                        const step = Math.max(400, window.innerHeight);
+                        for (let y = 0; y < document.body.scrollHeight; y += step) {
+                            window.scrollTo(0, y);
+                            await new Promise(r => setTimeout(r, 150));
+                        }
+                        window.scrollTo(0, document.body.scrollHeight);
+                        await new Promise(r => setTimeout(r, 400));
+                        window.scrollTo(0, 0);
+                    }""")
+                    # Let any final network requests settle
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=5000)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
                 result["title"] = page.title() or ""
 
                 # 检 CAPTCHA / 登录墙
@@ -1053,7 +1077,7 @@ def harvest_images(source_url: str, wait: int = 2,
 
 
 def _filter_harvest_images(raw_imgs: list, min_width: int) -> list:
-    """按尺寸、URL 去重、过滤 data:/base64/小图标。"""
+    """按尺寸、URL 去重、过滤 data:/base64/小图标/0尺寸/非图片 URL。"""
     seen = set()
     out = []
     for img in raw_imgs or []:
@@ -1066,6 +1090,9 @@ def _filter_harvest_images(raw_imgs: list, min_width: int) -> list:
             continue
         w = int(img.get("width") or 0)
         h = int(img.get("height") or 0)
+        # 0x0 尺寸：通常是隐藏的 share button <img> 或页面自指引用，不是真图
+        if w == 0 and h == 0:
+            continue
         # 小图标/emoji/头像：跳过
         if w and w < min_width:
             continue
