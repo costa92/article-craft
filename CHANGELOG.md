@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.4.2] - 2026-04-16
+
+### Added
+
+- **Persistent cross-stage state file** — `.article-craft-state.json`, co-located with each article. The orchestrator writes stage status (running / completed / failed / skipped) with per-stage result payloads at every pipeline boundary. Resurrects `scripts/pipeline_state.py` (deleted in v1.3.4) with a real CLI, proper schema versioning, atomic writes, and now actually wired into the orchestrator.
+- **`pipeline_state.py` CLI** with subcommands: `init`, `start`, `complete`, `fail`, `skip`, `show`, `missing-stages`, `cleanup`, `reset`, `artifact`. The `missing-stages` command is the primary `--upgrade` entry point — it returns structured JSON with `missing` / `done` / `stale` / `skipped` lists plus a `source` field (`state_file` / `hybrid` / `heuristic`).
+- **State-file conflict resolution**: article content remains ground truth. If state says `images: completed` but the body still has `<!-- IMAGE: -->` placeholders, the stage is flagged `stale` and re-runs. `source: "hybrid"` in the output makes the disagreement visible.
+
+### Changed
+
+- **`--upgrade` mode** now reads `.article-craft-state.json` first and falls back to content heuristics only when the file is absent. Articles predating v1.4.2 still work through the heuristic path (pure `source: "heuristic"` result).
+- **orchestrator/SKILL.md Step 2** now initializes the state file after `write` produces an article path. A new "State Write Protocol" section documents `start`/`complete`/`fail`/`skip` calls + per-stage result payload shapes for all 9 stages.
+- **`publish` stage cleanup**: in standard mode, the state file is deleted after `publish` completes successfully — the pipeline is done, no state needed. `draft` and `quick` modes preserve the state file so future `--upgrade` can resume from it.
+
+### Design notes
+
+- State file lives next to `article.md` so it survives `git mv`. Schema is versioned (`schema_version: "1"`) for future migrations; the current `pipeline_version` is recorded for audit.
+- Standalone skill invocations (`/article-craft:lint`, `/article-craft:review`) do not write state. State is orchestrator-only, since it only has meaning for multi-stage pipeline runs.
+- Closes the "No persistent cross-stage state file" item in CLAUDE.md's "Known design debt" list. 3 items remain: verify rename/split (source-vet + verify-claims), images batch 429 backoff, and review Phase 2 auto-modify → scoring-only.
+
 ## [1.4.1] - 2026-04-16
 
 ### Changed
