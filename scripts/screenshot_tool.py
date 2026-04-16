@@ -805,10 +805,19 @@ def _pick_harvest_image(source: dict, opts: dict) -> dict | None:
     return None
 
 
-def expand_harvest(article_path: str, evidence_path: str | None = None) -> dict:
+def expand_harvest(article_path: str, evidence_path: str | None = None,
+                   dry_run: bool = False, strict: bool = False) -> dict:
     """
     Resolve every `<!-- HARVEST: url ... -->` in article.md against `_evidence.json`,
     optionally rehost the image URL, and rewrite the article in place.
+
+    Args:
+        article_path: absolute path to article.md
+        evidence_path: optional absolute path to _evidence.json (default: article dir)
+        dry_run: if True, do not call rehost and do not write article.md
+                 (useful for preflight / CI validation / preview)
+        strict: if True, any `failed > 0` causes exit code 1 and the article.md
+                is NOT written (even when not dry_run)
 
     Returns a summary dict: counts + per-placeholder trace.
     """
@@ -830,10 +839,13 @@ def expand_harvest(article_path: str, evidence_path: str | None = None) -> dict:
         "ok": True,
         "article": str(article),
         "evidence": str(ev_path),
+        "dry_run": dry_run,
+        "strict": strict,
         "expanded": 0,
         "rehosted": 0,
         "failed": 0,
         "total": 0,
+        "would_write": False,
         "trace": [],
     }
 
@@ -860,7 +872,19 @@ def expand_harvest(article_path: str, evidence_path: str | None = None) -> dict:
 
         final_url = img["url"]
         rehost_mode = opts.get("rehost", "auto")
-        if rehost_mode != "never":
+        if dry_run:
+            # Don't hit the network or mutate the upload CDN — preview only.
+            # Report what would happen based on whitelist match.
+            matched, _ = _rehost_match_whitelist(img["url"])
+            if rehost_mode == "never":
+                trace["rehost"] = "skipped_mode_never"
+            elif rehost_mode == "auto" and not matched:
+                trace["rehost"] = "skipped_not_whitelisted"
+            else:
+                trace["rehost"] = "would_rehost"
+                # count as would-be rehosted for preview totals
+                summary["rehosted"] += 1
+        elif rehost_mode != "never":
             rh = rehost_image(img["url"], mode=rehost_mode)
             if rh.get("ok") and rh.get("rehosted"):
                 final_url = rh["final_url"]
@@ -874,12 +898,25 @@ def expand_harvest(article_path: str, evidence_path: str | None = None) -> dict:
         caption = opts.get("caption") or img.get("alt") or ""
         trace["status"] = "expanded"
         trace["final_url"] = final_url
+        trace["caption"] = caption
         summary["expanded"] += 1
         summary["trace"].append(trace)
         return f"![{caption}]({final_url})"
 
     new_body = HARVEST_PLACEHOLDER_RE.sub(replace_one, body)
-    if new_body != body:
+    summary["would_write"] = new_body != body
+
+    # Strict mode + failures: do NOT write, flip ok=False so CLI exits 1
+    if strict and summary["failed"] > 0:
+        summary["ok"] = False
+        summary["error"] = f"strict mode: {summary['failed']} placeholder(s) failed, article not modified"
+        return summary
+
+    # Dry run: never write
+    if dry_run:
+        return summary
+
+    if summary["would_write"]:
         article.write_text(new_body, encoding="utf-8")
     return summary
 
@@ -1267,6 +1304,10 @@ def main():
     eh.add_argument("--article", required=True, help="article.md 绝对路径")
     eh.add_argument("--evidence", default="",
                      help="_evidence.json 路径，默认取 article 同目录")
+    eh.add_argument("--dry-run", action="store_true",
+                     help="预览：不调用 rehost、不写 article.md，仅输出将发生的 trace")
+    eh.add_argument("--strict", action="store_true",
+                     help="严格模式：任何 placeholder 失败即退出 1，且不修改 article.md")
 
     args = parser.parse_args()
 
@@ -1302,7 +1343,8 @@ def main():
         sys.exit(0 if res["ok"] else 1)
 
     if args.command == "expand-harvest":
-        res = expand_harvest(args.article, args.evidence or None)
+        res = expand_harvest(args.article, args.evidence or None,
+                              dry_run=args.dry_run, strict=args.strict)
         print(json.dumps(res, indent=2, ensure_ascii=False))
         sys.exit(0 if res.get("ok") else 1)
 

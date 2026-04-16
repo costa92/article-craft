@@ -1,6 +1,6 @@
 ---
 name: article-craft:screenshot
-version: 1.4.8
+version: 1.4.9
 description: "Take web page screenshots with intelligent validation + generate social share cards. Uses Playwright for real browser rendering, validates URLs before capture, detects 404/empty pages, optimizes image size. Supports WeChat, Xiaohongshu, Twitter/X, LinkedIn, and more."
 allowed-tools:
   - Read
@@ -40,7 +40,19 @@ SKILL.md 伪代码）：
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py expand-harvest \
   --article /ABSOLUTE/PATH/article.md \
-  [--evidence /ABSOLUTE/PATH/_evidence.json]   # 默认 article 同目录
+  [--evidence /ABSOLUTE/PATH/_evidence.json] \  # 默认 article 同目录
+  [--dry-run] \                                 # 预览：不调 rehost、不改 article.md
+  [--strict]                                    # 任一失败即退出 1 + 不改 article.md
+```
+
+**preflight 推荐用法**（orchestrator / CI / pre-images 质量门）：
+
+```bash
+# 先试跑一次 dry-run strict，看解析能不能过
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py expand-harvest \
+  --article /.../article.md --dry-run --strict
+# exit 0 → 解析 OK，放心跑真实 expand
+# exit 1 → 有 placeholder 会失败，先修 materials.md 或 article 再跑
 ```
 
 内部流程（从 SKILL.md 抽到 Python 实现，确定性可测）：
@@ -69,7 +81,11 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py expand-harvest \
 
 `status` 值：`expanded` / `source_not_in_evidence` / `no_matching_image`。
 
-退出码：`0` = 整体流程跑完（即使 failed > 0）；`1` = article 或 evidence 文件缺失。
+在 dry-run 模式下 `trace[].rehost` 还会出现：`would_rehost` / `skipped_mode_never` / `skipped_not_whitelisted`。
+
+退出码：
+- `0` = 整体流程跑完（即使 failed > 0，除非 `--strict`）
+- `1` = article / evidence 文件缺失；或 `--strict` 下任一 placeholder 失败
 
 若 `_evidence.json` 不存在 → `ok=false`，提示用户先跑 `/article-craft:evidence`。
 
