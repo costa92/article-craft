@@ -1594,7 +1594,12 @@ def main():
         return
 
     if args.command == "rehost":
-        res = rehost_image(args.url, mode=args.mode)
+        # rehost calls upload_image(), which prints PicGo/S3 progress to stdout.
+        # Redirect those prints to stderr so our final JSON is the *only* thing
+        # on stdout — machine consumers can pipe to jq without filtering noise.
+        import contextlib
+        with contextlib.redirect_stdout(sys.stderr):
+            res = rehost_image(args.url, mode=args.mode)
         print(json.dumps(res, indent=2, ensure_ascii=False))
         sys.exit(0 if res["ok"] else 1)
 
@@ -1607,8 +1612,12 @@ def main():
         return
 
     if args.command == "expand-harvest":
-        res = expand_harvest(args.article, args.evidence or None,
-                              dry_run=args.dry_run, strict=args.strict)
+        # Same rationale as rehost: expand_harvest calls rehost_image per
+        # placeholder which prints upload progress. Keep stdout clean for JSON.
+        import contextlib
+        with contextlib.redirect_stdout(sys.stderr):
+            res = expand_harvest(args.article, args.evidence or None,
+                                  dry_run=args.dry_run, strict=args.strict)
         print(json.dumps(res, indent=2, ensure_ascii=False))
         sys.exit(0 if res.get("ok") else 1)
 
