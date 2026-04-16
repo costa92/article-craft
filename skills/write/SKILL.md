@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.4.9
+version: 1.4.10
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -563,7 +563,7 @@ Print the absolute file path after saving so subsequent skills can find it.
 > - **内容质量规则**(红旗词、模板化句式、章节深度、结尾行动力等)由 `review` skill 的 Phase 1 (11 条 self-check rules) 统一执行,write 不再重复做。
 > - 不要调用 `${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py` —— 那是 review skill 内部使用的。
 
-**必须检查的 2 项 handoff 契约（精简,只保留真正的下游阻断项）：**
+**必须检查的 3 项 handoff 契约（精简,只保留真正的下游阻断项）：**
 
 1. **Check A（占位符格式）** — 如果发现非标准占位符（`IMAGE_PLACEHOLDER_*`、不存在的本地图片路径），转换为标准 `<!-- IMAGE: name - desc (ratio) -->` 格式。没转就跑 images 会直接 skip 这些位置。
 2. **Check B（IMAGE 占位符双行格式）** ⭐ **CRITICAL** — 验证所有 `<!-- IMAGE:` 占位符匹配 images 脚本的正则格式。这是与下游 images skill 的硬契约，不通过会导致图片生成失败。
@@ -580,19 +580,45 @@ Print the absolute file path after saving so subsequent skills can find it.
    - PROMPT 不是英文 → 翻译为英文
    - 两行之间有空行 → 删除空行使其紧邻
 
-> **命令可执行性**（原 Check C） 已移出。自 v1.4.5 起由独立的 `verify-claims` skill
+3. **Check C（HARVEST 占位符 preflight — Style H 专用）** ⭐ **CRITICAL** — 仅当本文是 Style H（爆料自媒体，目录下应存在 `_evidence.json`）时执行。用 `expand-harvest --dry-run --strict` 验证每个 `<!-- HARVEST: -->` 占位符能否在 `_evidence.json` 里找到对应图片。**不联网、不改文件**，只解析。
+
+   ```bash
+   # 检测是 Style H 的信号：同目录有 _evidence.json
+   if [ -f "$(dirname /ABSOLUTE/PATH/article.md)/_evidence.json" ]; then
+     python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py expand-harvest \
+       --article /ABSOLUTE/PATH/article.md --dry-run --strict
+   fi
+   ```
+
+   退出码：
+   - `0` = 全部 HARVEST 解析 OK（或文件里根本没有 HARVEST 占位符）→ 通过
+   - `1` = 至少一条 `source_not_in_evidence` 或 `no_matching_image` → **不能进入 images 阶段**
+
+   失败处理：读返回的 `trace[]`，找出 `status ≠ expanded` 的每一条，按失败原因修正：
+
+   | status | 怎么修 |
+   |--------|--------|
+   | `source_not_in_evidence` | 占位符里的 src_url 不在 `_evidence.json.sources[]`，查 materials.md 是否漏登记源，或改成已登记的源 URL |
+   | `no_matching_image` (has `idx=N`) | `idx` 越界，读 `_evidence.json.sources[i].images` 长度，改成有效下标 |
+   | `no_matching_image` (has `alt="..."`) | alt 文本没命中任何 `images[i].alt`，换成命中的子串 |
+   | `no_matching_image` (has `--cover`) | 源没抓到封面（og:image 缺失），换用具体 `idx=` 或去掉这张图 |
+
+   修好后**重新保存 article.md**，再跑一次 `--dry-run --strict`，直到 exit=0。
+
+> **命令可执行性**（原 Check C，旧编号） 已移出。自 v1.4.5 起由独立的 `verify-claims` skill
 > 在 post-write / pre-review 阶段统一执行，见 `skills/verify-claims/SKILL.md`。
-> write 不再重复做这件事。
 
 **自动修复流程：**
 ```
 保存文件
   ↓
-inline Grep/Bash 检查 2 项 handoff 契约
+inline Grep/Bash 检查 3 项 handoff 契约
   ↓
 Check A 失败? → 转换为标准占位符格式 → 重新保存
   ↓
 Check B 失败? → 补全 ratio/PROMPT/翻译 → 重新保存
+  ↓
+Check C 失败 (Style H)? → 按 trace 修 HARVEST 占位符 → 重新保存 → 重跑 --dry-run --strict
   ↓
 再次 grep 确认修复
   ↓
@@ -604,6 +630,7 @@ Check B 失败? → 补全 ratio/PROMPT/翻译 → 重新保存
 ✅ Handoff Contract Validation PASSED
    Check A (占位符格式): 0 问题
    Check B (IMAGE 占位符双行格式): N 个，合规 ✅
+   Check C (HARVEST preflight): M 个占位符，全部可解析 ✅ (Style H only)
 
    Command correctness is checked by /article-craft:verify-claims later in
    the pipeline (post-images, pre-review).
