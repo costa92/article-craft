@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.4.5] - 2026-04-16
+
+### Added
+
+- **New `verify-claims` skill + `scripts/verify_claims.py`.** Post-write stage that scans the article body for shell commands (bash / sh / shell / zsh blocks) and checks each named tool against PATH via `shutil.which`. Runs **after images, before review** in standard mode. Standalone invocation: `/article-craft:verify-claims /abs/path/article.md`.
+- **New `commands/article-craft/verify-claims.md`** sub-command wrapper for the skill.
+- **orchestrator Step 3.6** — new stage. Returns `PASS` / `PASS_WITH_MARKS` (user edited article to tag unknown tools with `[需要验证]`) / `ABORT`. Skipped in quick / draft modes.
+
+### Changed
+
+- **`write` Step 7 Check C removed.** Command correctness is no longer validated inline during write; it's been lifted into the dedicated verify-claims stage. Step 7 now runs 2 handoff contract checks (placeholder format + IMAGE double-line format) instead of 3. Rationale: Check C was a grep-level approximation that competed with a proper post-write scan for the same job.
+- **Role clarification (no directory rename):** the pre-write `verify` stage is a **source vetter** (URL reachability, T0–T5 trust tiering). The post-write `verify-claims` stage is a **body vetter** (shell command existence). The two are complementary and non-overlapping. Skill directory names stay stable for command compat — `/article-craft:verify` still works and still does source vetting.
+- **`scripts/pipeline_state.py`** — `verify_claims` added to the stage allowlist and to `MODE_STAGES["standard"]` / `MODE_STAGES["series"]`. `--upgrade` now correctly accounts for this stage when reporting missing / done.
+- **orchestrator Step 3.7 (Publish) renumbered to 3.8** to make room for verify-claims at 3.6.
+- **CLAUDE.md** — introductory paragraph clarifies the two verification stages; skill count updated from 11 to 12.
+
+### Scope notes
+
+- verify-claims MVP covers shell-language code blocks only. Flag-level validation, API endpoint reachability, version-string claims in prose, and Python / JS imports are explicitly out of scope — each is a future enhancement, not a bug. See `skills/verify-claims/SKILL.md` "Out of scope" list.
+- Closes the "Verify stage is misnamed and incomplete" item in CLAUDE.md's "Known design debt". **All 5 original debt items are now closed.**
+
 ## [1.4.4] - 2026-04-16
 
 ### Changed
