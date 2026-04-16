@@ -946,6 +946,71 @@ def _infer_format_from_url(url: str) -> str:
     return "?"
 
 
+def _recommend_picks(source: dict) -> dict:
+    """
+    Classify a source's images into buckets a writer actually thinks about:
+
+      cover:  one best cover candidate (prefers source.cover; else biggest
+              wide non-GIF)
+      main:   up to 5 main-visual candidates (non-GIF, wide enough to read,
+              ranked by area descending, cover excluded)
+      demo:   every GIF (animations, ranked by area)
+      avoid:  very small / skinny images likely to be icons, QR codes,
+              decorative flourishes
+
+    Returns sorted idx lists so the writer can just pick from the top.
+    """
+    has_cover = bool(source.get("cover"))
+    imgs = source.get("images") or []
+
+    classified = []
+    for pos, img in enumerate(imgs):
+        w = int(img.get("width") or 0)
+        h = int(img.get("height") or 0)
+        fmt = _infer_format_from_url(img.get("url", ""))
+        area = w * h
+        aspect = (w / h) if h else 0
+        classified.append({
+            "idx": pos, "w": w, "h": h, "fmt": fmt,
+            "area": area, "aspect": aspect,
+        })
+
+    is_gif = lambda x: x["fmt"] == "gif"
+    is_tiny = lambda x: x["w"] < 400 or x["h"] < 200
+    is_wide_enough = lambda x: x["w"] >= 400 and x["h"] >= 200
+
+    cover_idx: int | None = None
+    if not has_cover:
+        wide_non_gif = sorted(
+            [c for c in classified if not is_gif(c) and c["aspect"] >= 1.3 and not is_tiny(c)],
+            key=lambda c: c["area"], reverse=True,
+        )
+        if wide_non_gif:
+            cover_idx = wide_non_gif[0]["idx"]
+
+    main_pool = sorted(
+        [c for c in classified
+         if not is_gif(c) and is_wide_enough(c) and c["idx"] != cover_idx],
+        key=lambda c: c["area"], reverse=True,
+    )
+    main_picks = [c["idx"] for c in main_pool[:5]]
+
+    demo_picks = [c["idx"] for c in sorted(
+        [c for c in classified if is_gif(c)],
+        key=lambda c: c["area"], reverse=True,
+    )]
+
+    avoid_picks = sorted([c["idx"] for c in classified if is_tiny(c)])
+
+    return {
+        "use_cover_flag": has_cover,
+        "cover_idx": cover_idx,
+        "main": main_picks,
+        "demo": demo_picks,
+        "avoid": avoid_picks,
+    }
+
+
 def harvest_menu(evidence_path: str, as_json: bool = False) -> str | dict:
     """
     Emit a writer-facing menu of HARVEST options from _evidence.json.
@@ -985,6 +1050,7 @@ def harvest_menu(evidence_path: str, as_json: bool = False) -> str | dict:
                         }
                         for i, img in enumerate(s.get("images") or [])
                     ],
+                    "recommend": _recommend_picks(s),
                 }
                 for s in sources
             ],
@@ -1032,6 +1098,25 @@ def harvest_menu(evidence_path: str, as_json: bool = False) -> str | dict:
                 out.append(f"| {pos} | {dim} | {fmt} | {alt or '(empty)'} |")
             out.append("")
             out.append(f'Example: `<!-- HARVEST: {url} idx=0 caption="your caption" -->`')
+
+            # Recommended picks block — writer-directed, not exhaustive.
+            picks = _recommend_picks(src)
+            out.append("")
+            out.append("**📌 Recommended picks** (guidance — not exhaustive, override freely):")
+            if picks["use_cover_flag"]:
+                out.append(f'- **Cover**: use `--cover` (source has og:image) → `<!-- HARVEST: {url} --cover caption="..." -->`')
+            elif picks["cover_idx"] is not None:
+                out.append(f'- **Cover**: `idx={picks["cover_idx"]}` (biggest wide non-GIF)')
+            else:
+                out.append("- **Cover**: no strong candidate; consider IMAGE-generated cover instead of HARVEST")
+            if picks["main"]:
+                out.append(f'- **Main visuals** (non-GIF, ranked by area): {", ".join(f"idx={i}" for i in picks["main"])}')
+            else:
+                out.append("- **Main visuals**: none wide enough (≥400×200 non-GIF)")
+            if picks["demo"]:
+                out.append(f'- **Animation demos** (GIFs): {", ".join(f"idx={i}" for i in picks["demo"])}')
+            if picks["avoid"]:
+                out.append(f'- **Likely avoid** (icons / tiny, <400×200): {", ".join(f"idx={i}" for i in picks["avoid"])}')
 
     if gated_sources:
         out.append("\n## Paywall / login-gated (cite-only, NO HARVEST)\n")
