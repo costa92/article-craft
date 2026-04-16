@@ -1,6 +1,6 @@
 ---
 name: article-craft:evidence
-version: 1.4.7
+version: 1.4.8
 description: "Collect source evidence (images, quotes, leak references) for Style H (爆料自媒体). Parses materials.md, runs batch harvest on public sources, records manual screenshots and paywalled citations, outputs _evidence.json for write skill."
 allowed-tools:
   - Read

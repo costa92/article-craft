@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.4.8] - 2026-04-16
+
+### Fixed
+
+- **Lazy-loaded image harvest on WeChat pages was dropping ~80% of images.** Playwright extracted `<img>` tags before scrolling, so only above-the-fold images had their `src` / dimensions populated — a 31-image 新智元 article returned 6. `harvest_images()` now scrolls the page top → bottom in `innerHeight`-sized steps with 150ms pauses between scrolls, waits for network idle, then runs the extraction. On the same 新智元 article this lifts recall from 6 to 28 (90% vs baoyu-fetch's 31-link reference).
+- **0×0 `<img>` entries leaking into evidence**. Invisible shares / profile / decorative `<img>` elements sometimes report both `width` and `height` as 0 (no box model). `_filter_harvest_images()` now drops these unconditionally. Previously they'd show up in `_evidence.json` and could be selected by a `HARVEST idx=N` that happened to land on one.
+
+### Verified
+
+Real integration run against `https://mp.weixin.qq.com/s/ZeQ8VOEC53rmXB4jPSfPDw`:
+
+- Before: 6 images, cover populated ✅
+- After: 28 images, cover populated ✅
+- Width distribution: min 252, max 1280, median 661 — no stub images or tiny icons
+
+### Design note
+
+The scroll loop is defensive: wrapped in a broad `try / except`, a failure falls through to the existing extraction. For short pages (≤ 1 viewport), the loop runs once with 150ms overhead. For very long pages (10+ viewports), it adds ~2–3s of wall time. Worth the trade on WeChat / Weibo / Zhihu where lazy-load is the norm.
+
 ## [1.4.7] - 2026-04-16
 
 ### Added

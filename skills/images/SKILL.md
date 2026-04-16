@@ -1,6 +1,6 @@
 ---
 name: article-craft:images
-version: 1.4.7
+version: 1.4.8
 description: "Generate and upload images for technical articles using Gemini API. Use when adding cover images, rhythm images, or screenshots to an article."
 allowed-tools:
   - Read
