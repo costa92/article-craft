@@ -1118,6 +1118,21 @@ def harvest_menu(evidence_path: str, as_json: bool = False) -> str | dict:
             if picks["avoid"]:
                 out.append(f'- **Likely avoid** (icons / tiny, <400×200): {", ".join(f"idx={i}" for i in picks["avoid"])}')
 
+            # Drop-in placeholders: copy-paste ready, writer only fills captions.
+            out.append("")
+            out.append("**🧱 Drop-in HARVEST placeholders** — copy any into article.md, replace `...` with your caption:")
+            out.append("")
+            out.append("```markdown")
+            if picks["use_cover_flag"]:
+                out.append(f'<!-- HARVEST: {url} --cover caption="..." -->')
+            elif picks["cover_idx"] is not None:
+                out.append(f'<!-- HARVEST: {url} idx={picks["cover_idx"]} caption="..." -->   # cover candidate')
+            for i in picks["main"]:
+                out.append(f'<!-- HARVEST: {url} idx={i} caption="..." -->')
+            for i in picks["demo"]:
+                out.append(f'<!-- HARVEST: {url} idx={i} caption="..." -->   # GIF / 动图')
+            out.append("```")
+
     if gated_sources:
         out.append("\n## Paywall / login-gated (cite-only, NO HARVEST)\n")
         out.append("Use in-text citation phrasing, do not emit HARVEST placeholders:")
