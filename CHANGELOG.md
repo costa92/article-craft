@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.16] - 2026-04-16
+
+### Fixed
+
+- **`rehost` and `expand-harvest` subcommands: stdout no longer polluted by upload progress.** Every CDN upload (PicGo / S3) prints "📤 上传图片: ..." / "✅ Upload successful" / etc. to stdout. `expand-harvest` also writes its JSON result to stdout, so downstream `| jq` / automated consumers got an interleaved text+JSON stream that couldn't be parsed. Both CLI dispatchers now wrap their work in `contextlib.redirect_stdout(sys.stderr)` — progress goes to stderr (still visible when you're running interactively), and stdout is guaranteed pure JSON.
+
+### How it was caught
+
+Running a real end-to-end Style H integration test (3 HARVEST placeholders → rehost → upload → substitute) against the 新智元 URL. The article.md output was correct — all 3 CDN URLs present, GIF preserved as `.gif`, cover right — but piping `expand-harvest` stdout to `jq` in the test harness failed with `JSONDecodeError: Expecting value`. The end-to-end test is what surfaced it; unit tests with mocked upload never saw the noise.
+
+### Takeaway
+
+Any subcommand that emits JSON for machine consumption needs to keep stdout clean. Rule: progress → stderr, result → stdout. Checked by `subcommand | jq . > /dev/null && echo ok`. Other candidates in the repo (not fixed here — no JSON output yet): `check`, `screenshot`, `harvest` already either go to stdout intentionally or write to files; `batch` writes to a dir; `harvest-menu --json` doesn't invoke upload paths.
+
 ## [1.4.15] - 2026-04-16
 
 ### Added

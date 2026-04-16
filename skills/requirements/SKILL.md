@@ -1,6 +1,6 @@
 ---
 name: article-craft:requirements
-version: 1.4.15
+version: 1.4.16
 description: "Enhanced requirements gathering with intelligent inference + source trust detection — topic analysis, intent detection, ambiguity resolution, and context-aware suggestions. Uses multi-signal matching and collaborative confirmation."
 allowed-tools:
   - Read
