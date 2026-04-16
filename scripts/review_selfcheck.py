@@ -16,6 +16,7 @@ import re
 import sys
 import json
 import os
+import yaml
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass, field, asdict
@@ -65,22 +66,23 @@ class CheckResult:
 # ─── Helper Functions ────────────────────────────────────────────
 
 def parse_frontmatter(content: str) -> Dict:
-    """Extract YAML frontmatter as a simple dict."""
+    """Extract YAML frontmatter using the yaml library (handles multi-line values)."""
     match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
     if not match:
         return {}
-    fm = {}
-    for line in match.group(1).split('\n'):
-        if ':' in line:
-            key, _, val = line.partition(':')
-            fm[key.strip()] = val.strip().strip('"').strip("'")
-    return fm
+    try:
+        fm = yaml.safe_load(match.group(1))
+        return dict(fm) if fm else {}
+    except yaml.YAMLError:
+        return {}
 
 
 def get_body(content: str) -> str:
-    """Get content after frontmatter."""
-    parts = content.split('---', 2)
-    return parts[2] if len(parts) > 2 else content
+    """Get content after frontmatter — finds closing --- at line start only."""
+    match = re.match(r'^---\n.*?\n---(\n|$)', content, re.DOTALL)
+    if not match:
+        return content
+    return content[match.end():]
 
 
 def strip_code_blocks(text: str) -> str:

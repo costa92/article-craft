@@ -352,6 +352,99 @@ def crop_whitespace(image_path: str) -> bool:
         return False
 
 
+# 支持的裁剪宽高比（width:height）
+ASPECT_RATIOS = {
+    "16:9": 16 / 9,
+    "4:3": 4 / 3,
+    "1:1": 1 / 1,
+    "21:9": 21 / 9,
+    "3:2": 3 / 2,
+    "9:16": 9 / 16,   # 竖图（裁剪左右两侧）
+}
+
+
+def _parse_aspect_ratio(value: str) -> float | None:
+    """Parse '16:9' or '16/9' or float string → float ratio, or None."""
+    if not value:
+        return None
+    value = value.strip()
+    if ":" in value:
+        try:
+            w, h = value.split(":", 1)
+            return float(w) / float(h)
+        except (ValueError, ZeroDivisionError):
+            return None
+    if "/" in value:
+        try:
+            w, h = value.split("/", 1)
+            return float(w) / float(h)
+        except (ValueError, ZeroDivisionError):
+            return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def crop_to_aspect_ratio(image_path: str, target_ratio: float) -> bool:
+    """
+    将图片智能裁剪到目标宽高比。
+
+    - 如果图片已经 ≈ target_ratio（±5%），不裁剪。
+    - 否则在图片中央裁剪，过宽则切左右，过高则切上下。
+    Pillow 的 crop(box) 使用 (left, top, right, bottom)。
+
+    Returns True if cropped, False otherwise.
+    """
+    try:
+        img = Image.open(image_path)
+        img = img.convert("RGB")
+        w, h = img.size
+        current_ratio = w / h
+
+        # 差异 < 5% → 视为等效，不裁剪
+        if abs(current_ratio - target_ratio) / target_ratio < 0.05:
+            return False
+
+        if current_ratio > target_ratio:
+            # 图片太宽 → 裁左右（居中）
+            new_w = int(h * target_ratio)
+            offset_x = (w - new_w) // 2
+            box = (offset_x, 0, offset_x + new_w, h)
+        else:
+            # 图片太高 → 裁上下（居中），保留上部
+            new_h = int(w / target_ratio)
+            box = (0, 0, w, new_h)
+
+        cropped = img.crop(box)
+        cropped.save(image_path, "PNG", optimize=True)
+        return True
+    except Exception:
+        return False
+
+
+def crop_to_max_height(image_path: str, max_height: int) -> bool:
+    """
+    如果图片高度超过 max_height，裁剪底部至 max_height。
+
+    Returns True if cropped, False otherwise.
+    """
+    try:
+        img = Image.open(image_path)
+        img = img.convert("RGB")
+        w, h = img.size
+
+        if h <= max_height:
+            return False
+
+        # 从顶部往下截，保留 max_height 高度
+        cropped = img.crop((0, 0, w, max_height))
+        cropped.save(image_path, "PNG", optimize=True)
+        return True
+    except Exception:
+        return False
+
+
 # ─── 核心截图函数 ─────────────────────────────────────────────────────────────
 
 def capture_screenshot(url: str, output_path: str = "", selector: str = "",
@@ -562,7 +655,8 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
     return result
 
 
-def batch_capture(entries: list, output_dir: str = "", article_keywords: list = None) -> list:
+def batch_capture(entries: list, output_dir: str = "", article_keywords: list = None,
+                  aspect_ratio: float = None, max_height: int = 0) -> list:
     """
     批量截图。
 
@@ -570,6 +664,8 @@ def batch_capture(entries: list, output_dir: str = "", article_keywords: list = 
         entries: list of dicts with keys: url, selector (optional), wait (optional)
         output_dir: 输出目录（默认为 /tmp）
         article_keywords: 文章关键词
+        aspect_ratio: 可选裁剪目标宽高比
+        max_height: 可选最大高度（像素）
 
     Returns:
         list of result dicts
@@ -597,6 +693,19 @@ def batch_capture(entries: list, output_dir: str = "", article_keywords: list = 
             width=entry.get("width", DEFAULT_VIEWPORT_WIDTH),
             article_keywords=article_keywords,
         )
+
+        # 截图成功后应用可选裁剪
+        if res["success"] and os.path.exists(res["output_path"]):
+            if aspect_ratio:
+                ok = crop_to_aspect_ratio(res["output_path"], aspect_ratio)
+                if ok:
+                    print(f"  ✂️  裁剪至 {aspect_ratio} 完成")
+            if max_height:
+                ok = crop_to_max_height(res["output_path"], max_height)
+                if ok:
+                    print(f"  ✂️  裁剪至最大高度 {max_height}px 完成")
+                res["file_size_kb"] = os.path.getsize(res["output_path"]) / 1024
+
         results.append(res)
 
     return results
@@ -1537,6 +1646,10 @@ def main():
     sc.add_argument("--width", type=int, default=DEFAULT_VIEWPORT_WIDTH, help="视口宽度")
     sc.add_argument("--no-upload", action="store_true", help="跳过 CDN 上传")
     sc.add_argument("--keywords", nargs="*", default=[], help="文章关键词（用于相关性判断）")
+    sc.add_argument("--aspect-ratio", default="", metavar="W:H",
+                     help="截图后裁剪到指定宽高比，如 16:9、4:3、1:1")
+    sc.add_argument("--max-height", type=int, default=0, metavar="PX",
+                     help="截图后若高度超过 PX 像素，裁剪底部至该高度")
 
     # batch 子命令
     ba = sub.add_parser("batch", help="批量截图（从 JSON 文件读取）")
@@ -1544,6 +1657,10 @@ def main():
     ba.add_argument("-o", "--output-dir", default="", help="输出目录")
     ba.add_argument("--no-upload", action="store_true", help="跳过 CDN 上传")
     ba.add_argument("--keywords", nargs="*", default=[], help="文章关键词")
+    ba.add_argument("--aspect-ratio", default="", metavar="W:H",
+                     help="截图后裁剪到指定宽高比，如 16:9、4:3、1:1")
+    ba.add_argument("--max-height", type=int, default=0, metavar="PX",
+                     help="截图后若高度超过 PX 像素，裁剪底部至该高度")
 
     # check 子命令
     ck = sub.add_parser("check", help="只验证 URL 可用性，不截图")
@@ -1655,6 +1772,20 @@ def main():
             article_keywords=args.keywords,
         )
 
+        # 截图成功后应用可选裁剪
+        if res["success"] and os.path.exists(res["output_path"]):
+            target_ratio = _parse_aspect_ratio(args.aspect_ratio)
+            if target_ratio:
+                ok = crop_to_aspect_ratio(res["output_path"], target_ratio)
+                if ok:
+                    print(f"  ✂️  裁剪至 {args.aspect_ratio} 完成")
+                    res["file_size_kb"] = os.path.getsize(res["output_path"]) / 1024
+            if args.max_height:
+                ok = crop_to_max_height(res["output_path"], args.max_height)
+                if ok:
+                    print(f"  ✂️  裁剪至最大高度 {args.max_height}px 完成")
+                    res["file_size_kb"] = os.path.getsize(res["output_path"]) / 1024
+
         print(json.dumps(res, indent=2, ensure_ascii=False))
 
         if res["success"] and not args.no_upload:
@@ -1680,7 +1811,12 @@ def main():
                     except json.JSONDecodeError:
                         entries.append({"url": line})
 
-        results = batch_capture(entries, args.output_dir, args.keywords)
+        target_ratio = _parse_aspect_ratio(args.aspect_ratio)
+        results = batch_capture(
+            entries, args.output_dir, args.keywords,
+            aspect_ratio=target_ratio,
+            max_height=args.max_height,
+        )
 
         # 汇总报告
         total = len(results)

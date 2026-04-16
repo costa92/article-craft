@@ -226,7 +226,12 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py screenshot "URL" \
   -w 2 \                      # 额外等待秒数
   --width 1280 \              # 视口宽度
   --no-upload \               # 跳过 CDN 上传
-  --keywords AI Python        # 文章关键词（用于相关性判断）
+  --keywords AI Python \      # 文章关键词（用于相关性判断）
+  --aspect-ratio 16:9 \       # 截图后裁剪到指定宽高比（16:9、4:3、1:1、9:16）
+  --max-height 1200          # 截图后若高度超过此像素，裁剪底部至该高度
+```
+
+**长宽比裁剪说明：** 适用于 GitHub README / 文档页等超长截图。裁剪居中执行——图过宽切左右，图过高切上下。接受 `W:H` 格式（如 `16:9`）或直接写小数（如 `1.78`）。**不传此参数则不裁剪。**
 ```
 
 ### 批量截图

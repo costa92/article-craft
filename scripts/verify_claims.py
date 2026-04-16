@@ -53,16 +53,90 @@ SHELL_BUILTINS = {
 }
 
 UBIQUITOUS_TOOLS = {
+    # Core Unix
     "ls", "cat", "grep", "sed", "awk", "find", "cut", "sort", "uniq",
     "head", "tail", "wc", "tr", "tee", "xargs", "basename", "dirname",
     "touch", "mkdir", "rm", "cp", "mv", "ln", "chmod", "chown", "stat",
-    "printf", "env", "sleep", "kill", "ps", "id", "whoami",
-    "curl", "wget", "ssh", "scp", "tar", "zip", "unzip", "gzip", "gunzip",
-    "git", "diff", "patch", "vim", "nano", "less", "more",
-    "python", "python3", "pip", "pip3",
+    "printf", "env", "sleep", "kill", "ps", "id", "whoami", "pwd", "cd",
+    "clear", "history", "type", "which", "command", "hash",
+    # Network
+    "curl", "wget", "ssh", "scp", "rsync", "tar", "zip", "unzip", "gzip",
+    "gunzip", "nc", "netcat", "ping", "traceroute", "dig", "nslookup",
+    "ip", "ifconfig", "ss", "route",
+    # Git
+    "git", "diff", "patch", "merge", "rebase", "cherry-pick", "stash",
+    "branch", "checkout", "clone", "fetch", "pull", "push", "log", "show",
+    "blame", "tag", "bisect",
+    # Editors
+    "vim", "vi", "nano", "emacs", "less", "more", "most", "code", "subl",
+    # Python
+    "python", "python3", "pip", "pip3", "pipx", "pyenv", "uv", "poetry",
+    "pipreqs", "pip-tools", "setuptools", "wheel",
+    # Node
+    "node", "npm", "npx", "yarn", "pnpm", "bun", "corepack",
+    # Go
+    "go", "gofmt", "go", "mod", "gotip",
+    # Rust
+    "cargo", "rustc", "rustup", "clippy", "cargo-watch",
+    # JavaScript / TypeScript
+    "tsc", "tsx", "esbuild", "vite", "webpack", "rollup", "parcel",
+    "ts-node", "nodemon", "deno",
+    # Ruby
+    "ruby", "gem", "bundle", "rake", "rbenv", "rvm",
+    # Java / JVM
+    "java", "javac", "jar", "gradle", "mvn", "ant", "sbt", "kotlin", "scala",
+    # C / C++
+    "gcc", "g++", "clang", "clang++", "cmake", "make", "ninja", "meson",
+    # Containers
+    "docker", "podman", "buildah", "skopeo", "ctr", "nerdctl", "docker-compose",
+    "dockerfile",
+    # Kubernetes
+    "kubectl", "helm", "kustomize", "k9s",
+    # Cloud CLIs
+    "aws", "gcloud", "az", "doctl", "linode-cli", "terraform", "packer",
+    # Databases
+    "psql", "mysql", "mariadb", "mongosh", "redis-cli", "sqlite3",
+    # Build / CI
+    "make", "cmake", "ninja", "meson", "premake", "xmake",
+    "gitlab-runner", "jenkins", "travis", "circleci",
+    # Testing
+    "pytest", "unittest", "jest", "mocha", "ava", "tap", "cypress",
+    "playwright", "selenium", "puppeteer",
+    # Linters / formatters
+    "black", "ruff", "flake8", "pylint", "mypy", "eslint", "prettier",
+    "rustfmt", "gofmt",
+    # Package managers
+    "apt", "apt-get", "yum", "dnf", "pacman", "brew", "choco", "scoop",
+    # Misc dev tools
+    "jq", "yq", "rg", "fd", "fzf", "delta", "bat", "exa", "lsd",
+    "httpie", "http", "xh",
+    "watch", "tmux", "screen", "byobu",
+    "strace", "ltrace", "ldd", "nm", "objdump", "readelf",
+    "shellcheck", "shfmt", "hadolint", "dockle",
+    "trivy", "grype", "syft",
+    "asciinema", "livestream", "streamlink",
+    "youtube-dl", "yt-dlp", "ffmpeg", "ImageMagick", "convert",
+    "pandoc", "groff", "tex", "latex", "PlantUML", "mermaid", "dot", "graphviz",
+    "ansible", "ansible-playbook", "ansible-vault",
+    "vagrant", "terraform", "packer", "consul", "nomad",
+    "vault", "ots", "1password", "bitwarden",
+    "sops", "gpg", "age", "minisign",
+    "direnv", "asdf", "rtx", "mise",
 }
 
 PLACEHOLDERS = {"TOOL", "YOUR_", "EXAMPLE_", "SOMETHING", "X", "Y"}
+
+# Fragments matching these patterns describe a tool (CLI help output), not actual
+# command invocations. The first token is a noun in a description sentence,
+# not a executable.  These are safe to skip — not real commands.
+_HELP_DESCRIBE_RE = re.compile(
+    r"^[A-Za-z_][\w]*\s*(?:—|--)\s+[a-z]", re.IGNORECASE
+)
+# Single-word fragments that are clearly description nouns, not commands.
+# E.g. "drawer" in "a searchable drawer", "palace" in "a searchable palace".
+_HELP_NOUN_RE = re.compile(
+    r"^(?:a|an|the|some|your|my|this|that|its)\s+\w", re.IGNORECASE
+)
 
 
 def _iter_shell_blocks(text: str):
@@ -99,6 +173,10 @@ def _extract_tool(fragment: str) -> str | None:
     if not head or not re.match(r"^[A-Za-z_][A-Za-z0-9_.+\-]*$", head):
         return None
     if head in SHELL_BUILTINS:
+        return None
+    # Skip description nouns: "drawer" in "a searchable drawer",
+    # "palace" in "mempalace — a searchable palace"
+    if _HELP_DESCRIBE_RE.match(fragment) or _HELP_NOUN_RE.match(fragment):
         return None
     return head
 

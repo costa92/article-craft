@@ -1,5 +1,8 @@
 # article-generator skill 依赖
 
+# YAML 解析（review_selfcheck 解析 frontmatter）
+PyYAML>=6.0
+
 # 图片生成（nanobanana）
 google-genai>=0.1.0
 Pillow>=10.0.0
