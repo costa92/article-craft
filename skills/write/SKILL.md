@@ -511,42 +511,27 @@ grep -n '│\|├\|└\|┌\|┐\|─\|▼\|▶\|←\|→\|↑\|↓' article.md 
 
 ### Step 5: Run Self-Check
 
-**Before saving the file**, apply ALL rules from `references/self-check-rules.md`. The full checklist:
+Canonical source: **`${CLAUDE_PLUGIN_ROOT}/references/self-check-rules.md`**.
 
-1. **Red-flag words** — Grep the draft for: `无缝|赋能|一站式|综上所述|总而言之|值得注意的是|不难发现|深度解析|全面梳理|链路|闭环|抓手|底层逻辑|方法论|降本增效|实际上|事实上|显然|众所周知|不难看出`. Also flag: "颠覆" / "极致" / "完美解决" / "在当今快速发展的..." / "随着...的不断发展..." / "让我们一起探索...". Every match must be rewritten.
+Read that file before saving. All 11 rule bodies, canonical grep patterns, and
+auto-fix mappings live there — do not re-type them here.
 
-2. **Hook length** — First paragraph must be 100 Chinese characters or fewer (excluding code blocks).
+**Write's ownership (per the "Who enforces what" matrix in rules.md):**
 
-3. **Closing paragraph** — Must be a concrete next-step or brief outlook. No generic well-wishes.
+- **Pre-save GATE (must pass before Step 6 can save)**:
+  - **Rule 1** — red-flag words: apply canonical auto-fix mapping inline
+  - **Rule 2** — hook ≤ 100 chars: split if needed
+  - **Rule 6** — chapter depth ≥ 2 code blocks per `##`: pad thin sections with
+    real content (cost-comparison block, CLI example, config fragment). Never
+    leave this for post-write validation
+  - **Rule 11** — ASCII diagrams: **auto-convert** to `<!-- IMAGE: -->` +
+    `<!-- PROMPT: -->` per the rules.md template. Re-grep until clean. Blocks
+    save — see Step 6 GATE
+- **Deferred to lint / review (do not duplicate here)**: rules 3, 4, 5, 7, 7b,
+  8, 9, 10. Those are lint's or review Phase 1's job.
 
-4. **Description field** — Must exist in frontmatter, max 120 characters, meaningful abstract.
-
-5. **Anti-AI structure** — Verify varied paragraph structures, 2+ personal perspectives, diverse openings.
-
-6. **Chapter depth** ⭐ **PRE-SAVE GATE** — Every `##` technical section must have at least 2 code snippets/commands plus explanatory text. **在保存前逐章节检查**：遍历每个 `##` 标题，统计其下的代码块数量，不足 2 个的必须当场补充，不能留到 post-write validation。纯观点/对比段落如果确实不需要代码（如"为什么选 X 而不是 Y"），用成本对比代码块、命令示例或配置片段充实。
-
-7. **Duplicate images** — No two images with the same purpose within the same `##` section.
-
-8. **WeChat external links** — Replace external URLs in body text with search guidance (`搜索「关键词」`). Inline `[Name](url)` links are fine (converter handles them).
-
-9. **Mermaid residue** — No ```` ```mermaid ```` code blocks should remain. All diagrams must be image placeholders.
-
-10. **References inline** — No standalone reference section at article end.
-
-11. **ASCII Diagram Check** ⭐ **CRITICAL** — Scan for ASCII diagram residue:
-    - Run: `grep -nE '│|├|└|┌|┐|─|▼|▶|←|→|↑|↓' article.md`
-    - For each match found:
-      - If it's inside a code block (between ` ``` `), check if it's **executable code** (bash/python/json)
-      - If NOT executable code (e.g., ASCII flow chart, architecture diagram, state machine), **convert to IMAGE placeholder**
-      - **DO NOT save** if ASCII diagrams remain in non-executable code blocks
-
-**Quick self-check grep** (run after saving to catch remaining violations):
-
-```bash
-grep -nE '无缝|赋能|一站式|综上所述|总而言之|值得注意的是|不难发现|深度解析|全面梳理|链路|闭环|抓手|底层逻辑|方法论|降本增效|实际上|事实上|显然|众所周知|不难看出|希望本文|希望对你|欢迎留言|点个在看|转发给朋友|在当今|随着.*发展|让我们一起' /path/to/article.md
-```
-
-No output means all clear. If violations found, fix them and re-save.
+For the quick convenience sweep before Step 6, use the single combined grep in
+the appendix of rules.md.
 
 ### Step 6: Save Article (GATE CHECK REQUIRED)
 
