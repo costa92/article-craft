@@ -33,3 +33,4 @@ tmp/
 # Temporary files
 /tmp/
 *.tmp
+url-to-markdown/
