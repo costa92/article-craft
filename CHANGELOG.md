@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.4.6] - 2026-04-16
+
+### Added
+
+- **HARVEST rehost pipeline** — `scripts/screenshot_tool.py` gains `rehost_image()` + `rehost` CLI subcommand. When a HARVEST placeholder points at a hotlink-protected CDN (WeChat mmbiz, Weibo sinaimg, Zhihu zhimg), article-craft now downloads the original image with the correct `Referer` and re-uploads it via the existing PicGo / S3 pipeline before substituting into the article. Non-whitelist URLs pass through unchanged, preserving the v1.4.0 "远端 CDN 保持真源" philosophy where safe.
+- **Per-placeholder `rehost=auto|always|never` override** in HARVEST syntax. Default `auto` = rehost only the whitelisted CDNs. Writers who know their target platform is hotlink-friendly can opt out per image with `rehost=never`.
+- **`REHOST_CDN_WHITELIST` constant** mapping CDN substring → canonical Referer. Initial list: `mmbiz.qpic.cn` (WeChat article images), `mmbiz.qlogo.cn` (WeChat avatars), `sinaimg.cn` (Weibo, covers ww1/ww2/tva*/wx1-4 subdomains), `zhimg.com` (Zhihu, covers pic1-4).
+
+### Fixed
+
+- **`upload_to_s3` hard-coded `ContentType: 'image/jpeg'` regardless of file extension** — broke GIFs uploaded via rehost (served as JPEG, silently). Now infers `Content-Type` via `mimetypes.guess_type()`, falling back to `image/jpeg` only if inference fails or returns non-image.
+
+### Design notes
+
+- **Why rehost exists**: empirical test against a live mmbiz image confirmed the CDN returns **HTTP 200** with a ~2KB silent placeholder JPEG when the `Referer` is wrong (e.g., `google.com`), and the full 96KB image when Referer is `mp.weixin.qq.com` or absent. Since the final article will be read from a different origin (Obsidian vault / blog / Zhihu), the reader's browser sends *that* origin as Referer → silent stub. No HTTP error, no way to detect visually except by looking. rehost sidesteps the whole Referer dance by moving the image to our CDN.
+- **GIF preservation**: `_infer_image_extension()` detects GIF via `wx_fmt=gif`, `.gif` suffix, or `Content-Type: image/gif`. rehost writes bytes through to tempfile with `.gif` extension, `upload_image()` picks the file up with correct MIME (now that upload_to_s3 respects extension). Bypasses Pillow compression entirely — animated GIFs stay animated.
+- **Graceful degradation**: any failure in rehost (download timeout, HTTP error, upload failure, suspected hotlink stub) returns `ok=False` with `final_url == original_url`. The HARVEST expander keeps the remote URL and logs a warning. No pipeline aborts.
+- **Stub-detection bar**: 4KB. Real Style H source images are typically 20–100KB. The 2086B mmbiz stub we measured is well under the bar.
+
+### Scope
+
+Fixes the two top gaps identified from reading a real 新智元 WeChat article (31 images, 4 GIFs, all `mmbiz.qpic.cn`):
+
+1. mmbiz silent-hotlink breakage on non-WeChat platforms
+2. GIF content-type mishandling in S3 path
+
+The third identified gap — `--cover` shorthand for grabbing a source article's cover via `baoyu-fetch` metadata instead of the `<img>` list — is intentionally deferred as a low-priority convenience.
+
 ## [1.4.5] - 2026-04-16
 
 ### Added
