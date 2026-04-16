@@ -1,6 +1,6 @@
 ---
 name: article-craft
-version: 1.4.2
+version: 1.4.3
 description: "Enhanced full article generation pipeline — orchestrated with intelligent inference, source trust detection, and structure validation. Uses multi-layer requirements, T0-T5 verification focus, and section depth enforcement."
 allowed-tools:
   - Read

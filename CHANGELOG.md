@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.3] - 2026-04-16
+
+### Added
+
+- **Batch-level 429/503 backoff** in the sequential image pipeline. `scripts/generate_and_upload_images.py` now distinguishes "all models in the fallback chain exhausted with rate-limit errors" from "generic failure": the former raises a new `RateLimitExhausted` exception that the batch loop catches, then sleeps 30 / 60 / 120 seconds (with up to 5s jitter) before retrying the same image. After 3 exhausted backoffs, the image is skipped and the batch continues — no more "half the placeholders ship unresolved" when Gemini throttles mid-run.
+- **`_generate_with_batch_backoff` helper** inside `generate_and_upload_images.py` isolates the backoff policy from the model fallback chain. Non-rate-limit failures still fail immediately (preserves existing "fail that image, continue the batch" semantics).
+
+### Changed
+
+- **`generate_image()` now raises `RateLimitExhausted`** instead of silently returning `False` when every model in the chain (`gemini-3-pro-image-preview` → `gemini-3.1-flash-image-preview` → `gemini-2.5-flash-image`) hit 429/503/rate-limit/resource_exhausted. Callers that don't want batch backoff can still catch the exception and treat it as a plain failure.
+
+### Design notes
+
+- Fixes the sequential path only. The parallel path (`generate_and_upload_parallel`, activated by `--parallel`) still has probe-layer retries only; coordinating batch-level backoff across a thread pool is a separate refactor and not currently on the orchestrator's hot path.
+- Worst-case added wall time per image: 30 + 60 + 120 + ~15s jitter ≈ 3.5 minutes before giving up. This is intentional — Gemini quota resets on a 1-minute window, so the 30s first retry usually clears it.
+- Closes the "Images batch has no per-image 429 backoff" item in CLAUDE.md's "Known design debt" list (sequential path). 2 items remain: verify rename/split (source-vet + verify-claims) and review Phase 2 auto-modify → scoring-only.
+
 ## [1.4.2] - 2026-04-16
 
 ### Added

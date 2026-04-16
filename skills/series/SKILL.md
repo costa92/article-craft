@@ -1,6 +1,6 @@
 ---
 name: article-craft:series
-version: 1.4.2
+version: 1.4.3
 description: "Plan, manage, generate, and audit article series — shared style, auto-navigation, progress tracking, knowledge coverage analysis. Use when creating, continuing, or auditing a multi-part series."
 allowed-tools:
   - Read
