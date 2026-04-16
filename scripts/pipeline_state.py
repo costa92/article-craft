@@ -49,7 +49,7 @@ MODE_STAGES: dict[str, list[str]] = {
     "standard": [
         "requirements", "verify", "evidence",
         "write", "screenshot", "share_card", "images",
-        "review", "publish",
+        "verify_claims", "review", "publish",
     ],
     "quick": [
         "requirements", "evidence",
@@ -59,7 +59,7 @@ MODE_STAGES: dict[str, list[str]] = {
     "series": [
         "requirements", "verify", "evidence",
         "write", "screenshot", "share_card", "images",
-        "review", "publish",
+        "verify_claims", "review", "publish",
     ],
 }
 
@@ -403,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
         if hasattr(args, "stage") and args.stage and hasattr(args, "cmd"):
             if args.cmd in ("start", "complete", "fail", "skip") and args.stage not in {
                 "requirements", "verify", "evidence", "write", "screenshot",
-                "share_card", "images", "review", "publish",
+                "share_card", "images", "verify_claims", "review", "publish",
             }:
                 sys.stderr.write(f"error: unknown stage '{args.stage}'\n")
                 return 2
