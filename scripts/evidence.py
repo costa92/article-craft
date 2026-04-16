@@ -13,7 +13,7 @@ materials.md 格式（简易）:
     # Evidence Materials
 
     ## 公开源（auto-harvest）
-    - https://mp.weixin.qq.com/s/xxx  tier=T3 note="新智元爆料"
+    - https://mp.weixin.qq.com/s/xxx  tier=T3 note="源媒体爆料"
     - https://x.com/anthropic/status/123  tier=T0
     - https://claude.com/blog/foo  tier=T0
 

@@ -8,7 +8,7 @@
 
 ### How it was caught
 
-Running a real end-to-end Style H integration test (3 HARVEST placeholders → rehost → upload → substitute) against the 新智元 URL. The article.md output was correct — all 3 CDN URLs present, GIF preserved as `.gif`, cover right — but piping `expand-harvest` stdout to `jq` in the test harness failed with `JSONDecodeError: Expecting value`. The end-to-end test is what surfaced it; unit tests with mocked upload never saw the noise.
+Running a real end-to-end Style H integration test (3 HARVEST placeholders → rehost → upload → substitute) against a real WeChat Style H article URL. The article.md output was correct — all 3 CDN URLs present, GIF preserved as `.gif`, cover right — but piping `expand-harvest` stdout to `jq` in the test harness failed with `JSONDecodeError: Expecting value`. The end-to-end test is what surfaced it; unit tests with mocked upload never saw the noise.
 
 ### Takeaway
 
@@ -75,13 +75,13 @@ Zero URL typing, zero idx guessing, zero cover-syntax recall. The remaining cogn
 
 ### Why
 
-v1.4.12 gave writers a menu file. But reading a 28-row image table and mentally finding "biggest jpg with good aspect ratio for cover" is still work Claude has to do, which means inconsistency. The recommendation block converts the raw listing into a "point at what to copy" guide — for the real 新智元 article this surfaced cover=--cover, 4 correct GIF demos, and 5 icon-sized images to skip, all without writer judgement.
+v1.4.12 gave writers a menu file. But reading a 28-row image table and mentally finding "biggest jpg with good aspect ratio for cover" is still work Claude has to do, which means inconsistency. The recommendation block converts the raw listing into a "point at what to copy" guide — for the real WeChat article this surfaced cover=--cover, 4 correct GIF demos, and 5 icon-sized images to skip, all without writer judgement.
 
 ### Design note
 
 Recommendations are **soft hints**, phrased as "guidance — not exhaustive, override freely". They don't prune the full image table; writers can still pick any idx. The goal is to reduce cognitive load, not lock writers in.
 
-Thresholds chosen from observed behavior on the 新智元 article:
+Thresholds chosen from observed behavior on a real WeChat Style H article:
 - wide enough: ≥400×200 (filters out WeChat QR codes at 272×272 and follow-up cards at 252×214)
 - cover candidate aspect: ≥1.3 (landscape bias for hero images)
 - main visuals top-5 (enough for a long article, not spam)
@@ -110,7 +110,7 @@ The menu is a pure view of `_evidence.json`. When someone regenerates evidence, 
 
 ### Why this was needed
 
-Running `harvest-menu` against the real 新智元 `_evidence.json` surfaced a subtle systemic issue: all 28 WeChat `<img>` alts come back as "图片" (the generic fallback). A writer guessing "pick the Claude Code UI image by alt" would never match. The menu makes this visible — writer sees 27 identical "图片" alt entries and automatically switches to `idx=` by dimension. No more silent mismatches piling up for v1.4.10's Check C preflight to catch.
+Running `harvest-menu` against real WeChat evidence surfaced a subtle systemic issue: all 28 WeChat `<img>` alts come back as "图片" (the generic fallback). A writer guessing "pick the Claude Code UI image by alt" would never match. The menu makes this visible — writer sees 27 identical "图片" alt entries and automatically switches to `idx=` by dimension. No more silent mismatches piling up for v1.4.10's Check C preflight to catch.
 
 ### Design note
 
@@ -164,7 +164,7 @@ expand-harvest                       # network calls + article mutation
 
 ### Fixed
 
-- **Lazy-loaded image harvest on WeChat pages was dropping ~80% of images.** Playwright extracted `<img>` tags before scrolling, so only above-the-fold images had their `src` / dimensions populated — a 31-image 新智元 article returned 6. `harvest_images()` now scrolls the page top → bottom in `innerHeight`-sized steps with 150ms pauses between scrolls, waits for network idle, then runs the extraction. On the same 新智元 article this lifts recall from 6 to 28 (90% vs baoyu-fetch's 31-link reference).
+- **Lazy-loaded image harvest on WeChat pages was dropping ~80% of images.** Playwright extracted `<img>` tags before scrolling, so only above-the-fold images had their `src` / dimensions populated — a 31-image WeChat article returned 6. `harvest_images()` now scrolls the page top → bottom in `innerHeight`-sized steps with 150ms pauses between scrolls, waits for network idle, then runs the extraction. On the same WeChat article this lifts recall from 6 to 28 (90% vs baoyu-fetch's 31-link reference).
 - **0×0 `<img>` entries leaking into evidence**. Invisible shares / profile / decorative `<img>` elements sometimes report both `width` and `height` as 0 (no box model). `_filter_harvest_images()` now drops these unconditionally. Previously they'd show up in `_evidence.json` and could be selected by a `HARVEST idx=N` that happened to land on one.
 
 ### Verified
@@ -224,7 +224,7 @@ The v1.4.6 rehost pipeline added non-trivial decision logic (whitelist matching,
 
 ### Scope
 
-Fixes the two top gaps identified from reading a real 新智元 WeChat article (31 images, 4 GIFs, all `mmbiz.qpic.cn`):
+Fixes the two top gaps identified from reading a real WeChat Style H article (31 images, 4 GIFs, all `mmbiz.qpic.cn`):
 
 1. mmbiz silent-hotlink breakage on non-WeChat platforms
 2. GIF content-type mishandling in S3 path
@@ -330,10 +330,10 @@ The `<dim-score><7` → "fix corresponding issues" instruction was too open-ende
 
 ### Added
 
-- **Style H — 爆料自媒体 / 公众号爆款** in `references/writing-styles.md`: new writing style modeled on 新智元/量子位/机器之心 voice — 戏剧性标题、H2 钩子句、源图直引、竞争对垒叙事、泄露代号对照、极短段落。Includes auto-detect signals ("曝光"、"爆料"、"突袭"、"泄露"、"一夜"、"硬刚"、股价/竞品对垒) and hard constraints enforced by the write skill.
+- **Style H — 爆料自媒体 / 公众号爆款** in `references/writing-styles.md`: new writing style modeled on AI-news 公众号 voice (dramatic headlines, short hook paragraphs, source-image reuse) — 戏剧性标题、H2 钩子句、源图直引、竞争对垒叙事、泄露代号对照、极短段落。Includes auto-detect signals ("曝光"、"爆料"、"突袭"、"泄露"、"一夜"、"硬刚"、股价/竞品对垒) and hard constraints enforced by the write skill.
 - **New `evidence` skill** (`skills/evidence/SKILL.md` + `commands/article-craft/evidence.md` + `scripts/evidence.py`): collects source evidence for Style H. Parses `materials.md` (public URLs / local paths / gated citations), batches `harvest` calls across all public sources, outputs `_evidence.json` consumed by write. BLOCKS the pipeline for Style H when materials are missing or evidence-image count < 2.
 - **`screenshot_tool.py harvest` subcommand**: extracts all `<img>` URLs + alt + width/height + surrounding context from a source URL. **Playwright primary** (fast, JS-rendered) with **baoyu-fetch fallback** for CAPTCHA / login walls / paywalls (auto-detects 微信公众号 / Cloudflare gates and switches engines). Output JSON is directly consumed by `evidence.py`.
-- **`<!-- HARVEST: url idx= | alt= [caption=] -->` placeholder**: expands in-place to `![caption](远端 url)` without downloading or re-uploading. Implements the 新智元-style "直引源站图片" pattern — the remote CDN stays the source of truth, article-craft never becomes the image host. Processed by screenshot skill alongside existing `<!-- SCREENSHOT: -->` placeholders.
+- **`<!-- HARVEST: url idx= | alt= [caption=] -->` placeholder**: expands in-place to `![caption](远端 url)` without downloading or re-uploading. Implements the WeChat-爆款-style "直引源站图片" pattern — the remote CDN stays the source of truth, article-craft never becomes the image host. Processed by screenshot skill alongside existing `<!-- SCREENSHOT: -->` placeholders.
 
 ### Changed
 

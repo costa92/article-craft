@@ -203,7 +203,7 @@ If writing as part of a series, inject navigation **after the cover image and be
 **Style H (爆料自媒体)** — 严禁 Obsidian callouts。替换为加粗【导读】块：
 
 ```markdown
-##### 【新智元导读】太疯狂了！Anthropic 刚刚发布 XX 新版，上线神秘功能 YY……直接变身「云端员工」。更刺激的是，Opus 4.7 即将本周闪电发布。
+##### 【XX 媒体导读】太疯狂了！Anthropic 刚刚发布 XX 新版，上线神秘功能 YY……直接变身「云端员工」。更刺激的是，Opus 4.7 即将本周闪电发布。
 ```
 
 导读必须：1-3 句、加粗 H5 标题、至少含 1 个爆点 + 1 个预告 + 1 个戏剧形容词（太疯狂/更刺激/直接变身）。

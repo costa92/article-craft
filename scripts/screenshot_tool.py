@@ -1172,7 +1172,7 @@ def harvest_menu(evidence_path: str, as_json: bool = False) -> str | dict:
 
 # ─── Harvest：从源文章提取图片清单（直引远端 URL，不截图不下载）───────────────
 
-# Style H (爆料自媒体) 依赖：新智元等公众号爆款的"图"其实都是直引源站，
+# Style H (爆料自媒体) 依赖：爆料类公众号爆款的"图"其实都是直引源站，
 # 不是自己去截。harvest 就是把这件事自动化——给一个源页面 URL，列出
 # 页面里所有 <img> 的 src + alt + 上下文文字 + 顺序索引。
 # 返回的 JSON 给 write skill 消费，最终生成 `![desc](远端 url)`。
@@ -1249,7 +1249,7 @@ def harvest_images(source_url: str, wait: int = 2,
 
                 # Lazy-load kick: many Style H sources (WeChat, Weibo) defer
                 # <img src> until the element scrolls into view. Without this,
-                # a 31-image 新智元 article returns only 6. Scroll the page
+                # a 31-image WeChat article returns only 6. Scroll the page
                 # incrementally from top to bottom so every lazy <img> fires
                 # its IntersectionObserver / manual-trigger loader.
                 try:
