@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.4.15] - 2026-04-16
+
+### Added
+
+- **Publish copies Style H sidecars to the KB.** New publish Step 3.5: if `_evidence.json` or `_harvest_menu.md` exist alongside `article.md` in the source directory, `cp` them into the same target subdirectory in the KB. Preserves the full HARVEST picking context so a future `/article-craft --upgrade /kb/path/article.md` can resume operations (re-rehost a rotted CDN URL, regenerate menu, verify placeholders) without the user chasing down the original materials dir.
+- **`pipeline_state.py` infers Style H from sidecars** in heuristic mode. When no state file exists (post-publish cleanup, or articles predating v1.4.2), `_scan_article()` now also checks for `_evidence.json` and `_harvest_menu.md` next to the article. `_stage_done_heuristic("evidence", scan)` returns true when the sidecar is present; `_compute_missing()` treats `writing_style="H"` as inferred in that case, so the evidence stage stays in the `want` list instead of being pruned.
+- **Publish summary shows sidecar status** (`_evidence.json`, `_harvest_menu.md` — copied / none).
+
+### Why
+
+The "11 releases from one WeChat article" streak shipped evidence, menu, preflight, and drop-in placeholders — all fantastic at write time. But publish silently stranded them in the source dir. Net effect: published Style H articles couldn't be re-upgraded. Fixing it is one `cp` loop in publish + two small helpers in `pipeline_state.py`.
+
+### What this unlocks
+
+- `/article-craft --upgrade /kb/2026-04/article.md` on a published Style H article now finds `_evidence.json` via heuristic, correctly identifies Style H, keeps `evidence` stage as done, and re-runs only what's genuinely stale (e.g., a broken CDN URL).
+- Re-running `harvest-menu --evidence /kb/path/_evidence.json` still works post-publish (file is where the article is).
+- `expand-harvest` still works because `--evidence` defaults to article dir.
+
+### Design note
+
+Policy split:
+- **`.article-craft-state.json`**: pipeline-run-scoped, deleted on publish (v1.4.2 rule unchanged)
+- **`_evidence.json` + `_harvest_menu.md`**: article-scoped, follow the article (v1.4.15 new rule)
+
+Hyphen vs underscore in filenames reflects the divide: `.state` (hidden, ephemeral) vs `_evidence`/`_harvest_menu` (visible, per-article artifacts).
+
 ## [1.4.14] - 2026-04-16
 
 ### Added
