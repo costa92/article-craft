@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.4.16
+version: 1.4.17
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -411,6 +411,20 @@ Insert image placeholders throughout the article. The `article-craft:images` ski
 <!-- SCREENSHOT: https://example.com WAIT:3 WIDTH:800 -->
 ```
 支持的选项：`#selector`（CSS 选择器）、`WAIT:N`（等待秒数）、`WIDTH:N`（视口宽度）。
+
+**常见 URL 的推荐选择器（不写则退为视口截图，写了则精准裁剪）：**
+
+| URL 类型 | 推荐选择器 | 效果 |
+|---------|-----------|------|
+| GitHub 仓库首页 (`github.com/user/repo`) | `#readme` | 只截 README，不含侧边栏 |
+| GitHub 文件/代码 (`/blob/`) | `.highlight` | 代码高亮区域 |
+| GitHub Issue/PR | `#repo-content-pjax-container` | 正文 + 评论 |
+| 文档站主页 (`docs.*` / `*/docs/` / `official.`) | `article, main` | 主内容区，去掉导航栏 |
+| Twitter/X 推文 | `[data-testid="tweet"]` | 单条推文卡片 |
+| Stack Overflow 问题 | `#question` | 题目 + 最佳答案 |
+| npm 包页面 | `.npm__container` | 包信息主体 |
+
+**原则**：写截图占位符时**优先加选择器**，确保截到关键区域而不是整页滚动视图。没有合适选择器时，脚本默认截视口高度内容（不滚动），相当于"首屏截图"。
 
 > 截图原则：必须是文章直接引用的真实内容页面，避免装饰性截图。截图前会通过 HEAD 请求验证 URL 可用性，404 页面会被跳过。
 

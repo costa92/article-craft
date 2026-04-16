@@ -230,6 +230,9 @@ def suggest_selector(url: str, page_title: str = "", content_type: str = "") -> 
     """
     根据 URL 和页面特征推荐最佳截图元素选择器。
     只返回可信的选择器。
+
+    返回空字符串时，capture_screenshot 会改为截取视口内容（非全页），
+    避免因无选择器而产生冗长滚动截图。
     """
     url_lower = url.lower()
 
@@ -238,12 +241,17 @@ def suggest_selector(url: str, page_title: str = "", content_type: str = "") -> 
         parsed = urlparse(url)
         path_parts = [p for p in parsed.path.strip("/").split("/") if p]
 
-        if len(path_parts) == 2:  # user/repo
-            return "#repo-content-pjax-container" if not content_type else ""
+        if len(path_parts) == 2:  # user/repo — 只截 README 区域，不含侧边栏
+            # Try in order: the canonical anchor, the article wrapper,
+            # the markdown body directly. GitHub renders README below the
+            # file tree so the first match is what we want.
+            return "article#readme, #readme, article.markdown-body, .markdown-body" if not content_type else ""
         elif len(path_parts) >= 3 and path_parts[2] in ("issues", "pulls"):
             return ".Timeline-Message" if content_type == "comments" else "#repo-content-pjax-container"
         elif len(path_parts) >= 3 and path_parts[2] == "readme":
             return ".markdown-body" if not content_type else ""
+        elif len(path_parts) >= 3 and path_parts[2] == "blob":
+            return ".highlight"  # 代码文件页
         return ""
 
     # Twitter/X
@@ -260,13 +268,18 @@ def suggest_selector(url: str, page_title: str = "", content_type: str = "") -> 
     if "npmjs.com" in url_lower:
         return ".npm__container" if not content_type else ""
 
-    # 文档类
-    doc_patterns = ["docs.", "documentation", "/docs/", "readme", "wiki"]
+    # 文档类 — 扩展匹配：URL 含 docs./documentation//docs//readme/wiki，
+    # 或域名看起来像文档站（以 official、docs、guide、ref 结尾的子路径）
+    doc_patterns = [
+        "docs.", "documentation", "/docs/", "/guide/", "/reference/",
+        "/getting-started", "/quickstart", "/tutorial", "/manual",
+        "readme", "wiki", "official.",
+    ]
     for pattern in doc_patterns:
         if pattern in url_lower:
-            return "article, main, .content, .documentation, .docs-content"
+            return "article, main, .content, .documentation, .docs-content, .main-content"
 
-    # 默认：空字符串表示截全页
+    # 默认：返回空字符串 → capture_screenshot 改为视口截图（非全页）
     return ""
 
 
@@ -475,17 +488,27 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                 result["warnings"].append("页面包含 404 特征文本")
 
             # Step 4: 智能选择器（未指定时推荐）
+            # comma-separated list → try each candidate in order, pick the first
+            # that exists AND looks "reasonable" (>= 400px tall). Too-small
+            # elements (e.g. a feature card) are rejected so we fall through
+            # to the next candidate rather than producing a cropped thumbnail.
             if not selector:
                 suggested = suggest_selector(url, result["page_title"])
                 if suggested:
-                    # 验证选择器存在
-                    try:
-                        el = page.query_selector(suggested.split(",")[0].strip())
-                        if el:
-                            selector = suggested.split(",")[0].strip()
-                            print(f"  🎯 Auto selector: {selector}")
-                    except Exception:
-                        pass
+                    candidates = [s.strip() for s in suggested.split(",") if s.strip()]
+                    for cand in candidates:
+                        try:
+                            el = page.query_selector(cand)
+                            if not el:
+                                continue
+                            box = el.bounding_box()
+                            if box and box.get("height", 0) < 400:
+                                continue  # too small, try next candidate
+                            selector = cand
+                            print(f"  🎯 Auto selector: {cand}")
+                            break
+                        except Exception:
+                            continue
 
             # Step 5: 截图
             if selector:
@@ -501,9 +524,10 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                     result["selector_used"] = "full-page (fallback)"
                     print(f"  📸 Full page screenshot saved: {output_path}")
             else:
-                # 全页截图
-                page.screenshot(path=output_path, full_page=True, timeout=15000)
-                print(f"  📸 Full page screenshot saved: {output_path}")
+                # 无选择器 → 视口截图（不滚动），避免冗长全页截图
+                # 如需全页，在占位符中显式指定选择器或 WIDTH: 参数
+                page.screenshot(path=output_path, full_page=False, timeout=15000)
+                print(f"  📸 Viewport screenshot saved (no selector): {output_path}")
 
             browser.close()
 

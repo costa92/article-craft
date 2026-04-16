@@ -34,3 +34,4 @@ tmp/
 /tmp/
 *.tmp
 url-to-markdown/
+.planning/
