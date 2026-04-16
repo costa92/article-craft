@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.4.13] - 2026-04-16
+
+### Added
+
+- **Recommended picks in `harvest-menu`**. Each source now gets a `📌 Recommended picks` block with four curated groups:
+  - **Cover** — prefers `--cover` when source has og:image, else picks the biggest wide non-GIF
+  - **Main visuals** — up to 5 non-GIF idx values ≥400×200, ranked by area
+  - **Animation demos** — every GIF idx, ranked by area
+  - **Likely avoid** — tiny images (<400×200) that are probably icons, QR codes, or decorative flourishes
+- **JSON output gains `recommend` field** per source with `{use_cover_flag, cover_idx, main, demo, avoid}`.
+
+### Why
+
+v1.4.12 gave writers a menu file. But reading a 28-row image table and mentally finding "biggest jpg with good aspect ratio for cover" is still work Claude has to do, which means inconsistency. The recommendation block converts the raw listing into a "point at what to copy" guide — for the real 新智元 article this surfaced cover=--cover, 4 correct GIF demos, and 5 icon-sized images to skip, all without writer judgement.
+
+### Design note
+
+Recommendations are **soft hints**, phrased as "guidance — not exhaustive, override freely". They don't prune the full image table; writers can still pick any idx. The goal is to reduce cognitive load, not lock writers in.
+
+Thresholds chosen from observed behavior on the 新智元 article:
+- wide enough: ≥400×200 (filters out WeChat QR codes at 272×272 and follow-up cards at 252×214)
+- cover candidate aspect: ≥1.3 (landscape bias for hero images)
+- main visuals top-5 (enough for a long article, not spam)
+
 ## [1.4.12] - 2026-04-16
 
 ### Added
