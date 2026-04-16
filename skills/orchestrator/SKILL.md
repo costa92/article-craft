@@ -1,6 +1,6 @@
 ---
 name: article-craft
-version: 1.4.4
+version: 1.4.5
 description: "Enhanced full article generation pipeline — orchestrated with intelligent inference, source trust detection, and structure validation. Uses multi-layer requirements, T0-T5 verification focus, and section depth enforcement."
 allowed-tools:
   - Read
@@ -25,8 +25,8 @@ Five modes, selected at invocation:
 
 | Mode | Skills Executed | Use Case |
 |------|----------------|----------|
-| **standard** (default) | requirements → verify → [evidence if Style H] → write → screenshot → images → review → publish | Full article with quality gate |
-| **quick** (`--quick`) | requirements → [evidence if Style H] → write → screenshot → images | Fast output, skip verification and review |
+| **standard** (default) | requirements → verify (source-vet) → [evidence if Style H] → write → screenshot → images → verify-claims → review → publish | Full article with quality gate |
+| **quick** (`--quick`) | requirements → [evidence if Style H] → write → screenshot → images | Fast output, skip both verify stages and review |
 | **draft** (`--draft`) | requirements → [evidence if Style H] → write | Content only, no images or review |
 | **series** (`--series FILE`) | Read series.md → requirements (pre-filled) → standard pipeline | Write the next article in a series |
 | **upgrade** (`--upgrade PATH`) | Detect existing state → run only missing stages | Upgrade a draft/quick article to full standard output |
@@ -274,7 +274,13 @@ Invoke `article-craft:requirements` skill logic:
 **On failure:** Retry (user input errors are unlikely)
 **Status:** Mark `success` when requirements are confirmed
 
-#### 3.2 Verify (standard mode only)
+#### 3.2 Verify — source vetting (standard mode only)
+
+> **Naming note (v1.4.5):** this stage is really *source-vet* — it validates the
+> user-provided source URLs before writing begins. The post-write counterpart
+> that scans the article body for shell-command correctness is a separate
+> stage, **3.6 verify-claims**. The skill directory stays `skills/verify/` for
+> command compat (`/article-craft:verify` still works).
 
 Invoke `article-craft:verify` skill logic:
 - **Source trust focus**: Prioritize verification of T3-T5 sources, skip T0-T1 link checks
@@ -428,7 +434,35 @@ images failed, continue to review. Do NOT stop the pipeline.
 > [!note]
 > Skipped in draft mode. Mark as `skipped`.
 
-#### 3.6 Review (standard mode only)
+#### 3.6 Verify Claims (standard mode only, new in v1.4.5)
+
+Invoke `article-craft:verify-claims` skill logic. Runs **after images, before
+review** — the article body is complete at this point so all shell commands
+exist in their final form.
+
+- Pass the article.md absolute file path
+- Skill shells out to `${CLAUDE_PLUGIN_ROOT}/scripts/verify_claims.py scan --article <path> --json`
+- Skill parses the JSON report, takes action based on `missing`:
+  - empty → PASS (no user prompt)
+  - non-empty → AskUserQuestion (Proceed / Mark [需要验证] / Abort)
+
+**Outcome:**
+
+| Return | Orchestrator action |
+|--------|---------------------|
+| `PASS` | continue to review |
+| `PASS_WITH_MARKS` | continue to review (article now has `[需要验证]` tags) |
+| `ABORT` | stop pipeline, report unverifiable tools in summary |
+
+**Scope limit:** only vets shell-language tool availability (see verify-claims
+SKILL.md for explicit non-scope items). Out of scope: flag validation, API
+reachability, version strings, Python/JS imports.
+
+> [!note]
+> Skipped in quick / draft modes (`status: skipped`, reason: "mode skip"). Mark
+> as `skipped` in both the state file and the in-chat tracker.
+
+#### 3.7 Review (standard mode only)
 
 直接调用 `/article-craft:review`。自 v1.4.4 起 review **不再自动修订**，Phase 2
 是诊断性评分，结果直接返回给 orchestrator。
@@ -459,7 +493,7 @@ intermediate rerun (review didn't fail, the user chose to iterate).
 > [!note]
 > Skipped in quick and draft modes. Mark as `skipped`.
 
-#### 3.7 Publish (standard mode only)
+#### 3.8 Publish (standard mode only)
 
 Invoke `article-craft:publish` skill logic:
 - Pass the article.md absolute file path

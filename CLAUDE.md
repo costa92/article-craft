@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`article-craft` is a **Claude Code plugin** (not a runtime application) that ships 11 composable skills for the full article generation lifecycle. The repo is the source that gets installed to `~/.claude/plugins/article-craft/` via `install.sh` or the Claude Code plugin marketplace. Skills are executed by Claude Code itself — this repo contains the prompts, references, and supporting Python scripts, not a service to run.
+`article-craft` is a **Claude Code plugin** (not a runtime application) that ships 12 composable skills for the full article generation lifecycle. The repo is the source that gets installed to `~/.claude/plugins/article-craft/` via `install.sh` or the Claude Code plugin marketplace. Skills are executed by Claude Code itself — this repo contains the prompts, references, and supporting Python scripts, not a service to run.
+
+**Two verification stages (since v1.4.5):** `verify` runs **before** `write` and vets the *sources* (URL reachability, T0–T5 trust tiering — this is effectively a source-vet stage, the directory kept its name for command compat). `verify-claims` runs **after images, before review** and vets the *article body* (scans shell code blocks for tool names, checks each is on PATH via `scripts/verify_claims.py`).
 
 ## Architecture
 
@@ -114,6 +116,5 @@ python3 scripts/share_card.py -f /abs/path/article.md \
 
 These are architectural gaps identified in the v1.3.4 design review that were **intentionally deferred** because they require coordinated multi-file refactors. When you touch the adjacent code, consider taking one of these on:
 
-- **Verify stage is misnamed and incomplete**. The current `verify` skill runs **before** `write`, so it only vets user-provided source URLs — it cannot validate claims the writer actually makes. The fix is a split: rename current verify to `source-vet` (what it really does, T0-T5 classification of the source pool), and add a new `verify-claims` stage **after** write that scans the article body for commands/API calls/flag names and confirms they exist. Until that lands, `write` Step 7 Check C does a grep-level approximation.
 - **Images parallel path still lacks coordinated backoff**. Fixed in v1.4.3 for the **sequential** batch loop (`generate_and_upload_batch` → `_generate_with_batch_backoff`), which now sleeps 30/60/120s + jitter between model-chain exhaustions and gives up on an image after 3 batch-level retries. The **parallel** path (`generate_and_upload_parallel`, activated by `--parallel`) still only has probe-layer retries; adding worker-coordinated backoff is a separate refactor.
 - **Self-check rules are duplicated across three skills**. `references/self-check-rules.md` is supposed to be the single source, but `write/SKILL.md` Step 7, `lint/SKILL.md`, and `review/SKILL.md` Phase 1 each re-inline slices of it in prose. When you update the red-flag list, you must remember three places. Fix: make the three skills reference rules by number (e.g. "apply Rule 1 from references/self-check-rules.md") instead of re-stating them.
