@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.4.10] - 2026-04-16
+
+### Added
+
+- **Write Step 7 gains Check C: HARVEST preflight for Style H.** After article.md is saved and the existing Check A / B pass, if `_evidence.json` exists next to the article (Style H signal), Check C runs `expand-harvest --dry-run --strict` to verify every `<!-- HARVEST: -->` placeholder resolves against evidence. On failure, the trace is parsed and each broken placeholder gets a specific remediation hint:
+  - `source_not_in_evidence` → register the URL in materials.md or switch to a registered one
+  - `no_matching_image` with `idx=N` → `idx` is out of range, pick a valid index
+  - `no_matching_image` with `alt="…"` → alt substring didn't match; use a matching substring
+  - `no_matching_image` with `--cover` → source has no og:image; use `idx=` instead
+- The writer iterates: fix placeholders → re-save → re-run preflight → until exit 0 before leaving write stage.
+
+### Why this was needed
+
+Without this check, a writer confidently typing `idx=7` (when evidence only has 5 filtered images) produces an article that silently carries unresolved `<!-- HARVEST: -->` comments into the images stage. The article ships with visible placeholder comments. Check C closes this failure mode **at write time**, where the fix is cheap — no images-stage quota burned, no expensive round trip.
+
+### Design note
+
+Check C is **Style H-triggered** (gated on `_evidence.json` existence), not style-triggered, so it also runs for any non-Style-H article that happens to use HARVEST. The `--dry-run` means zero network calls during the check. `--strict` means a single broken placeholder blocks completion, keeping the failure surface sharp.
+
 ## [1.4.9] - 2026-04-16
 
 ### Added
