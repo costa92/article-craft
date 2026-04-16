@@ -921,6 +921,155 @@ def expand_harvest(article_path: str, evidence_path: str | None = None,
     return summary
 
 
+# ─── Harvest-menu：根据 _evidence.json 生成一张 HARVEST 可选图清单 ──────────
+#
+# 目的：write skill 决定写 <!-- HARVEST: url idx=N --> 时，不能靠记忆猜 N。
+# 本菜单一次性列出每个源可选的 cover + 每张图的 (数组位置, 尺寸, 格式, alt 片段)，
+# 以及付费墙/本地图的 cite-only 清单。write skill 必须把菜单读进上下文后再落占位符。
+
+MENU_ALT_TRUNC = 50
+
+
+def _truncate(s: str, n: int) -> str:
+    s = (s or "").replace("\n", " ").strip()
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _infer_format_from_url(url: str) -> str:
+    m = re.search(r"[?&]wx_fmt=(gif|png|jpe?g|webp)", url, re.IGNORECASE)
+    if m:
+        return m.group(1).lower().replace("jpeg", "jpg")
+    path = url.split("?", 1)[0].split("#", 1)[0].lower()
+    for ext in ("gif", "png", "webp", "jpg", "jpeg"):
+        if path.endswith(f".{ext}"):
+            return ext.replace("jpeg", "jpg")
+    return "?"
+
+
+def harvest_menu(evidence_path: str, as_json: bool = False) -> str | dict:
+    """
+    Emit a writer-facing menu of HARVEST options from _evidence.json.
+
+    Output format (markdown): one section per source, listing cover availability
+    + a compact table of images with array-position indices (what HARVEST idx=N
+    actually selects). Gated and manual entries get cite-only lists at the end.
+    """
+    ev_path = Path(evidence_path)
+    if not ev_path.exists():
+        msg = f"_evidence.json not found: {ev_path}"
+        return {"ok": False, "error": msg} if as_json else f"❌ {msg}\n"
+
+    data = json.loads(ev_path.read_text(encoding="utf-8"))
+    sources = data.get("sources") or []
+    manual = data.get("manual") or []
+    summary = data.get("summary") or {}
+
+    if as_json:
+        return {
+            "ok": True,
+            "evidence": str(ev_path),
+            "sources": [
+                {
+                    "url": s.get("url"),
+                    "tier": s.get("tier", ""),
+                    "title": s.get("title", ""),
+                    "method": s.get("method", ""),
+                    "cover": bool(s.get("cover")),
+                    "images": [
+                        {
+                            "position": i,
+                            "format": _infer_format_from_url(img.get("url", "")),
+                            "width": img.get("width", 0),
+                            "height": img.get("height", 0),
+                            "alt": _truncate(img.get("alt", ""), MENU_ALT_TRUNC),
+                        }
+                        for i, img in enumerate(s.get("images") or [])
+                    ],
+                }
+                for s in sources
+            ],
+            "manual": manual,
+            "summary": summary,
+        }
+
+    out: list[str] = []
+    out.append("# HARVEST Menu\n")
+    out.append(
+        f"**Pick from this menu only.** idx=N refers to the array position in the "
+        f"table below (exactly what `expand-harvest --dry-run --strict` will validate).\n"
+    )
+
+    public_sources = [s for s in sources if s.get("method") not in ("gated", "failed")]
+    gated_sources = [s for s in sources if s.get("method") == "gated"]
+    failed_sources = [s for s in sources if s.get("method") == "failed"]
+
+    for i, src in enumerate(public_sources, 1):
+        url = src.get("url", "")
+        tier = src.get("tier", "?")
+        title = src.get("title", "") or "(untitled)"
+        method = src.get("method", "?")
+        has_cover = bool(src.get("cover"))
+        imgs = src.get("images") or []
+
+        out.append(f"\n## Source {i}: {url}\n")
+        out.append(f"- tier: **{tier}**, method: `{method}`, title: {title}")
+        if has_cover:
+            out.append(f'- cover: available ✅  `<!-- HARVEST: {url} --cover caption="..." -->`')
+        else:
+            out.append("- cover: not available ❌")
+        out.append(f"- images: **{len(imgs)}** filtered")
+
+        if imgs:
+            out.append("")
+            out.append("| idx | dim | fmt | alt / context |")
+            out.append("|----:|:----|:----|:---------------|")
+            for pos, img in enumerate(imgs):
+                w = img.get("width") or 0
+                h = img.get("height") or 0
+                dim = f"{w}×{h}" if (w or h) else "—"
+                fmt = _infer_format_from_url(img.get("url", ""))
+                alt = _truncate(img.get("alt", "") or img.get("context", ""), MENU_ALT_TRUNC)
+                out.append(f"| {pos} | {dim} | {fmt} | {alt or '(empty)'} |")
+            out.append("")
+            out.append(f'Example: `<!-- HARVEST: {url} idx=0 caption="your caption" -->`')
+
+    if gated_sources:
+        out.append("\n## Paywall / login-gated (cite-only, NO HARVEST)\n")
+        out.append("Use in-text citation phrasing, do not emit HARVEST placeholders:")
+        out.append("")
+        for src in gated_sources:
+            desc = src.get("note") or src.get("desc") or ""
+            out.append(f"- {src.get('url', '')}" + (f" — {desc}" if desc else ""))
+        out.append("")
+        out.append("Citation examples: `据 The Information 独家爆料，…` / `知情人士透露，…` / `泄露文件显示，…`")
+
+    local_manual = [m for m in manual if m.get("path")]
+    cite_manual = [m for m in manual if not m.get("path") and m.get("url")]
+    if local_manual:
+        out.append("\n## Local manual files (use SCREENSHOT, not HARVEST)\n")
+        for m in local_manual:
+            desc = m.get("desc", "")
+            out.append(f"- `<!-- SCREENSHOT: {m['path']} caption=\"{desc}\" -->`")
+    if cite_manual:
+        out.append("\n## Other cite-only URLs\n")
+        for m in cite_manual:
+            out.append(f"- {m['url']}" + (f" — {m.get('desc','')}" if m.get('desc') else ""))
+
+    if failed_sources:
+        out.append("\n## ⚠️ Harvest failures (no images available)\n")
+        for src in failed_sources:
+            err = src.get("error", "unknown")
+            out.append(f"- {src.get('url', '')} — {err}")
+
+    total_imgs = sum(len(s.get("images") or []) for s in public_sources)
+    covers = sum(1 for s in public_sources if s.get("cover"))
+    out.append(f"\n---\n\nMenu summary: {len(public_sources)} public source(s), "
+               f"{total_imgs} image(s), {covers} cover(s), "
+               f"{len(gated_sources)} gated, {len(local_manual)} local, "
+               f"{len(cite_manual)} cite-only.\n")
+    return "\n".join(out)
+
+
 # ─── Harvest：从源文章提取图片清单（直引远端 URL，不截图不下载）───────────────
 
 # Style H (爆料自媒体) 依赖：新智元等公众号爆款的"图"其实都是直引源站，
@@ -1298,6 +1447,13 @@ def main():
                      choices=["auto", "always", "never"],
                      help="auto=仅白名单 CDN (默认), always=全部, never=跳过")
 
+    # harvest-menu 子命令（从 _evidence.json 打印给 writer 的 cheat-sheet）
+    hm = sub.add_parser("harvest-menu",
+                         help="从 _evidence.json 生成 HARVEST 可选图菜单，喂给 write skill 避免猜 idx")
+    hm.add_argument("--evidence", required=True, help="_evidence.json 绝对路径")
+    hm.add_argument("--json", action="store_true",
+                     help="输出结构化 JSON（默认 markdown 给人/Claude 看）")
+
     # expand-harvest 子命令（把 article.md 里的 HARVEST 占位符原地展开）
     eh = sub.add_parser("expand-harvest",
                          help="查 _evidence.json 展开 article.md 里的 HARVEST 占位符")
@@ -1341,6 +1497,14 @@ def main():
         res = rehost_image(args.url, mode=args.mode)
         print(json.dumps(res, indent=2, ensure_ascii=False))
         sys.exit(0 if res["ok"] else 1)
+
+    if args.command == "harvest-menu":
+        res = harvest_menu(args.evidence, as_json=args.json)
+        if args.json:
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+            sys.exit(0 if res.get("ok") else 1)
+        print(res)
+        return
 
     if args.command == "expand-harvest":
         res = expand_harvest(args.article, args.evidence or None,

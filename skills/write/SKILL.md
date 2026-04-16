@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.4.10
+version: 1.4.11
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -218,6 +218,25 @@ If writing as part of a series, inject navigation **after the cover image and be
    - 不足 → **BLOCK**，提示补 materials.md
 3. **至少 1 条竞争/对手叙事素材**（`gated` 或 `sources` 中含竞品名 / 股价 / 对垒描述）
    - 不足 → 警告，允许继续但 review 会扣分
+
+写作**前**读菜单（v1.4.11+，替代凭记忆猜 idx）：
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py harvest-menu \
+  --evidence /ABSOLUTE/PATH/_evidence.json
+```
+
+菜单会列出每个源的 **cover 是否可用**、每张 filter 后图片的 `(idx, 尺寸, 格式,
+alt 片段)` 表格、付费墙源的 cite-only 清单、本地截图的 SCREENSHOT 占位符示例。
+**picking idx 必须照菜单，不要靠记忆数源页。** 菜单里的 `idx` 和
+`expand-harvest --dry-run --strict` 验的 idx 是**同一个序号**。
+
+典型消费方式：
+
+- 给文章取 cover → 若菜单说 "cover: available ✅"，直接抄样例
+- 挑"Claude Code 并行界面"这种主图 → 扫菜单的 `dim` 列找最大的 png/jpg
+- 想配动图 → 筛菜单的 `fmt=gif` 行
+- 注意：WeChat 源的 `alt` 基本都是"图片"，**不要**用 `alt="..."` 匹配，用 `idx=`
 
 写作**中**消费 `_evidence.json`：
 

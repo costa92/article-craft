@@ -1,6 +1,6 @@
 ---
 name: article-craft:screenshot
-version: 1.4.10
+version: 1.4.11
 description: "Take web page screenshots with intelligent validation + generate social share cards. Uses Playwright for real browser rendering, validates URLs before capture, detects 404/empty pages, optimizes image size. Supports WeChat, Xiaohongshu, Twitter/X, LinkedIn, and more."
 allowed-tools:
   - Read
@@ -260,6 +260,23 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py harvest \
 - 输出 JSON：`{source_url, title, cover, method, images: [{idx, url, alt, context, width, height}], warnings, error}` — `cover` 字段自 v1.4.7 起填充 og:image / baoyu-fetch coverImage
 - `--no-fallback`：禁用兜底（纯 Playwright）
 - 批量跑建议用 `evidence` skill 的 `evidence.py collect`，它会对 materials.md 里每条 URL 自动调用此命令
+
+### Harvest-menu：给 write skill 的 HARVEST cheat-sheet（v1.4.11+）
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py harvest-menu \
+  --evidence /ABSOLUTE/PATH/_evidence.json \
+  [--json]
+```
+
+默认输出 markdown 菜单（给人/Claude 读），加 `--json` 出结构化数据。覆盖：
+
+- 每个 public source 的 **cover 状态** + 可用时的现成 HARVEST 占位符样例
+- 图片表：`idx | dim | fmt | alt 片段`。**`idx` 等同 HARVEST 占位符的 `idx=N`**
+- paywall / gated：列 cite-only URL + 推荐引用句式
+- local manual：列 `<!-- SCREENSHOT: path -->` 示例
+
+用途：Style H 写作起点（write Step 3d-H）**先调菜单**再落 HARVEST 占位符。write skill 被要求照菜单点菜，禁止靠记忆猜 idx。WeChat 源的 `alt` 基本都是"图片"——菜单让这件事一眼可见，writer 自然转用 `idx=`。
 
 ### Rehost：给带 hotlink 保护的远端图换托管（v1.4.6+）
 
