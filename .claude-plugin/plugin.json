@@ -1,7 +1,7 @@
 {
   "name": "article-craft",
-  "description": "Enhanced pipeline with intelligent inference, source trust tiers, and section depth enforcement — v1.4.3",
-  "version": "1.4.3",
+  "description": "Enhanced pipeline with intelligent inference, source trust tiers, and section depth enforcement — v1.4.4",
+  "version": "1.4.4",
   "author": {
     "name": "costalong",
     "email": ""

@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.4] - 2026-04-16
+
+### Changed
+
+- **Review Phase 2 is now diagnostic-only.** Dropped the embedded 3-round auto-modify loop + oscillation guard. The new flow: score on 7 dimensions → produce per-dimension feedback (what failed / where / suggested action) → AskUserQuestion with 3 options (Publish anyway / Re-run write with hints / Abort). Each fix is a new explicit decision; review never mutates article content during Phase 2.
+- **orchestrator Step 3.6** now recognizes a third return value from review: `NEEDS_REVISION_RERUN_WRITE` (user chose "Re-run write with hints"). On that outcome the orchestrator loops back to Step 3.3 (write), passing review's feedback list as targeted hints, then continues screenshot → images → review as normal. A loop guard caps this at 2 reruns per pipeline (the 3rd NEEDS_REVISION drops the "rerun" option from AskUserQuestion).
+
+### Why
+
+The `<dim-score><7` → "fix corresponding issues" instruction was too open-ended to converge reliably. In practice rounds often regressed one dimension while fixing another (the very oscillation the guard was built to detect), and — worse — auto-modify happened **after** the images stage, so edits could orphan `<!-- IMAGE: -->` placeholders or invalidate CDN references. Diagnostic-only sidesteps both failure modes.
+
+### Design notes
+
+- Handoff-contract comments and CDN URLs are now hard invariants: review never touches them in any code path.
+- Phase 1 self-check (auto-fix for mechanical violations) is unchanged — it fixes red-flag words / hook length / closings / transitions per `references/self-check-rules.md` before Phase 2 scores.
+- Closes the "Review Phase 2 auto-modify is underspecified" item in CLAUDE.md's "Known design debt". 1 item remains: verify rename/split (source-vet + verify-claims).
+
 ## [1.4.3] - 2026-04-16
 
 ### Added
