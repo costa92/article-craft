@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.4.1] - 2026-04-16
+
+### Changed
+
+- **Self-check rules are now single-sourced** in `references/self-check-rules.md`. The `write`, `lint`, and `review` skills previously re-stated the 11 rules inline — ~241 lines of duplication across 3 skills. They now reference the canonical source by rule number, declaring only their enforcement role (pre-save GATE vs auto-fix vs detect-only). New "Who enforces what" matrix at the top of the rules file makes ownership unambiguous.
+- **`references/self-check-rules.md` rewritten** (201 → 433 lines). Each rule now carries explicit `Severity` / `Auto-fix` / `Escalation` metadata. Rule 1 auto-fix mapping, Rule 5 transition-word list (5 words), Rule 11 ASCII-diagram grep (12 canonical single chars) all live here once.
+- **Rule 7b (minimum AI image count) migrated from review to the canonical source**, including the degradation-detection pre-check that downgrades to WARNING when unresolved `<!-- IMAGE: -->` placeholders exist (prevents orphan-placeholder injection when images stage degraded).
+- **Rule 11 (ASCII diagrams) split into three-role semantics**: write Step 6 pre-save GATE auto-converts; lint reports only (may run anywhere in pipeline); review detect-only and blocks Phase 2 via AskUserQuestion. Previously this distinction lived in review's inline copy.
+
+### Fixed
+
+- **lint's ASCII grep drift**: was `│|├|└|┌|┐|─|▼|▶|←→|──→|←──` (12 chars + 3 useless combined sequences, missed `↑↓`). Now uses the canonical single-character set `│|├|└|┌|┐|─|▼|▶|←|→|↑|↓` shared with write and review.
+- **Transition-word list divergence**: lint had 5 words, rules.md + review had 4. Unified to 5 (`此外|另外|同时|值得注意的是|除此之外`) as the canonical list.
+- **Rule 11 auto-fix instructions in rules.md** contradicted review's v1.3.2 "detect-only" architecture fix. Rewrote to match actual behavior: only write Step 6 auto-converts (pre-images), everyone downstream either reports or blocks.
+
+### Design notes
+
+- The rules.md file is now the **only** place rule bodies, grep patterns, and auto-fix mappings live. SKILL.md files declare *which rules they enforce and how* but do not re-type the rules. Adding or changing a rule is now a one-file edit.
+- Phase 2 scoring (7 dimensions), oscillation guard, write Step 6/7 gates, and handoff-contract invariants are unchanged. This is purely a deduplication refactor.
+
 ## [1.4.0] - 2026-04-15
 
 ### Added
