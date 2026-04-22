@@ -39,6 +39,8 @@
 
 **结尾：** 具体的下一步操作（一条命令或一个动作）
 
+**截图占位符：** 每当引用工具的**安装文档 / GitHub README / CLI 运行结果页**时，紧随引用段发射一个 `<!-- SCREENSHOT: url [#selector] -->`。触发规则见 `skills/write/SKILL.md` §3f『何时发射 SCREENSHOT 占位符』。
+
 ---
 
 ## Style B: 经验分享 / 口语化
@@ -87,6 +89,8 @@
 ```
 
 **结尾：** "写在最后" + 情绪升华 + 行动号召 + 签名
+
+**截图占位符：** Style B 本来就是**截图密集型**（每 2-4 段一张），**每个介绍的工具/技巧都要配 SCREENSHOT**：官方页、X 原帖、产品截图都走 `<!-- SCREENSHOT: url [#selector] -->`。触发规则见 `skills/write/SKILL.md` §3f。
 
 ---
 
@@ -177,6 +181,8 @@
 [一句话总结你的个人选择和理由]
 ```
 
+**截图占位符：** 评测必须配**真实的基准测试页 / 官方性能报告 / 排行榜**截图，每个对比维度尽量配一张：`<!-- SCREENSHOT: url [#selector] -->`。跑分截图最能服人。触发规则见 `skills/write/SKILL.md` §3f。
+
 ---
 
 ## Style E: 资讯快报
@@ -215,6 +221,8 @@
 ```
 
 **结尾：** 个人评价（值不值得升级/关注） + 官方链接汇总
+
+**截图占位符：** 资讯快报对**原始信源截图**要求最高：官方发布公告页、changelog、CEO/PM 的 X 原帖，每个要点都要配一张 `<!-- SCREENSHOT: url [#selector] -->`。这是"真实性锚点"。触发规则见 `skills/write/SKILL.md` §3f。
 
 ---
 
@@ -274,6 +282,8 @@
 [关键 lesson learned — 一句话]
 ```
 
+**截图占位符：** 复盘贵在"有据可查"：**监控面板 before/after、PR 页、issue 页、报错日志页**都配 `<!-- SCREENSHOT: url [#selector] -->`。如果是内部系统截不到公开 URL，允许退回手工图片（不发射 SCREENSHOT 占位符）。触发规则见 `skills/write/SKILL.md` §3f。
+
 ---
 
 ## Style G: 观点输出 / 思考
@@ -316,6 +326,8 @@
 ```
 
 **结尾：** 总结立场 + 承认局限性 + 期待讨论
+
+**截图占位符：** 观点文配图最少，但**引用"反方"或"同方"的别家文章/推文时必截**，否则容易被质疑"断章取义"——直接发射 `<!-- SCREENSHOT: url [#selector] -->` 锁证。触发规则见 `skills/write/SKILL.md` §3f。
 
 ---
 

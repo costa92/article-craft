@@ -584,13 +584,78 @@ def check_rule_15(content: str, lines: List[str]) -> CheckResult:
     )
 
 
+def check_rule_16(content: str, lines: List[str]) -> CheckResult:
+    """PROMPT 文字渲染风险：PROMPT 里出现 CJK 字符 / 明显的 'render this exact text' 指令。
+
+    Gemini 图像模型无法稳定渲染中文汉字，也渲不好英文长句。一旦 PROMPT 里出现
+    中日韩字符或 'text "...", label "...", title "...", headline "..."' 之类直接
+    指令，生成出来的图几乎必然文字翻车。这条规则在**write 阶段**就拦截。
+    """
+    cjk_re = re.compile(r'[一-鿿぀-ヿ가-힯]')
+    text_instruction_re = re.compile(
+        r'\b(text|title|headline|caption|label|logo|slogan|copy|heading|word|letter|sign|quote|saying)\s*[:=]?\s*["“‘]',
+        re.IGNORECASE,
+    )
+    violations: List[Violation] = []
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith('<!-- PROMPT:'):
+            continue
+
+        # Extract prompt body (strip marker and trailing -->)
+        body = stripped
+        if body.startswith('<!-- PROMPT:'):
+            body = body[len('<!-- PROMPT:'):]
+        if body.endswith('-->'):
+            body = body[:-3]
+        body = body.strip()
+
+        # CJK inside prompt → hard fail (Gemini can't render Chinese text)
+        cjk_chars = cjk_re.findall(body)
+        if cjk_chars:
+            sample = ''.join(cjk_chars[:10])
+            violations.append(Violation(
+                line=i + 1, text=stripped[:80],
+                suggestion=(
+                    f"PROMPT 里出现 CJK 字符 ({sample})。Gemini 不能稳定渲染中文。"
+                    "改成视觉替代（剪影/色块/图标），并在结尾加 "
+                    "'No readable text anywhere, no letters, no numbers, no labels.'"
+                )
+            ))
+            continue
+
+        # English instructions to render specific text strings → warn
+        if text_instruction_re.search(body):
+            # Allow if prompt explicitly says 'no text' or similar
+            if re.search(r'no\s+(readable\s+)?(text|letters|words|labels|captions|logos)', body, re.IGNORECASE):
+                continue
+            violations.append(Violation(
+                line=i + 1, text=stripped[:80],
+                suggestion=(
+                    "PROMPT 指示 Gemini 渲染具体文字（text/title/label/...）。"
+                    "改用图标或剪影替代，或在末尾加硬约束 "
+                    "'No readable text anywhere, no letters, no numbers, no labels.'"
+                )
+            ))
+
+    return CheckResult(
+        rule_id=16, rule_name="PROMPT 文字渲染风险",
+        passed=len(violations) == 0, violations=violations,
+        details=(
+            f"{len(violations)} 处 PROMPT 里包含文字渲染风险（CJK 或 'render text X' 指令）"
+            if violations else "所有 PROMPT 均不要求 Gemini 渲染文字 ⭐"
+        ),
+    )
+
+
 # ─── Runner ──────────────────────────────────────────────────────
 
 ALL_CHECKS = [
     check_rule_1, check_rule_2, check_rule_3, check_rule_4,
     check_rule_5, check_rule_6, check_rule_7, check_rule_8,
     check_rule_9, check_rule_10, check_rule_11, check_rule_12,
-    check_rule_13, check_rule_14, check_rule_15,
+    check_rule_13, check_rule_14, check_rule_15, check_rule_16,
 ]
 
 
@@ -619,7 +684,7 @@ def print_report(results: List[CheckResult]) -> None:
 
     print("════════════════════════════════════════════════════════════")
     print()
-    print("📋 Self-Check Results (15 Rules):")
+    print("📋 Self-Check Results (16 Rules):")
 
     for r in results:
         icon = "✅" if r.passed else "❌"

@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased] - 2026-04-22
+
+### Fixed
+
+- **Gemini can't render Chinese text in images — articles silently produced garbled glyphs.** Two articles shipped with CDN cover images full of distorted/misspelled Chinese characters because `<!-- PROMPT: -->` lines asked Gemini to render menus, magazine covers, calligraphy scrolls, etc. with embedded Chinese text. Triple-layer fix:
+  1. **Write-stage rule** in `skills/write/SKILL.md` section 3f: a new "⛔ 硬禁止：PROMPT 里绝对不能要求 Gemini 渲染任何可读文字" block with a 5-line bad/good matrix and the mandatory tail constraint `No readable text anywhere, no letters, no numbers, no labels, no captions, no logos.` Also documents the self-contradiction case (don't use Gemini to illustrate another model's text-rendering ability).
+  2. **Style-guide rule** in `skills/images/image-guide.md` "Prompt 写作规则": expanded rules #5-6 from one-line soft guidance into a full hard-block with examples of visual-substitution patterns (menu → menu silhouette with column layout, calligraphy → brush-stroke marks without characters, etc.).
+  3. **Self-check Rule 16** in `scripts/review_selfcheck.py` and `references/self-check-rules.md`: new automated detector that scans every `<!-- PROMPT: -->` line for (a) any CJK character `[一-鿿぀-ヿ가-힯]` — hard fail; and (b) common "render text X" instructions like `text "…"`, `title "…"`, `headline "…"` unless the prompt also contains `no readable text` / `no letters` / `no labels` as a defusing whitelist. Rule count upgraded from 15 to 16.
+
+### How it was caught
+
+User shipped two articles (`chatgpt-image-2-prompt-handbook.md`, `kimi-k2-6-from-k25-upgrade.md`) where cover + rhythm image CDN URLs came back with mangled Chinese characters. The old image-guide had one line ("不要写文字内容") but it wasn't enforced anywhere downstream, so Gemini still got prompts asking for things like `magazine cover titled "VOL.08 慢生活"`, `menu with items "招牌菜 ¥68"`, `calligraphy scroll saying "静"`. Rule 16 now catches these pre-generation.
+
+### Validated
+
+- `review_selfcheck.py` on the fixed text-free articles → Rule 16 PASS ✅
+- Synthetic test with CJK in PROMPT → Rule 16 FAIL with specific character samples in the suggestion
+- Synthetic test with `text "X"` + `no readable text` whitelist → Rule 16 PASS (correctly defused)
+
 ## [1.4.17] - 2026-04-16
 
 ### Fixed

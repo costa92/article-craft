@@ -420,6 +420,72 @@ Markdown 列表替代：
 
 ---
 
+## Rule 16: PROMPT Text-Rendering Risk (Gemini can't render Chinese)
+
+**Severity**: FAIL
+**Auto-fix**: enforced at write stage; review flags survivors
+**Escalation**: write rewrites the prompt; review blocks if CJK remains.
+
+### Why
+
+Gemini's image models (including `gemini-3-pro-image-preview` and
+`gemini-2.5-flash-image`) **cannot reliably render CJK characters**. Chinese
+glyphs come out distorted, miss strokes, or are pure gibberish. English short
+labels are also unreliable. Any `<!-- PROMPT: -->` that asks Gemini to render
+specific readable text — especially Chinese — will produce an unusable image
+that has to be regenerated.
+
+The rule catches this **before** the image is generated, so you don't waste
+an API call and end up with a broken article.
+
+### Canonical detection
+
+```bash
+# CJK characters inside any <!-- PROMPT: --> line
+grep -nE '<!-- PROMPT:.*[\x{4e00}-\x{9fff}]' article.md
+
+# Common "render this exact text" instructions in English
+grep -niE '<!-- PROMPT:.*\b(text|title|headline|caption|label|logo|slogan|copy|heading|sign|quote|saying)\s*[:=]?\s*["""]'  article.md
+```
+
+Whitelist: if the prompt explicitly contains
+`No readable text anywhere` / `no letters` / `no labels`, the English
+instruction form is considered defused.
+
+### Fix — visual substitution
+
+Instead of asking Gemini to render text, describe the visual shape of a text
+artifact:
+
+| Subject | ❌ Bad PROMPT | ✅ Good PROMPT |
+|---------|--------------|---------------|
+| Menu | `menu showing "招牌菜 ¥68"` | `silhouette of a folded menu with price-column layout lines and food-icon shapes` |
+| Newspaper | `newspaper headline "XX 突破"` | `silhouette of a newspaper front page showing only masthead frame and column block patterns` |
+| Poster | `poster titled "越界"` | `silhouette of a vehicle-launch poster with abstract light streaks and product-shape composition` |
+| Calligraphy | `calligraphy saying "静"` | `calligraphy scroll with abstract brush-stroke marks, no characters` |
+| Magazine | `magazine cover "慢生活 VOL.08"` | `silhouette of a magazine cover showing layout grid and cover-photo shape` |
+
+And append this hard constraint at the end of every prompt where it fits:
+
+```
+No readable text anywhere, no letters, no numbers, no labels, no captions, no logos.
+```
+
+### The self-contradiction case
+
+If the **article itself discusses text-rendering ability** (e.g. a GPT-Image-2
+review, a nano-banana text-rendering test, an Imagen benchmark), never use a
+`<!-- IMAGE: -->` + Gemini prompt to illustrate that ability. You are using a
+model that cannot render text to "prove" another model can — the final image
+will visually contradict the claim. Use one of these instead:
+
+1. `<!-- SCREENSHOT: -->` of the target model's actual output page
+2. Manually inserted real screenshot URLs (`![](https://…/real_output.png)`)
+3. A Markdown table comparing before/after
+4. A pure-abstract Gemini prompt (silhouettes, color blocks, icons, no chars)
+
+---
+
 ## Appendix: Quick-scan grep
 
 For a one-shot sweep of the most common violations before running individual rules:

@@ -341,8 +341,37 @@ Soft [blue] [purple] [yellow] [green] accents
 2. **结构**: `[风格约束], [背景描述]. [主体内容], [细节补充]`
 3. **长度**: 30-80 词，太短缺细节，太长互相矛盾
 4. **禁止**: 不要写 "高清" "4K" "超清"（由 `--resolution` 参数控制）
-5. **禁止**: 不要写文字内容（AI 生成的文字通常是乱码）
-6. **配色命名**: 用具体色名 (`soft blue`, `coral`, `mint green`)，不用 `漂亮的颜色`
+5. **硬禁止——文字渲染**（重要，违反即重生成）：
+
+   Gemini 的图像模型**无法稳定渲染中文**（汉字变形/缺笔画/拼错），英文也只能勉强渲染短标签。凡是要求图里出现"可读文字"的提示词，产出几乎必然翻车。
+
+   - **绝对禁止**在 prompt 里写任何要 Gemini 渲染的中文文字（标题、标签、引号内容、菜单项、报纸标题、书法内容……）
+   - **不要**写 `"中文标题 'XXX'"`、`"菜单上写'招牌菜 ¥68'"`、`"左上角大字'2026 年报'"` 这类指令
+   - **也不要**让它渲染中文人名、中文签名、中文印章文字
+
+   **硬约束模板**（所有 prompt 建议 copy 这一行到末尾）：
+
+   ```
+   No readable text anywhere, no letters, no numbers, no labels, no captions, no logos.
+   ```
+
+   **需要传达"有文字"的概念时，用视觉替代**：
+
+   | 想表达 | ❌ 错误写法 | ✅ 正确写法 |
+   |--------|-----------|-----------|
+   | 菜单 | `menu with items "招牌牛肉 ¥98..."` | `silhouette of a folded menu showing price-column layout lines and subtle food-icon shapes` |
+   | 报纸 | `newspaper headline "XX 技术突破"` | `silhouette of a newspaper front page showing only masthead frame and column block patterns` |
+   | 海报 | `poster with Chinese title "越界"` | `silhouette of a vehicle-launch poster with abstract light-streak and product-shape composition` |
+   | 杂志封面 | `magazine cover titled "慢生活 VOL.08"` | `silhouette of a magazine cover showing only layout grid and cover-photo shape` |
+   | 书法 | `calligraphy scroll saying "静"` | `calligraphy scroll showing only abstract brush-stroke marks, no characters` |
+
+   **唯一允许出现的文字**：少量已知 Gemini 渲染准确的拉丁字母（如品牌 logo `Apple`、`Docker`、`React`、通用符号如 `→` `&` `+`）。哪怕这一类也建议全部去掉，用图标替代。
+
+6. **禁止自证悖论**：如果文章本身讲的是"某模型的文字渲染能力"（比如 GPT-Image-2、nano-banana 的文字测试），**绝对不能用 Gemini 生成示意图去"展示"那个模型的文字效果**——这等于拿一个不擅长渲染文字的模型去证明另一个模型擅长渲染文字，视觉上自相矛盾。这种场景只能用：
+   - 作者手工截图（`<!-- SCREENSHOT: -->` 占位符或直接插入真实截图 URL）
+   - Markdown 表格对比
+   - 纯抽象示意图（剪影、色块、图标）
+7. **配色命名**: 用具体色名 (`soft blue`, `coral`, `mint green`)，不用 `漂亮的颜色`
 
 ### 封面图 → 节奏图一致性示例
 
