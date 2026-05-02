@@ -16,7 +16,7 @@ allowed-tools:
 
 # Article Craft — Orchestrator
 
-Composes 8 skills into a complete article generation pipeline. Each skill can also
+Composes the main article generation pipeline. Each skill can also
 be used independently via `/article-craft:<skill-name>`.
 
 ## Workflow Modes
@@ -140,7 +140,7 @@ Example failure output:
 ### Step 1: Determine Mode
 
 Parse the invocation arguments:
-- No flags → standard mode (all 7 skills)
+- No flags → standard mode (full pipeline)
 - `--quick` → quick mode (requirements + write + screenshot + images)
 - `--draft` → draft mode (requirements + write only)
 - If a file path to an existing `.md` file is provided → skip requirements/verify/write,
@@ -166,6 +166,7 @@ Pipeline Status:
   screenshot:   pending
   share_card:   pending   # 可选，标准模式询问用户
   images:       pending
+  verify_claims: pending
   review:       pending
   publish:      pending
 ```
@@ -237,6 +238,7 @@ Result payloads per stage (pass as JSON to `--result` / `--partial`):
 | `screenshot` | `screenshots_captured`, `harvest_expanded` |
 | `share_card` | `cards_generated`, `platforms`, `skip_reason` (if skipped) |
 | `images` | `images_generated`, `images_failed`, `unresolved_placeholders` |
+| `verify_claims` | `total_tools`, `checked_tools`, `missing_tools`, `action` |
 | `review` | `score_0`, `final_score`, `rounds`, `verdict` |
 | `publish` | `final_path`, `kb_dir` |
 
@@ -515,7 +517,7 @@ After all skills complete (or pipeline stops on fatal error), print a summary ta
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│            Article Craft v1.3.0 — Summary                 │
+│            Article Craft v1.4.17 — Summary                │
 ├──────────────┬──────────┬───────────────────────────────┤
 │ Skill        │ Status   │ Notes                         │
 ├──────────────┼──────────┼───────────────────────────────┤
@@ -528,6 +530,7 @@ After all skills complete (or pipeline stops on fatal error), print a summary ta
 │ screenshot   │ success  │ 2/2 captured                  │
 │ share_card   │ success  │ 3 cards generated             │
 │ images       │ success  │ 4/5 uploaded, 1 placeholder   │
+│ verify_claims │ success  │ 0 missing tools               │
 │ review       │ success  │ Score: 58/70 (round 1)        │
 │ publish      │ success  │ KB: {final_path}              │
 ├──────────────┼──────────┼───────────────────────────────┤
@@ -567,6 +570,7 @@ If the pipeline stops due to a fatal error (write skill failure):
 │ screenshot   │ skipped  │ (blocked by write failure)    │
 │ share_card   │ skipped  │ (blocked by write failure)    │
 │ images       │ skipped  │ (blocked by write failure)    │
+│ verify_claims │ skipped  │ (blocked by write failure)    │
 │ review       │ skipped  │ (blocked by write failure)    │
 │ publish      │ skipped  │ (blocked by write failure)    │
 └─────────────────────────────────────────────────────────┘
@@ -583,6 +587,7 @@ Each skill can be used independently without the orchestrator:
 /article-craft:write          # Just write an article
 /article-craft:screenshot     # Just take screenshots / generate share cards
 /article-craft:images         # Just generate images for existing article
+/article-craft:verify-claims  # Just verify tool claims in the article body
 /article-craft:review         # Just review an existing article
 /article-craft:publish        # Just publish to knowledge base
 ```

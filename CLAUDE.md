@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`article-craft` is a **Claude Code plugin** (not a runtime application) that ships 12 composable skills for the full article generation lifecycle. The repo is the source that gets installed to `~/.claude/plugins/article-craft/` via `install.sh` or the Claude Code plugin marketplace. Skills are executed by Claude Code itself — this repo contains the prompts, references, and supporting Python scripts, not a service to run.
+`article-craft` is a **Claude Code plugin** (not a runtime application) that ships 12 composable skills for the full article generation lifecycle, plus the orchestrator that composes them. The repo is the source that gets installed to `~/.claude/plugins/article-craft/` via `install.sh` or the Claude Code plugin marketplace. Skills are executed by Claude Code itself — this repo contains the prompts, references, and supporting Python scripts, not a service to run.
 
 **Two verification stages (since v1.4.5):** `verify` runs **before** `write` and vets the *sources* (URL reachability, T0–T5 trust tiering — this is effectively a source-vet stage, the directory kept its name for command compat). `verify-claims` runs **after images, before review** and vets the *article body* (scans shell code blocks for tool names, checks each is on PATH via `scripts/verify_claims.py`).
 
@@ -12,18 +12,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### The orchestrator pattern
 
-Everything funnels through `skills/orchestrator/SKILL.md`, which composes the 11 skills into a pipeline:
+Everything funnels through `skills/orchestrator/SKILL.md`, which composes the main article pipeline:
 
 ```
-requirements → verify → write → screenshot → (share_card?) → images → review → publish
+requirements → verify → [evidence if Style H] → write → screenshot → (share_card?) → images → verify-claims → review → publish
 ```
 
 Each skill is also callable standalone via `/article-craft:<skill-name>`. The `commands/article-craft.md` slash command simply instructs Claude to read and follow the orchestrator SKILL.md, passing `$ARGUMENTS` through.
 
 Four workflow modes change which steps run:
-- **standard** (default): all 7 steps
-- **quick** (`--quick`): skips verify + review + publish
-- **draft** (`--draft`): requirements + write only
+- **standard** (default): requirements + verify + conditional evidence + write + screenshot + optional share card + images + verify-claims + review + publish
+- **quick** (`--quick`): skips both verification stages, review, and publish
+- **draft** (`--draft`): requirements + conditional evidence + write only
 - **series** (`--series FILE`): reads a series.md index, pre-fills requirements
 - **upgrade** (`--upgrade PATH`): inspects an existing article's state (placeholders, CDN URLs, KB location) and runs only the missing stages
 
@@ -46,7 +46,7 @@ When making changes: SKILL.md files reference scripts by `${CLAUDE_PLUGIN_ROOT}/
 - `scripts/utils.py` — `PlaceholderManager` (in-place article mutation) and `SmartDirectoryMatcher` (knowledge base auto-placement for publish skill).
 - `scripts/review_selfcheck.py` — the 11-rule self-check invoked by the review skill. Do not run it standalone from the orchestrator; the review skill calls it internally.
 - `scripts/write_verify_cache.py` — writer counterpart to the verify cache; the verify skill calls it (single-URL or `--batch` JSONL) to populate `~/.cache/article-craft/verify-cache.json`.
-- `scripts/bump_version.py` — bumps all 13 version carriers in lockstep: `.claude-plugin/plugin.json` (version + description `— vX.Y.Z` tail), `.claude-plugin/marketplace.json` (`plugins[0].version`), and every `skills/*/SKILL.md` frontmatter. Accepts `major` / `minor` / `patch` or an explicit `X.Y.Z`. Use `--no-tag` to let the GitHub workflow handle tag creation on push (recommended default).
+- `scripts/bump_version.py` — bumps `plugin.json`, `marketplace.json`, and every `skills/*/SKILL.md` frontmatter in lockstep. Accepts `major` / `minor` / `patch` or an explicit `X.Y.Z`. Use `--no-tag` to let the GitHub workflow handle tag creation on push (recommended default).
 - `lib/article-core.js` — tiny Node shim exposing `loadConfig()`, `resolveScriptPath()`, `findSkills()` for any JS-side consumers. Also respects `CLAUDE_PLUGIN_ROOT`.
 
 ### Cross-skill data flow
@@ -103,9 +103,9 @@ python3 scripts/share_card.py -f /abs/path/article.md \
 ## Conventions when editing this repo
 
 - **Paths**: always `${CLAUDE_PLUGIN_ROOT}` in markdown/shell, `process.env.CLAUDE_PLUGIN_ROOT` in JS, read from env/argv in Python. Never `~/.claude/plugins/article-craft/`.
-- **SKILL.md frontmatter**: every skill must declare `name`, `version`, `description`, and `allowed-tools`. As of v1.3.4 all 11 skills comply — do not regress this. The orchestrator's `allowed-tools` list must stay a superset of the union of what downstream skills declare.
-- **Skill versions**: all 11 skills track the plugin version in lockstep. When bumping, use `scripts/bump_version.py` or update `.claude-plugin/plugin.json` + all 11 `skills/*/SKILL.md` frontmatter in the same commit.
-- **Version bumps**: `.claude-plugin/plugin.json` is the source of truth, and **13 files must move in lockstep** — `plugin.json`, `marketplace.json`, and all 11 `skills/*/SKILL.md`. Use `python3 scripts/bump_version.py <major|minor|patch|X.Y.Z> --no-tag` to update all 13 atomically, then update `CHANGELOG.md` and commit. `.github/workflows/tag-release.yml` reads `plugin.json` on push to `main`; if the release for that version doesn't exist, it creates the tag + release (no auto-bump — that was a v1.3.2 bug fixed in v1.3.4). If the release already exists, the workflow is an idempotent no-op, so pushes without a version bump are safe.
+- **SKILL.md frontmatter**: every skill must declare `name`, `version`, `description`, and `allowed-tools`. As of v1.3.4 all 12 non-orchestrator skills comply — do not regress this. The orchestrator's `allowed-tools` list must stay a superset of the union of what downstream skills declare.
+- **Skill versions**: all 12 non-orchestrator skills track the plugin version in lockstep. When bumping manually, update `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and all `skills/*/SKILL.md` frontmatter in the same commit; `scripts/bump_version.py` does that for you.
+- **Version bumps**: `.claude-plugin/plugin.json` is the source of truth, and `scripts/bump_version.py` must update `plugin.json`, `marketplace.json`, and all `skills/*/SKILL.md` frontmatter together. `.github/workflows/tag-release.yml` reads `plugin.json` on push to `main`; if the release for that version doesn't exist, it creates the tag + release (no auto-bump — that was a v1.3.2 bug fixed in v1.3.4). If the release already exists, the workflow is an idempotent no-op, so pushes without a version bump are safe.
 - **Configuration**: all API keys, model selection, S3, timeouts go in `~/.claude/env.json` (see `ENV.md`). Do not add new config files; extend `scripts/config.py` to read additional keys.
 - **New skills**: create `skills/<name>/SKILL.md` with frontmatter, then add a standalone command at `commands/article-craft/<name>.md`, then wire it into `skills/orchestrator/SKILL.md` if it belongs in the main pipeline. Every skill (except `orchestrator`) should have a matching sub-command file — this 1:1 mapping is the invariant downstream users rely on.
 - **Command-level shortcuts**: if you want a dedicated slash entry point for an *orchestrator mode* (not a real skill), add a `commands/article-craft/<name>.md` that reads `skills/orchestrator/SKILL.md` and follows the relevant mode section — do **not** create an empty `skills/<name>/` directory. `commands/article-craft/upgrade.md` is the reference example: it's a shortcut for `--upgrade`, with no matching skill.

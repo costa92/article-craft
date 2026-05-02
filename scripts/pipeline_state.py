@@ -218,7 +218,11 @@ def _stage_done_heuristic(stage: str, scan: dict[str, Any]) -> bool:
     if stage == "write":
         return scan.get("has_frontmatter", False)
     if stage == "screenshot":
-        return scan.get("screenshot_placeholders", 0) == 0 and scan.get("harvest_placeholders", 0) == 0
+        return (
+            scan.get("has_frontmatter", False)
+            and scan.get("screenshot_placeholders", 0) == 0
+            and scan.get("harvest_placeholders", 0) == 0
+        )
     if stage == "images":
         return scan.get("image_placeholders", 0) == 0 and scan.get("cdn_images", 0) > 0
     if stage == "publish":

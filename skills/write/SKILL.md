@@ -608,17 +608,12 @@ auto-fix mappings live there — do not re-type them here.
 
 **Write's ownership (per the "Who enforces what" matrix in rules.md):**
 
-- **Pre-save GATE (must pass before Step 6 can save)**:
-  - **Rule 1** — red-flag words: apply canonical auto-fix mapping inline
-  - **Rule 2** — hook ≤ 100 chars: split if needed
-  - **Rule 6** — chapter depth ≥ 2 code blocks per `##`: pad thin sections with
-    real content (cost-comparison block, CLI example, config fragment). Never
-    leave this for post-write validation
-  - **Rule 11** — ASCII diagrams: **auto-convert** to `<!-- IMAGE: -->` +
-    `<!-- PROMPT: -->` per the rules.md template. Re-grep until clean. Blocks
-    save — see Step 6 GATE
-- **Deferred to lint / review (do not duplicate here)**: rules 3, 4, 5, 7, 7b,
-  8, 9, 10. Those are lint's or review Phase 1's job.
+- **Pre-save GATE (must pass before Step 6 can save)**: apply rules **1, 2, 6,
+  and 11** from `references/self-check-rules.md`. The rule bodies, canonical
+  grep patterns, and auto-fix mappings live in that file; do not restate them
+  here.
+- **Deferred to lint / review (do not duplicate here)**: rules **3, 4, 5, 7,
+  7b, 8, 9, 10**. Those are lint's or review Phase 1's job.
 
 For the quick convenience sweep before Step 6, use the single combined grep in
 the appendix of rules.md.

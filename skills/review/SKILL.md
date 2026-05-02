@@ -1,7 +1,7 @@
 ---
 name: article-craft:review
 version: 1.4.17
-description: "Quality gate for articles — built-in self-check rules + embedded content scoring. All-in-one review without external dependencies."
+description: "Quality gate for articles — canonical self-check rules + built-in content scoring. All-in-one review without external dependencies."
 allowed-tools:
   - Read
   - Edit
@@ -17,8 +17,8 @@ Run self-check rules against the article, then perform built-in content scoring.
 **Invoke**: `/article-craft:review`
 
 **Features**:
-- Phase 1: 11 self-check rules (embedded)
-- Phase 2: 7-dimension content scoring (embedded)
+- Phase 1: rules 1-11 from `references/self-check-rules.md`
+- Phase 2: 7-dimension built-in content scoring
 - Self-contained: no external skill installation needed
 
 ---
@@ -38,7 +38,7 @@ Question: "Which article file should I review?"
 
 ## Execution Steps
 
-### Phase 1: Self-Check (all 11 rules)
+### Phase 1: Self-Check (rules 1-11 from `references/self-check-rules.md`)
 
 Canonical source: **`${CLAUDE_PLUGIN_ROOT}/references/self-check-rules.md`**.
 
@@ -55,12 +55,12 @@ rules here — the review skill's job is to apply them, not re-state them.
    stage has already run; new placeholders would be orphaned).
 
 2. **Rule 7b second** (min AI image count) — run the degradation detection
-   block from rules.md 7b **before** the threshold check. If unresolved
+   block from `references/self-check-rules.md` Rule 7b **before** the threshold check. If unresolved
    `<!-- IMAGE: -->` placeholders exist, downgrade to WARNING and skip any
    injection attempt. Never add placeholders here (same orphan risk as Rule 11).
 
 3. **Rules 1, 2, 3, 4, 5, 8, 10** — apply the canonical grep / inspection,
-   fix violations in place with Edit. Use the auto-fix mapping in rules.md
+   fix violations in place with Edit. Use the auto-fix mapping in `references/self-check-rules.md`
    where it exists; otherwise rewrite per the rule body.
 
 4. **Rules 6, 7, 9** — detect only; these are write-owned (6) or already
@@ -70,7 +70,7 @@ rules here — the review skill's job is to apply them, not re-state them.
 
 - Never touch handoff-contract comments (`<!-- IMAGE: -->`, `<!-- PROMPT: -->`,
   `<!-- SCREENSHOT: -->`, `<!-- HARVEST: -->`) or CDN image URLs during any fix.
-- A rule marked WARNING in rules.md must not block Phase 2 (only FAIL does).
+- A rule marked WARNING in `references/self-check-rules.md` must not block Phase 2 (only FAIL does).
 - Record every fix for the Phase 2 AI 痕迹 dimension input.
 
 ---
@@ -158,24 +158,24 @@ review.
 
 ---
 
-## Output: Score + Feedback Report
+## Output
 
 ```markdown
 ## Review Results
 
-### Phase 1: Self-Check (11 rules)
-- Rule 1 (Red-Flag Words): PASS / FIXED (N violations rewritten)
-- Rule 2 (Hook Length): PASS / FIXED
-- Rule 3 (Closing): PASS / FIXED
-- Rule 4 (Description): PASS / FIXED
-- Rule 5 (Anti-AI Structure): PASS / FIXED
-- Rule 6 (Chapter Depth): PASS / WARNING (section X is thin)
-- Rule 7 (Duplicate Images): PASS
-- Rule 7b (Minimum AI Image Count): PASS / WARNING (need N more images)
-- Rule 8 (WeChat Links): PASS / FIXED
-- Rule 9 (Mermaid Residue): PASS
-- Rule 10 (References Inline): PASS / FIXED
-- Rule 11 (ASCII Diagram Check): PASS / FIXED (N diagrams converted)
+### Phase 1: Self-Check (rules 1-11)
+- Rule 1: PASS / FIXED / WARNING
+- Rule 2: PASS / FIXED / WARNING
+- Rule 3: PASS / FIXED / WARNING
+- Rule 4: PASS / FIXED / WARNING
+- Rule 5: PASS / FIXED / WARNING
+- Rule 6: PASS / FIXED / WARNING
+- Rule 7: PASS / FIXED / WARNING
+- Rule 7b: PASS / FIXED / WARNING
+- Rule 8: PASS / FIXED / WARNING
+- Rule 9: PASS / FIXED / WARNING
+- Rule 10: PASS / FIXED / WARNING
+- Rule 11: PASS / FIXED / WARNING
 
 ### Phase 2: Diagnostic Scoring (7 dimensions)
 | Dimension | Score | Notes |
@@ -189,12 +189,11 @@ review.
 | 图片配置 | X/10 | ... |
 | **Total** | **X/70** | **PASS (≥55) / NEEDS_REVISION (<55)** |
 
-### Feedback (dimensions scoring <7/10 only)
+### Feedback
 For each weak dimension, print:
 - **What failed**: one-line concrete issue
 - **Where**: file:line or section heading
-- **Suggested action**: e.g. "re-run /article-craft:write on section X",
-  "delete L47 redundant sentence", "add a second code block to section Y"
+- **Suggested action**: one short action
 
 ### Verdict
 - **PASS** — score ≥ 55, or score < 55 but user chose "Publish anyway"
@@ -214,7 +213,7 @@ When invoked directly (not as part of the orchestrator pipeline):
    ```
    Question: "Review mode?"
    Options:
-     - Publish -- full review with embedded 7-dim scoring (>= 55/70 required)
+     - Publish -- full review with built-in 7-dim scoring (>= 55/70 required)
      - Draft -- self-check only, skip scoring phase
    ```
 3. Execute the review steps above.

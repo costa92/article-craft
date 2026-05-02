@@ -140,8 +140,8 @@ _HELP_NOUN_RE = re.compile(
 
 
 def _iter_shell_blocks(text: str):
-    for m in re.finditer(r"```(\w+)\n(.*?)```", text, re.DOTALL):
-        lang = m.group(1).lower()
+    for m in re.finditer(r"```([^\n`]*)\n(.*?)```", text, re.DOTALL):
+        lang = m.group(1).strip().split()[0].lower() if m.group(1).strip() else ""
         if lang not in SHELL_LANGS:
             continue
         yield m.group(2)

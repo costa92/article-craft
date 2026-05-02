@@ -1,7 +1,7 @@
 ---
 name: article-craft:lint
 version: 1.4.17
-description: "Check and auto-fix article style violations — red-flag words, hook length, closing patterns, AI traces. Use to clean up articles before review."
+description: "Check and auto-fix article style violations using canonical self-check rules. Use to clean up articles before review."
 allowed-tools:
   - Read
   - Edit
@@ -39,20 +39,14 @@ Scan an article for style violations and optionally auto-fix them. Faster than r
 Canonical source: **`${CLAUDE_PLUGIN_ROOT}/references/self-check-rules.md`**.
 
 Lint runs the **auto-fixable subset** of the canonical rules. Read that file
-for each rule's body, grep pattern, and fix mapping — do not re-type them.
+for each rule's body, grep pattern, and fix mapping — do not re-type them here.
 
 **Rule scope for lint:**
 
-| Rule | lint behavior | Why |
-|------|---------------|-----|
-| 1 Red-flag words   | `--fix` applies the canonical auto-fix mapping | mechanical replacement |
-| 2 Hook length      | `--fix` splits into two paragraphs per rules.md | mechanical |
-| 3 Closing paragraph | `--fix` replaces with a concrete next-step from the article body | mechanical once patterns matched |
-| 4 Description field | `--fix` generates summary from first section | mechanical |
-| 5 Anti-AI structure | `--fix` deletes repeated transitions (5-word list in rules.md); does NOT rewrite structure rotation or personal-perspective coverage | partial: only transitions are truly mechanical |
-| 9 Mermaid residue  | **report only** — needs PNG rendering | run `/article-craft:images` after |
-| 10 References inline | `--fix` deletes standalone "参考资料" section | mechanical |
-| 11 ASCII diagrams  | **report only** — do not auto-fix | lint may run anywhere; post-images conversion would orphan placeholders (see rules.md Rule 11) |
+| Rule(s) | lint behavior |
+|---------|---------------|
+| 1, 2, 3, 4, 5, 10 | `--fix` applies the canonical auto-fix mapping from `references/self-check-rules.md` |
+| 9, 11 | report only; do not auto-fix |
 
 **Out of scope for lint** (flag in report, do not attempt): rules 6 (chapter
 depth — needs content), 7 / 7b (image count — needs images stage), 8 (WeChat
@@ -75,7 +69,7 @@ external links — context-dependent).
 ## Output
 
 Report rows use the canonical rule numbers from `references/self-check-rules.md`
-(1, 2, 3, 4, 5, 9, 10, 11). Do not renumber.
+(1, 2, 3, 4, 5, 9, 10, 11). Do not renumber or rename them.
 
 ### Report mode (no --fix)
 
