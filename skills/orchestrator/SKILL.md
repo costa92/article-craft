@@ -9,10 +9,16 @@ allowed-tools:
   - Bash
   - AskUserQuestion
   - WebSearch
+  - WebFetch
   - Glob
   - Grep
-  - Agent
+  - Skill
 ---
+
+> **Sub-skill invocation contract**: every "Invoke `article-craft:X` skill" line below
+> means **call the `Skill` tool** with `skill: "article-craft:X"`. These are skills,
+> NOT subagents — never pass them to the `Agent` / `Task` tool as a `subagent_type`.
+> The Skill tool loads the sub-skill's SKILL.md for the same Claude to follow inline.
 
 # Article Craft — Orchestrator
 
@@ -263,7 +269,7 @@ with the state write protocol above.
 
 #### 3.1 Requirements (all modes)
 
-Invoke `article-craft:requirements` skill logic:
+Invoke the `article-craft:requirements` skill (via the **Skill tool** — `skill: "article-craft:requirements"`). The skill is responsible for:
 - **Multi-layer inference**: Intent Detection → Keyword Signals → Context Awareness → Ambiguity Resolution → Source Trust Detection
 - **Smart inference first**: Analyze the topic for writing style, depth, audience, and format signals
 - **Source trust detection**: Automatically find official docs/repo/blog, classify into T0-T5 tiers
@@ -284,7 +290,7 @@ Invoke `article-craft:requirements` skill logic:
 > stage, **3.6 verify-claims**. The skill directory stays `skills/verify/` for
 > command compat (`/article-craft:verify` still works).
 
-Invoke `article-craft:verify` skill logic:
+Invoke the `article-craft:verify` skill (via the **Skill tool** — `skill: "article-craft:verify"`). The skill is responsible for:
 - **Source trust focus**: Prioritize verification of T3-T5 sources, skip T0-T1 link checks
 - Extract tool names and URLs from the topic/context
 - **Use requirements' trusted sources**: T0-T1 sources from requirements are pre-verified
@@ -306,7 +312,7 @@ Invoke `article-craft:verify` skill logic:
 **触发条件**：requirements skill 的 `_writing_style` 为 `H`（爆料自媒体）。
 非 Style H 直接标记 `skipped`。
 
-Invoke `article-craft:evidence` skill logic:
+Invoke the `article-craft:evidence` skill (via the **Skill tool** — `skill: "article-craft:evidence"`). The skill is responsible for:
 
 1. **定位 materials.md**（优先级）：
    - requirements skill 已向用户索取并记录的路径
@@ -338,7 +344,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/evidence.py collect \
 
 #### 3.3 Write (all modes)
 
-Invoke `article-craft:write` skill logic:
+Invoke the `article-craft:write` skill (via the **Skill tool** — `skill: "article-craft:write"`). The skill is responsible for:
 - Pass requirements context from Step 3.1
 - **Pass verification results**（如果 verify 返回了工具版本号，写作时应引用这些精确版本号而非自行搜索）
 - **Pass trusted sources**: Use official docs URLs for accuracy
@@ -354,7 +360,7 @@ Invoke `article-craft:write` skill logic:
 
 #### 3.4 Screenshot (standard and quick modes)
 
-Invoke `article-craft:screenshot` skill logic:
+Invoke the `article-craft:screenshot` skill (via the **Skill tool** — `skill: "article-craft:screenshot"`). The skill is responsible for:
 - Pass the article.md absolute file path from Step 3.3
 - Scan for `<!-- SCREENSHOT: URL [options] -->` placeholders in the article
 - Take screenshots via `${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py` (Playwright 渲染 + URL 验证 + 智能选择器)
@@ -416,7 +422,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py \
 
 #### 3.5 Images (standard and quick modes)
 
-Invoke `article-craft:images` skill logic:
+Invoke the `article-craft:images` skill (via the **Skill tool** — `skill: "article-craft:images"`). The skill is responsible for:
 - Pass the article.md absolute file path from Step 3.3 (screenshot placeholders already resolved)
 - Run Gemini probe test
 - Batch process image placeholders with heartbeat monitoring enabled
@@ -438,9 +444,10 @@ images failed, continue to review. Do NOT stop the pipeline.
 
 #### 3.6 Verify Claims (standard mode only, new in v1.4.5)
 
-Invoke `article-craft:verify-claims` skill logic. Runs **after images, before
-review** — the article body is complete at this point so all shell commands
-exist in their final form.
+Invoke the `article-craft:verify-claims` skill (via the **Skill tool** —
+`skill: "article-craft:verify-claims"`). Runs **after images, before review** —
+the article body is complete at this point so all shell commands exist in their
+final form.
 
 - Pass the article.md absolute file path
 - Skill shells out to `${CLAUDE_PLUGIN_ROOT}/scripts/verify_claims.py scan --article <path> --json`
@@ -466,8 +473,8 @@ reachability, version strings, Python/JS imports.
 
 #### 3.7 Review (standard mode only)
 
-直接调用 `/article-craft:review`。自 v1.4.4 起 review **不再自动修订**，Phase 2
-是诊断性评分，结果直接返回给 orchestrator。
+Invoke the `article-craft:review` skill (via the **Skill tool** — `skill: "article-craft:review"`).
+自 v1.4.4 起 review **不再自动修订**，Phase 2 是诊断性评分，结果直接返回给 orchestrator。
 
 - Pass the article.md absolute file path
 - review 内部执行：Phase 1 self-check（11 条规则，按 `references/self-check-rules.md`）
@@ -497,7 +504,7 @@ intermediate rerun (review didn't fail, the user chose to iterate).
 
 #### 3.8 Publish (standard mode only)
 
-Invoke `article-craft:publish` skill logic:
+Invoke the `article-craft:publish` skill (via the **Skill tool** — `skill: "article-craft:publish"`). The skill is responsible for:
 - Pass the article.md absolute file path
 - Auto-detect knowledge base (02-技术/ directory)
 - Match subdirectory via SmartDirectoryMatcher
