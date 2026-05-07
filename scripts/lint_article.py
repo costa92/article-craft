@@ -659,54 +659,98 @@ def build_report(original: str, fixed: str, stats: dict[str, int], risk_findings
     return "\n".join(lines)
 
 
+def scan_only(
+    article_path: Path,
+    tone: Optional[str] = None,
+    min_severity: str = "warning",
+) -> FixReport:
+    """Scan *article_path* for violations and return a FixReport without writing the file.
+
+    Mirrors :func:`auto_fix` but performs a single dry-run pass on an in-memory
+    copy of the text — the file on disk is never touched.
+    """
+    text = article_path.read_text(encoding="utf-8")
+    fm = _parse_frontmatter_simple(text)
+    resolved = resolve_tone(
+        cli_tone=tone,
+        frontmatter_tone=fm.get("tone"),
+        writing_style=fm.get("writing_style"),
+    )
+    hook = _TEST_REWRITES_HOOK
+    _fixed, _stats, pass_warnings = auto_fix_text(
+        text,
+        tone=resolved,
+        min_severity=min_severity,
+        apply_info=(min_severity == "info"),
+        test_rewrites_hook=hook,
+    )
+    status = "clean" if _fixed == text else "has_violations"
+    return FixReport(passes=0, warnings=pass_warnings, status=status)
+
+
+def _format_report(report: FixReport) -> str:
+    """Return a human-readable summary of a :class:`FixReport`."""
+    lines = [f"status: {report.status}", f"passes: {report.passes}"]
+    if report.warnings:
+        lines.append("warnings:")
+        for w in report.warnings:
+            lines.append(f"  - {w}")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Auto-fix mechanical AI-sounding article phrases")
-    parser.add_argument("--article", required=True, help="Path to article.md")
-    parser.add_argument("--fix", action="store_true", help="Write fixes back to file")
-    parser.add_argument("--diff", action="store_true", help="Print unified diff")
-    # Task 16 will add --min-severity and --apply-info flags here; for now the
-    # defaults are threaded through so the wiring is already in place.
-    args = parser.parse_args(argv)
+    p = argparse.ArgumentParser(description="article-craft lint with tone awareness")
+    p.add_argument("--article", required=True, type=Path)
+    p.add_argument(
+        "--tone",
+        choices=list(TONE_REGISTER_LEVELS),
+        default=None,
+        help="Override tone (else read from frontmatter or style default)",
+    )
+    p.add_argument("--fix", action="store_true",
+                   help="Apply replacements (default: report-only)")
+    p.add_argument("--apply-info", action="store_true",
+                   help="Also apply info-severity fixes (default: warning+ only)")
+    p.add_argument(
+        "--min-severity",
+        choices=list(SEVERITY_RANK.keys()),
+        default="warning",
+        help="Filter reported violations below this severity",
+    )
+    p.add_argument("--max-passes", type=int, default=3,
+                   help="Oscillation guard upper bound")
+    p.add_argument("--report-only", action="store_true",
+                   help="Run scan without modifying the file")
+    args = p.parse_args(argv)
 
-    min_severity: str = "warning"
-    apply_info: bool = False
-
-    article = Path(args.article).resolve()
+    article = args.article.resolve()
     if not article.exists():
         sys.stderr.write(f"error: article not found: {article}\n")
         return 2
 
-    original = article.read_text(encoding="utf-8")
-
-    # Resolve tone from frontmatter so the CLI path honours `tone:` in the
-    # article header just as the programmatic auto_fix() entry point does.
-    fm = _parse_frontmatter_simple(original)
-    from scripts.config import resolve_tone
-    resolved_tone = resolve_tone(
-        cli_tone=None,
-        frontmatter_tone=fm.get("tone"),
-        writing_style=fm.get("writing_style"),
-    )
-    fixed, stats, _warnings = auto_fix_text(original, resolved_tone, min_severity=min_severity, apply_info=apply_info)
-    risk_findings = analyze_high_risk_sections(fixed)
-
-    print(build_report(original, fixed, stats, risk_findings))
-
-    if args.diff and original != fixed:
-        diff = difflib.unified_diff(
-            original.splitlines(),
-            fixed.splitlines(),
-            fromfile=str(article),
-            tofile=str(article),
-            lineterm="",
+    if args.fix:
+        report = auto_fix(
+            article,
+            tone=args.tone,
+            min_severity=args.min_severity,
+            apply_info=args.apply_info,
+            max_passes=args.max_passes,
         )
-        print()
-        print("\n".join(diff))
-
-    if args.fix and original != fixed:
-        article.write_text(fixed, encoding="utf-8")
-
-    return 0
+        print(_format_report(report))
+        if report.status == "oscillating":
+            return 2
+        if report.status == "incomplete":
+            return 1
+        return 0
+    else:
+        # Report-only mode: scan but don't write the file.
+        report = scan_only(
+            article,
+            tone=args.tone,
+            min_severity="info" if args.report_only else args.min_severity,
+        )
+        print(_format_report(report))
+        return 0
 
 
 if __name__ == "__main__":

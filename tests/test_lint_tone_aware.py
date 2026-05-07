@@ -143,5 +143,36 @@ class MaxPassTests(TestCase):
             _set_test_rewrites_hook(None)
 
 
+class CliFlagsTests(TestCase):
+    def test_main_with_tone_flag(self):
+        import subprocess
+        article = _temp_article(
+            "在某种意义上, 接下来我们将。",
+            frontmatter="writing_style: A\ntone: neutral",
+        )
+        # Override neutral by passing --tone=casual on the CLI
+        result = subprocess.run(
+            ["python3", "-m", "scripts.lint_article",
+             "--article", str(article), "--tone", "casual", "--fix"],
+            capture_output=True, text=True,
+            cwd=Path(__file__).resolve().parent.parent,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        text = article.read_text(encoding="utf-8")
+        # casual should have stripped 在某种意义上
+        self.assertNotIn("在某种意义上", text)
+
+    def test_main_rejects_invalid_tone(self):
+        import subprocess
+        article = _temp_article("无关内容。")
+        result = subprocess.run(
+            ["python3", "-m", "scripts.lint_article",
+             "--article", str(article), "--tone", "aggressive"],
+            capture_output=True, text=True,
+            cwd=Path(__file__).resolve().parent.parent,
+        )
+        self.assertNotEqual(result.returncode, 0)
+
+
 if __name__ == "__main__":
     main()
