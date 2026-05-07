@@ -17,6 +17,7 @@ import sys
 import json
 import os
 import yaml
+import statistics
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Union
 from dataclasses import dataclass, field, asdict
@@ -955,7 +956,27 @@ def check_rule_17(content: str, lines: List[str]) -> CheckResult:
             severity="warning",
         ))
 
-    # Sub-check D added in next task.
+    # ── Sub-check D: Sentence-length coefficient of variation ────
+    threshold_d = thresholds["sentence_len_variance_min"]
+    if threshold_d > 0:
+        sentences = re.split(r"[。！？\n]", body)
+        # Filter implausibly short fragments (TOC items, headings) and
+        # implausibly long lines (URLs, log dumps).
+        lens = [len(s) for s in sentences if 5 <= len(s) <= 200]
+        if len(lens) >= 10:
+            mean = statistics.mean(lens)
+            stdev = statistics.stdev(lens)
+            cv = stdev / mean if mean > 0 else 0
+            if cv < threshold_d:
+                violations.append(Violation(
+                    line=0,
+                    text=f"句长变异系数: {cv:.2f} (需要 ≥{threshold_d})",
+                    suggestion=(
+                        "句子长度过于均匀（AI 节奏特征）。"
+                        "拆 1-2 句长句为短句, 或合并连续短句为长句"
+                    ),
+                    severity="warning",
+                ))
 
     return CheckResult(
         rule_id="rule_17",

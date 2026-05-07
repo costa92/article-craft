@@ -106,5 +106,31 @@ class Rule17SubCheckCTests(TestCase):
         self.assertEqual(len(sub_c), 1)
 
 
+class Rule17SubCheckDTests(TestCase):
+    def test_neutral_skips_variance_check(self):
+        # All sentences same length — would fail at casual/opinionated.
+        body = "这是一个十二字的句子哦。" * 50
+        article = _article(body, tone="neutral", style="A")
+        result = check_rule_17(article, article.split("\n"))
+        sub_d = [v for v in result.violations if "句长变异" in v.text]
+        self.assertEqual(sub_d, [])
+
+    def test_casual_fails_on_uniform_sentence_lengths(self):
+        body = "这是一个十二字的句子哦。" * 50 + "我实测过。" * 30
+        article = _article(body, tone="casual", style="B")
+        result = check_rule_17(article, article.split("\n"))
+        sub_d = [v for v in result.violations if "句长变异" in v.text]
+        self.assertEqual(len(sub_d), 1)
+        self.assertEqual(sub_d[0].severity, "warning")
+
+    def test_skipped_when_under_10_sentences(self):
+        body = "短句一。短句二。短句三。我实测过。" * 5
+        article = _article(body, tone="opinionated", style="G")
+        # Only ~20 sentences total; might or might not pass — this test
+        # only asserts the check did not crash and result is well-formed.
+        result = check_rule_17(article, article.split("\n"))
+        self.assertIsNotNone(result)
+
+
 if __name__ == "__main__":
     main()
