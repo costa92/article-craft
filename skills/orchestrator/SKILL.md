@@ -45,6 +45,7 @@ Five modes, selected at invocation:
 
 - **Topic** (optional): If provided as argument, skip requirements skill
 - **Mode flag**: `--quick` or `--draft` (default: standard)
+- **Tone flag** (optional): `--tone={neutral,casual,opinionated}` — Override tone tier. Cascade: this flag wins; then frontmatter `tone:`; then writing-style default (`STYLE_TO_TONE_DEFAULT` in `scripts/config.py`). Invalid values fail the orchestrator with an explicit error — do not silently degrade. Pass through to the requirements skill.
 - **File path** (optional): If an existing article.md is provided, skip to the next unfinished stage
 - **Upgrade flag**: `--upgrade` with a file path — upgrade a draft/quick article to standard
 - **Series flag**: `--series SERIES_FILE` — write the next planned article in the series (reads topic, audience, depth, visual style from series.md)
@@ -149,6 +150,7 @@ Parse the invocation arguments:
 - No flags → standard mode (full pipeline)
 - `--quick` → quick mode (requirements + write + screenshot + images)
 - `--draft` → draft mode (requirements + write only)
+- Detect `--tone=<value>`. If `<value>` not in `{neutral,casual,opinionated}`, abort with a user-facing error: "Invalid tone: <value>. Allowed: neutral, casual, opinionated." Otherwise pass it through to the `requirements` skill call as `--tone=<value>`.
 - If a file path to an existing `.md` file is provided → skip requirements/verify/write,
   start from images skill
 
