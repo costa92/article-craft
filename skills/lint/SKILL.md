@@ -133,6 +133,33 @@ append them after the fix report as a review queue, for example:
 - 判断: 连续 2 段总结腔且缺少锚点
 ```
 
+### Tone resolution
+
+`lint_article.py` automatically resolves the tone tier from article frontmatter
+(`tone: neutral|casual|opinionated`). Without explicit `--tone` override on the
+CLI, the script reads frontmatter, falls back to writing-style default
+(`STYLE_TO_TONE_DEFAULT`), and finally to `neutral`.
+
+To force-override, pass `--tone={neutral,casual,opinionated}` on the CLI.
+
+### Inline disable
+
+To exempt a region from lint (e.g., a quoted sentence using a red-flag word
+intentionally):
+
+````markdown
+<!-- lint:disable rule1 rule5 -->
+"This product 赋能 millions of developers" - 引用某 CEO 原话
+<!-- lint:enable rule1 rule5 -->
+````
+
+Special rule_id `all` disables every rule in the region. An unmatched
+`<!-- lint:disable -->` at end of file produces a warning but does not
+abort the lint run.
+
+Available rule_ids: `rule1` (red-flag words), `rule3` (closing patterns),
+`rule5` (anti-AI structure / cadence). Use `all` to disable all rules.
+
 ---
 
 ## Standalone Mode
