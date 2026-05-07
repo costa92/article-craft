@@ -306,3 +306,46 @@ def resolve_tone(
     if writing_style and writing_style in STYLE_TO_TONE_DEFAULT:
         return STYLE_TO_TONE_DEFAULT[writing_style]
     return "neutral"
+
+
+# ─── Tone thresholds (Rule 17 sub-checks) ────────────────────────
+# Calibration: v1 starting values. Will be revisited after 20 articles
+# of real review-cycle data accumulate in tone-calibration.jsonl.
+TONE_THRESHOLDS = {
+    "neutral": {
+        "first_person_per_800w": 2,
+        "strong_opinion_min": 0,
+        "max_summary_phrases": 5,
+        "sentence_len_variance_min": 0.0,    # 0 = sub-check D skipped
+    },
+    "casual": {
+        "first_person_per_800w": 4,
+        "strong_opinion_min": 0,
+        "max_summary_phrases": 2,
+        "sentence_len_variance_min": 0.30,
+    },
+    "opinionated": {
+        "first_person_per_800w": 6,
+        "strong_opinion_min": 1,
+        "max_summary_phrases": 0,
+        "sentence_len_variance_min": 0.45,
+    },
+}
+
+
+# Patterns that signal an explicit personal opinion / hot take.
+# Used by Rule 17 sub-check B. Patterns are kept conservative — false
+# positives on plain technical prose are worse than false negatives.
+import re as _re_for_tone
+
+STRONG_OPINION_PATTERNS = [
+    _re_for_tone.compile(r"我赌"),
+    _re_for_tone.compile(r"我觉得.*?(?:就是|根本|纯属|没必要)"),
+    _re_for_tone.compile(r"(?:这|那)(?:玩意|破事|设计).*?(?:错|烂|拉胯|蠢|坑爹)"),
+    _re_for_tone.compile(r"别(?:学|用|碰|信)"),
+    _re_for_tone.compile(r"真(?:香|的香)"),
+    _re_for_tone.compile(r"纯(?:纯|属)"),
+    _re_for_tone.compile(r"我的判断是"),
+    _re_for_tone.compile(r"敢断言"),
+    _re_for_tone.compile(r"(?:就是|根本)(?:错|不对|愚蠢)"),
+]

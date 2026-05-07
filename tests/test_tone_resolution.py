@@ -82,5 +82,38 @@ class ResolveToneTests(TestCase):
         self.assertEqual(result, "casual")
 
 
+class ToneThresholdsTests(TestCase):
+    def test_thresholds_dict_has_all_three_tones(self):
+        for tone in config.TONE_REGISTER_LEVELS:
+            self.assertIn(tone, config.TONE_THRESHOLDS)
+
+    def test_each_tone_has_four_metrics(self):
+        expected_keys = {
+            "first_person_per_800w",
+            "strong_opinion_min",
+            "max_summary_phrases",
+            "sentence_len_variance_min",
+        }
+        for tone, metrics in config.TONE_THRESHOLDS.items():
+            self.assertEqual(set(metrics.keys()), expected_keys, f"tone={tone}")
+
+    def test_first_person_density_increases_with_tone_severity(self):
+        # neutral 2 < casual 4 < opinionated 6
+        self.assertLess(
+            config.TONE_THRESHOLDS["neutral"]["first_person_per_800w"],
+            config.TONE_THRESHOLDS["casual"]["first_person_per_800w"],
+        )
+        self.assertLess(
+            config.TONE_THRESHOLDS["casual"]["first_person_per_800w"],
+            config.TONE_THRESHOLDS["opinionated"]["first_person_per_800w"],
+        )
+
+    def test_strong_opinion_patterns_is_non_empty_list_of_compiled_regex(self):
+        import re
+        self.assertGreater(len(config.STRONG_OPINION_PATTERNS), 5)
+        for p in config.STRONG_OPINION_PATTERNS:
+            self.assertIsInstance(p, re.Pattern)
+
+
 if __name__ == "__main__":
     main()
