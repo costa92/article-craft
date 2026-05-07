@@ -74,5 +74,37 @@ class Rule17SubCheckBTests(TestCase):
         self.assertEqual(sub_b, [])
 
 
+class Rule17SubCheckCTests(TestCase):
+    def test_neutral_allows_5_summary_phrases(self):
+        body = (
+            ("可以看到这个问题。本质上其实如此。" * 2 + "在某种意义上有道理。")
+            + "我实测过这个工具。" * 40
+        )
+        article = _article(body, tone="neutral", style="A")
+        result = check_rule_17(article, article.split("\n"))
+        sub_c = [v for v in result.violations if "总结腔" in v.text]
+        # Exactly 5 summary hits; under neutral ceiling of 5 → no violations.
+        self.assertEqual(sub_c, [])
+
+    def test_casual_fails_on_5_summary_phrases(self):
+        body = (
+            ("可以看到这个问题。本质上其实如此。" * 2 + "在某种意义上有道理。")
+            + "我实测过这个工具。" * 40
+        )
+        article = _article(body, tone="casual", style="B")
+        result = check_rule_17(article, article.split("\n"))
+        sub_c = [v for v in result.violations if "总结腔" in v.text]
+        # Exactly 5 summary hits; casual ceiling is 2 → 1 violation (warning).
+        self.assertEqual(len(sub_c), 1)
+        self.assertEqual(sub_c[0].severity, "warning")
+
+    def test_opinionated_fails_on_any_summary_phrase(self):
+        body = "可以看到这个问题。" + "我用过这个工具。" * 30 + "我赌它一年内被替换。"
+        article = _article(body, tone="opinionated", style="G")
+        result = check_rule_17(article, article.split("\n"))
+        sub_c = [v for v in result.violations if "总结腔" in v.text]
+        self.assertEqual(len(sub_c), 1)
+
+
 if __name__ == "__main__":
     main()

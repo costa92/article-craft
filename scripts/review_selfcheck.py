@@ -935,7 +935,27 @@ def check_rule_17(content: str, lines: List[str]) -> CheckResult:
                 severity=sev,
             ))
 
-    # Sub-checks C/D added in subsequent tasks.
+    # ── Sub-check C: Summary-phrase ceiling ──────────────────────
+    # Reuses the same EMPTY_JUDGEMENT_PHRASES + SUMMARY_TONE_PHRASES used
+    # by Rule 5. Different lens: Rule 5 looks at structural arrangement
+    # (consecutive paragraphs, no anchors); Rule 17 only at total count.
+    summary_hits = sum(
+        len(re.findall(p, body))
+        for p in EMPTY_JUDGEMENT_PHRASES + SUMMARY_TONE_PHRASES
+    )
+    limit_c = thresholds["max_summary_phrases"]
+    if summary_hits > limit_c:
+        violations.append(Violation(
+            line=0,
+            text=f"总结腔短语命中: {summary_hits} (上限 {limit_c})",
+            suggestion=(
+                f"tone={tone} 上限 {limit_c}, "
+                f"删 {summary_hits - limit_c} 处或换具体陈述"
+            ),
+            severity="warning",
+        ))
+
+    # Sub-check D added in next task.
 
     return CheckResult(
         rule_id="rule_17",
