@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased] - 2026-05-08
+
+### Added
+
+- **Tone system: three-tier register-aware de-AI infrastructure (`neutral` / `casual` / `opinionated`).** New `--tone` CLI flag on `/article-craft` with `flag > frontmatter > writing-style default` precedence; `STYLE_TO_TONE_DEFAULT` maps Style A/C/E → neutral, B/D/F → casual, G/H → opinionated. New `Rule 17: Register Naturalness` in `scripts/review_selfcheck.py` runs four sub-checks (first-person density / strong-opinion presence / summary-phrase ceiling / sentence-length CV) against tier-specific thresholds in `scripts/config.py TONE_THRESHOLDS`. `scripts/lint_article.py` refactored from a single rewrite list into tier-stacked `TONE_LEXICAL_REWRITES` with Vale-style severity (info / warning / error), inline `<!-- lint:disable rule_id -->` regions, and a max-pass oscillation guard. Calibration JSONL written to `~/.cache/article-craft/tone-calibration.jsonl` (opt-out via `ARTICLE_CRAFT_TONE_CALIBRATION=false`) seeds the v2 threshold-tuning pass. Closes the "register too uniform" feedback loop without coupling to AI-detection scoring tools.
+
+### Changed (BREAKING)
+
+- **`scripts/lint_article.py --fix` at default `tone=neutral` no longer auto-deletes paragraph-leading `首先 / 其次 / 最后 / 另外 / 此外 / 同时`.** Those replacements moved to `casual` and `opinionated` tiers. Articles previously relying on lint to strip these at neutral now keep them — set `tone: casual` in frontmatter to restore the old behavior, or run `--tone=casual` on the CLI.
+- **Several v1.4.17 red-flag patterns are no longer auto-replaced at neutral**: `综上所述`, `总而言之`, `值得注意的是`, `显然` moved to opinionated/casual tiers; `实际上`, `事实上`, `众所周知`, `不难看出` are no longer in any tier (consider adding back to neutral via `TONE_LEXICAL_REWRITES["neutral"]` if your articles relied on them).
+
+### Why
+
+Closes the "register too uniform" pain captured in `docs/superpowers/specs/2026-05-07-tone-system-design.md`. Reading-feel for AI articles wasn't a structural problem (Rule 5/6 already managed structure) but a register one — every paragraph in the same formal book voice. The tone system gives authors three discrete dial positions and threads them through prevent (write skill) → detect (Rule 17) → fix (lint_article.py) — same architecture as the existing 16 rules, just orthogonal.
+
+Prior-art research (blader/humanizer, hylarucoder/ai-flavor-remover, Vale prose linter, GPTZero burstiness, Zhihu Chinese de-AI consensus) informed the design; rationale and citations in the spec.
+
+### Validated
+
+- `python3 -m pytest tests/ -v` → 103 passed (43 baseline + 60 new across the tone system)
+- 4 golden fixture integration tests (neutral / casual / opinionated + cross-tier check)
+- Existing 43 baseline tests preserved (regression-protected throughout 30-task plan)
+- Calibration JSONL writes verified in temp-dir test
+- 16-commit history on `feat/tone-system` branch with two-stage review per task
+
 ## [Unreleased] - 2026-05-07
 
 ### Added

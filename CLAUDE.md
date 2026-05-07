@@ -49,6 +49,24 @@ When making changes: SKILL.md files reference scripts by `${CLAUDE_PLUGIN_ROOT}/
 - `scripts/bump_version.py` — bumps `plugin.json`, `marketplace.json`, and every `skills/*/SKILL.md` frontmatter in lockstep. Accepts `major` / `minor` / `patch` or an explicit `X.Y.Z`. Use `--no-tag` to let the GitHub workflow handle tag creation on push (recommended default).
 - `lib/article-core.js` — tiny Node shim exposing `loadConfig()`, `resolveScriptPath()`, `findSkills()` for any JS-side consumers. Also respects `CLAUDE_PLUGIN_ROOT`.
 
+### Tone system (v1.4.18)
+
+Three-tier register intensity (`neutral` / `casual` / `opinionated`),
+threaded as a frontmatter field through the entire pipeline. Resolution
+precedence: `--tone` CLI > frontmatter `tone:` > `STYLE_TO_TONE_DEFAULT`
+in `scripts/config.py`. Rule 17 in `scripts/review_selfcheck.py` runs
+four tier-aware sub-checks; `scripts/lint_article.py` consumes
+`TONE_LEXICAL_REWRITES` with Vale-style severity (info/warning/error),
+inline `<!-- lint:disable rule_id -->` regions, and a 3-pass oscillation
+guard; `skills/write/style-guide.md` has three matching `## Tone: <tier>`
+sections used by the writer prompt.
+
+Calibration data lives at `~/.cache/article-craft/tone-calibration.jsonl`
+and seeds future threshold tuning. Opt out via `ARTICLE_CRAFT_TONE_CALIBRATION=false`.
+
+Spec: `docs/superpowers/specs/2026-05-07-tone-system-design.md`.
+Plan: `docs/superpowers/plans/2026-05-07-tone-system.md`.
+
 ### Cross-skill data flow
 
 Skills pass state through three mechanisms:
