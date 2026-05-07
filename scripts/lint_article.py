@@ -34,6 +34,8 @@ from scripts.config import (
 )
 
 
+SEVERITY_RANK = {"info": 0, "warning": 1, "error": 2}
+
 ROADMAP_LINE_PATTERNS = [
     re.compile(r"^\s*本文将(?:从.+)?(?:展开|介绍|说明|拆解|讲清楚)[。；;!！]?\s*$"),
     re.compile(r"^\s*接下来我们将(?:逐一)?(?:来看|介绍|展开)[。；;!！]?\s*$"),
@@ -364,20 +366,30 @@ def _fix_line(line: str, rewrites: list | None = None) -> tuple[str, list[str]]:
     return fixed, changes
 
 
-def auto_fix_text(text: str, tone: Optional[str] = None) -> tuple[str, dict[str, int]]:
+def auto_fix_text(
+    text: str,
+    tone: Optional[str] = None,
+    min_severity: str = "warning",
+    apply_info: bool = False,
+) -> tuple[str, dict[str, int]]:
     """Apply all mechanical style fixes to *text*.
 
     *tone* selects the lexical-rewrite tier (neutral / casual / opinionated).
-    When None, the function uses the neutral tier.  Only rewrites with
-    severity != "info" are applied so that info-level suggestions are preserved
-    for the human reviewer rather than silently changed.
+    When None, the function uses the neutral tier.
+
+    *min_severity* sets the minimum severity rank required for a rewrite to be
+    applied.  Accepted values: ``"info"``, ``"warning"`` (default), ``"error"``.
+    *apply_info* is a convenience flag: when True it overrides *min_severity*
+    and sets the effective threshold to ``"info"``, ensuring all rewrites run.
     """
     resolved = tone if tone in TONE_REGISTER_LEVELS else "neutral"
-    # Filter out info-severity entries — those are suggestions, not auto-fixes.
+    # Rank-based filter: apply_info widens the gate to include info-severity entries.
+    effective_min = "info" if apply_info else min_severity
+    threshold_rank = SEVERITY_RANK[effective_min]
     rewrites: list = [
         (pattern, repl)
         for (pattern, repl, sev) in get_rewrites_for_tone(resolved)
-        if sev != "info"
+        if SEVERITY_RANK[sev] >= threshold_rank
     ]
 
     lines = text.splitlines()
@@ -432,11 +444,19 @@ def auto_fix_text(text: str, tone: Optional[str] = None) -> tuple[str, dict[str,
     return fixed_text, stats
 
 
-def auto_fix(article_path: Path, tone: Optional[str] = None) -> dict[str, int]:
+def auto_fix(
+    article_path: Path,
+    tone: Optional[str] = None,
+    min_severity: str = "warning",
+    apply_info: bool = False,
+) -> dict[str, int]:
     """Public entry point: read *article_path*, apply fixes in-place, return stats.
 
     *tone* precedence: explicit argument > frontmatter ``tone:`` field >
     frontmatter ``writing_style:`` default > "neutral".
+
+    *min_severity* / *apply_info* are forwarded to :func:`auto_fix_text`
+    unchanged; see that function's docstring for semantics.
     """
     text = article_path.read_text(encoding="utf-8")
     fm = _parse_frontmatter_simple(text)
@@ -445,7 +465,7 @@ def auto_fix(article_path: Path, tone: Optional[str] = None) -> dict[str, int]:
         frontmatter_tone=fm.get("tone"),
         writing_style=fm.get("writing_style"),
     )
-    fixed, stats = auto_fix_text(text, resolved)
+    fixed, stats = auto_fix_text(text, resolved, min_severity=min_severity, apply_info=apply_info)
     if fixed != text:
         article_path.write_text(fixed, encoding="utf-8")
     return stats
@@ -500,7 +520,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--article", required=True, help="Path to article.md")
     parser.add_argument("--fix", action="store_true", help="Write fixes back to file")
     parser.add_argument("--diff", action="store_true", help="Print unified diff")
+    # Task 16 will add --min-severity and --apply-info flags here; for now the
+    # defaults are threaded through so the wiring is already in place.
     args = parser.parse_args(argv)
+
+    min_severity: str = "warning"
+    apply_info: bool = False
 
     article = Path(args.article).resolve()
     if not article.exists():
@@ -518,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
         frontmatter_tone=fm.get("tone"),
         writing_style=fm.get("writing_style"),
     )
-    fixed, stats = auto_fix_text(original, resolved_tone)
+    fixed, stats = auto_fix_text(original, resolved_tone, min_severity=min_severity, apply_info=apply_info)
     risk_findings = analyze_high_risk_sections(fixed)
 
     print(build_report(original, fixed, stats, risk_findings))
