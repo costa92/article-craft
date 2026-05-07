@@ -112,6 +112,24 @@ class PipelineStateTests(unittest.TestCase):
                 2,
             )
 
+    def test_scan_article_extracts_tone_field(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article_text = "---\nwriting_style: D\ntone: casual\n---\n\n# T\n\nbody."
+            article.write_text(article_text, encoding="utf-8")
+
+            scan = pipeline_state._scan_article(article)
+            self.assertEqual(scan.tone, "casual")
+
+    def test_scan_article_tone_field_missing_returns_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article_text = "---\nwriting_style: D\n---\n\n# T\n\nbody."
+            article.write_text(article_text, encoding="utf-8")
+
+            scan = pipeline_state._scan_article(article)
+            self.assertIsNone(scan.tone)
+
 
 if __name__ == "__main__":
     unittest.main()

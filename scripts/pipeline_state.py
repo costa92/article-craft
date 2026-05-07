@@ -64,6 +64,31 @@ MODE_STAGES: dict[str, list[str]] = {
 }
 
 
+class Scan:
+    """Article scan results extracted from content and frontmatter."""
+    def __init__(
+        self,
+        image_placeholders: int = 0,
+        screenshot_placeholders: int = 0,
+        harvest_placeholders: int = 0,
+        cdn_images: int = 0,
+        has_frontmatter: bool = False,
+        in_kb: bool = False,
+        has_evidence: bool = False,
+        has_harvest_menu: bool = False,
+        tone: str | None = None,
+    ):
+        self.image_placeholders = image_placeholders
+        self.screenshot_placeholders = screenshot_placeholders
+        self.harvest_placeholders = harvest_placeholders
+        self.cdn_images = cdn_images
+        self.has_frontmatter = has_frontmatter
+        self.in_kb = in_kb
+        self.has_evidence = has_evidence
+        self.has_harvest_menu = has_harvest_menu
+        self.tone = tone
+
+
 def _pipeline_version() -> str:
     plugin_json = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
     try:
@@ -188,58 +213,71 @@ class PipelineState:
         return self._state
 
 
-def _scan_article(article_path: Path) -> dict[str, Any]:
+def _scan_article(article_path: Path) -> Scan:
     if not article_path.exists():
-        return {}
+        return Scan()
     text = article_path.read_text(encoding="utf-8", errors="replace")
-    return {
-        "image_placeholders": len(re.findall(r"<!--\s*IMAGE:", text)),
-        "screenshot_placeholders": len(re.findall(r"<!--\s*SCREENSHOT:", text)),
-        "harvest_placeholders": len(re.findall(r"<!--\s*HARVEST:", text)),
-        "cdn_images": len(re.findall(r"!\[[^\]]*\]\(https?://[^)]*cdn", text)),
-        "has_frontmatter": text.lstrip().startswith("---"),
-        "in_kb": "/02-技术/" in str(article_path),
+
+    # Extract tone from frontmatter if present
+    tone = None
+    if text.lstrip().startswith("---"):
+        # Extract frontmatter block
+        match = re.search(r"^---\n(.*?)\n---", text, re.MULTILINE | re.DOTALL)
+        if match:
+            frontmatter = match.group(1)
+            tone_match = re.search(r"^tone:\s*(\S+)\s*$", frontmatter, re.MULTILINE)
+            if tone_match:
+                tone = tone_match.group(1).strip()
+
+    return Scan(
+        image_placeholders=len(re.findall(r"<!--\s*IMAGE:", text)),
+        screenshot_placeholders=len(re.findall(r"<!--\s*SCREENSHOT:", text)),
+        harvest_placeholders=len(re.findall(r"<!--\s*HARVEST:", text)),
+        cdn_images=len(re.findall(r"!\[[^\]]*\]\(https?://[^)]*cdn", text)),
+        has_frontmatter=text.lstrip().startswith("---"),
+        in_kb="/02-技术/" in str(article_path),
         # Style H signals: publish (v1.4.15+) copies these sidecars into the KB
         # alongside the article, so their presence lets --upgrade know Style H
         # even when no state file exists.
-        "has_evidence": (article_path.parent / "_evidence.json").exists(),
-        "has_harvest_menu": (article_path.parent / "_harvest_menu.md").exists(),
-    }
+        has_evidence=(article_path.parent / "_evidence.json").exists(),
+        has_harvest_menu=(article_path.parent / "_harvest_menu.md").exists(),
+        tone=tone,
+    )
 
 
-def _stage_done_heuristic(stage: str, scan: dict[str, Any]) -> bool:
+def _stage_done_heuristic(stage: str, scan: Scan) -> bool:
     """Infer whether a stage has been run by inspecting article content."""
     if stage == "requirements":
-        return scan.get("has_frontmatter", False)
+        return scan.has_frontmatter
     if stage == "evidence":
         # Presence of _evidence.json sidecar (v1.4.15+ survives publish) means
         # evidence was run for this article.
-        return scan.get("has_evidence", False)
+        return scan.has_evidence
     if stage == "write":
-        return scan.get("has_frontmatter", False)
+        return scan.has_frontmatter
     if stage == "screenshot":
         return (
-            scan.get("has_frontmatter", False)
-            and scan.get("screenshot_placeholders", 0) == 0
-            and scan.get("harvest_placeholders", 0) == 0
+            scan.has_frontmatter
+            and scan.screenshot_placeholders == 0
+            and scan.harvest_placeholders == 0
         )
     if stage == "images":
-        return scan.get("image_placeholders", 0) == 0 and scan.get("cdn_images", 0) > 0
+        return scan.image_placeholders == 0 and scan.cdn_images > 0
     if stage == "publish":
-        return scan.get("in_kb", False)
+        return scan.in_kb
     return False
 
 
-def _is_stale(stage: str, stage_state: dict[str, Any], scan: dict[str, Any]) -> bool:
+def _is_stale(stage: str, stage_state: dict[str, Any], scan: Scan) -> bool:
     """State says completed, but article content contradicts."""
     if stage_state.get("status") != "completed":
         return False
     if stage == "screenshot":
-        return scan.get("screenshot_placeholders", 0) > 0 or scan.get("harvest_placeholders", 0) > 0
+        return scan.screenshot_placeholders > 0 or scan.harvest_placeholders > 0
     if stage == "images":
-        return scan.get("image_placeholders", 0) > 0
+        return scan.image_placeholders > 0
     if stage == "publish":
-        return not scan.get("in_kb", False)
+        return not scan.in_kb
     return False
 
 
@@ -251,7 +289,7 @@ def _compute_missing(state: PipelineState, mode: str) -> dict[str, Any]:
     # Style H inference: if state doesn't know the style but sidecars exist on
     # disk (v1.4.15+ publish-preserved _evidence.json), treat as H so evidence
     # stage is retained in `want` instead of pruned.
-    if writing_style is None and scan.get("has_evidence"):
+    if writing_style is None and scan.has_evidence:
         writing_style = "H"
     if writing_style != "H" and "evidence" in want:
         want.remove("evidence")
@@ -291,7 +329,7 @@ def _compute_missing(state: PipelineState, mode: str) -> dict[str, Any]:
         "source": source,
         "mode": pipeline_mode,
         "writing_style": writing_style,
-        "article_scan": scan,
+        "article_scan": scan.__dict__,
     }
 
 
