@@ -1,10 +1,16 @@
 ---
 description: Full article generation pipeline with enhanced inference and source trust detection
-argument-hint: [topic or --quick or --draft or --upgrade or --series]
+argument-hint: [topic or --quick or --draft or --upgrade or --series or --tone]
 ---
 
 Read and follow the skill at `${CLAUDE_PLUGIN_ROOT}/skills/orchestrator/SKILL.md`.
 
-Pass the user's arguments (topic, --quick, --draft, --upgrade, --series) to the orchestrator skill.
+Pass the user's arguments (topic, --quick, --draft, --upgrade, --series, --tone) to the orchestrator skill.
+
+## Flags
+
+- `--tone={neutral,casual,opinionated}` — Override tone tier (otherwise
+  resolved from frontmatter or writing-style default). Invalid values
+  abort with an error.
 
 ARGUMENTS: $ARGUMENTS
