@@ -282,3 +282,27 @@ STYLE_TO_TONE_DEFAULT = {
     "G": "opinionated",   # 观点输出 / 思考
     "H": "opinionated",   # AI 资讯爆料 / 自媒体爆款
 }
+
+
+def resolve_tone(
+    cli_tone: Optional[str] = None,
+    frontmatter_tone: Optional[str] = None,
+    writing_style: Optional[str] = None,
+) -> str:
+    """Resolve final tone using three-tier precedence: CLI > frontmatter > style default.
+
+    Invalid values at any tier degrade silently to the next tier. Unknown
+    writing styles default to "neutral". The CLI layer is expected to reject
+    invalid `--tone` values BEFORE calling this function (with an explicit
+    error to the user); we keep this resolver permissive so frontmatter
+    typos and missing fields don't crash the pipeline.
+
+    Returns one of TONE_REGISTER_LEVELS, never None.
+    """
+    if cli_tone in TONE_REGISTER_LEVELS:
+        return cli_tone
+    if frontmatter_tone in TONE_REGISTER_LEVELS:
+        return frontmatter_tone
+    if writing_style and writing_style in STYLE_TO_TONE_DEFAULT:
+        return STYLE_TO_TONE_DEFAULT[writing_style]
+    return "neutral"

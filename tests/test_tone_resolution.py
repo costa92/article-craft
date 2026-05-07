@@ -38,5 +38,49 @@ class ToneLevelsTests(TestCase):
         self.assertEqual(config.STYLE_TO_TONE_DEFAULT, expected)
 
 
+class ResolveToneTests(TestCase):
+    def test_cli_wins_over_frontmatter_and_style(self):
+        result = config.resolve_tone(
+            cli_tone="opinionated",
+            frontmatter_tone="neutral",
+            writing_style="A",
+        )
+        self.assertEqual(result, "opinionated")
+
+    def test_frontmatter_wins_over_style_default(self):
+        result = config.resolve_tone(
+            cli_tone=None,
+            frontmatter_tone="casual",
+            writing_style="A",  # default would be neutral
+        )
+        self.assertEqual(result, "casual")
+
+    def test_style_default_when_cli_and_frontmatter_missing(self):
+        result = config.resolve_tone(
+            cli_tone=None,
+            frontmatter_tone=None,
+            writing_style="H",
+        )
+        self.assertEqual(result, "opinionated")
+
+    def test_unknown_style_falls_back_to_neutral(self):
+        result = config.resolve_tone(
+            cli_tone=None,
+            frontmatter_tone=None,
+            writing_style="Z",  # not in mapping
+        )
+        self.assertEqual(result, "neutral")
+
+    def test_invalid_frontmatter_value_falls_back_to_style_default(self):
+        # frontmatter author manually typed something invalid; we degrade silently
+        # (warning is logged elsewhere; resolver only returns valid values)
+        result = config.resolve_tone(
+            cli_tone=None,
+            frontmatter_tone="aggressive",  # invalid
+            writing_style="B",
+        )
+        self.assertEqual(result, "casual")
+
+
 if __name__ == "__main__":
     main()
