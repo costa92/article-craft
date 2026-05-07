@@ -177,6 +177,27 @@ review.
 - Rule 10: PASS / FIXED / WARNING
 - Rule 11: PASS / FIXED / WARNING
 
+### Rules Index (Phase 1 reference)
+
+- **Rule 1: Template Filler** — detects and removes placeholder phrases like "综上所述", "总而言之".
+- **Rule 2: Hook Length** — ensures opening hook is ≤100 characters, free of template openers.
+- **Rule 3: Section Headers** — checks headers are descriptive, not generic ("简介", "结论").
+- **Rule 4: Code Block Depth** — requires ≥2 runnable code blocks per major section.
+- **Rule 5: Sentence Length** — flags run-on sentences >80 chars; encourages variety.
+- **Rule 6: Transition Phrases** — detects abrupt section breaks; ensures smooth flow.
+- **Rule 7: AI Image Count** — ensures ≥1 `<!-- IMAGE: -->` placeholder per 500 words.
+- **Rule 7b: AI Image Degradation** — detects unresolved placeholders from prior runs.
+- **Rule 8: Codeblock Language Tags** — enforces proper syntax highlighting (not bare text).
+- **Rule 9: Screenshot Count** — flagging-only; write handles injection.
+- **Rule 10: Table Format** — detects Markdown tables and ensures proper cell alignment.
+- **Rule 11: ASCII Diagrams** — blocks tree/diagram characters (├, │, └) in code blocks; detection-only.
+- **Rule 17: Register Naturalness (tone-aware)** — checks first-person
+  density, strong-opinion presence, summary-phrase ceiling, and sentence-
+  length CV against tier-specific thresholds (`scripts/config.py
+  TONE_THRESHOLDS`). The active tone is read from frontmatter `tone:`
+  with style-default fallback. See `references/self-check-rules.md` § Rule 17
+  for the threshold table.
+
 ### Phase 2: Diagnostic Scoring (7 dimensions)
 | Dimension | Score | Notes |
 |-----------|-------|-------|
