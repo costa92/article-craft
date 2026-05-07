@@ -115,5 +115,30 @@ class ToneThresholdsTests(TestCase):
             self.assertIsInstance(p, re.Pattern)
 
 
+class ToneLexicalRewritesTests(TestCase):
+    def test_rewrites_dict_has_all_three_tones(self):
+        for tone in config.TONE_REGISTER_LEVELS:
+            self.assertIn(tone, config.TONE_LEXICAL_REWRITES)
+
+    def test_neutral_rewrites_contain_baseline_red_flags(self):
+        # 赋能 / 一站式 are canonical Rule 1 red flags
+        patterns = [p for p, _, _ in config.TONE_LEXICAL_REWRITES["neutral"]]
+        flat = " ".join(p.pattern for p in patterns)
+        self.assertIn("赋能", flat)
+        self.assertIn("一站式", flat)
+
+    def test_get_rewrites_for_tone_inherits_lower_tiers(self):
+        n = len(config.get_rewrites_for_tone("neutral"))
+        c = len(config.get_rewrites_for_tone("casual"))
+        o = len(config.get_rewrites_for_tone("opinionated"))
+        self.assertLess(n, c)
+        self.assertLess(c, o)
+
+    def test_get_rewrites_unknown_tone_returns_neutral(self):
+        result = config.get_rewrites_for_tone("aggressive")
+        baseline = config.get_rewrites_for_tone("neutral")
+        self.assertEqual(len(result), len(baseline))
+
+
 if __name__ == "__main__":
     main()
