@@ -11,7 +11,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import hashlib
@@ -1117,6 +1117,7 @@ def dry_run_preview(configs: List[ImageConfig],
 
 
 BATCH_BACKOFF_DELAYS_SEC = (30, 60, 120)
+BATCH_BACKOFF_JITTER_MAX_SEC = 5.0
 
 
 def _generate_with_batch_backoff(config: ImageConfig, resolution: str, model: str) -> bool:
@@ -1152,6 +1153,80 @@ def _generate_with_batch_backoff(config: ImageConfig, resolution: str, model: st
             )
             time.sleep(total)
     return False
+
+
+class _ParallelRateLimitCoordinator:
+    """Coordinates batch-level rate-limit backoff across parallel workers.
+
+    When one worker exhausts the model fallback chain (RateLimitExhausted),
+    it sets a shared pause window — every other worker about to call
+    ``generate_image()`` blocks in ``wait_if_paused()`` until the window
+    expires. Multiple concurrent rate-limit signals coalesce: the longest
+    end-time wins, so we never double-back-off when several workers hit
+    429 at the same time.
+
+    Each image still has its own attempt counter (per-image semantics
+    match the sequential ``_generate_with_batch_backoff`` path). When a
+    worker's ``attempt`` index exceeds ``BATCH_BACKOFF_DELAYS_SEC``, the
+    caller gives up on that image and continues with the next.
+
+    ``delays`` and ``jitter_max`` resolve from module-level constants
+    (``BATCH_BACKOFF_DELAYS_SEC`` / ``BATCH_BACKOFF_JITTER_MAX_SEC``) at
+    construction time when ``None``, so tests can ``monkeypatch`` those
+    constants for fast/deterministic runs.
+    """
+
+    def __init__(self, delays: Optional[Tuple[int, ...]] = None,
+                 jitter_max: Optional[float] = None):
+        from threading import Lock
+        self._lock = Lock()
+        self._pause_until = 0.0
+        self._delays = (
+            tuple(delays) if delays is not None
+            else tuple(BATCH_BACKOFF_DELAYS_SEC)
+        )
+        self._jitter_max = (
+            jitter_max if jitter_max is not None
+            else BATCH_BACKOFF_JITTER_MAX_SEC
+        )
+
+    def wait_if_paused(self) -> None:
+        """Block until any active pause window expires.
+
+        Polls in <=1s slices so cancel/shutdown stays responsive even when
+        the pause window is large.
+        """
+        while True:
+            with self._lock:
+                wait = self._pause_until - time.time()
+            if wait <= 0:
+                return
+            time.sleep(min(wait, 1.0))
+
+    def signal_rate_limit(self, attempt: int) -> float:
+        """Move the pause window forward for the given attempt index.
+
+        Returns the chosen delay in seconds, or ``0.0`` when ``attempt``
+        is beyond the configured schedule (caller should give up on the
+        current image). Concurrent signals coalesce — only the longest
+        end-time persists, so two workers signaling delays[0] within the
+        same wave do not stack.
+        """
+        import random
+
+        if attempt >= len(self._delays):
+            return 0.0
+        jitter = random.uniform(0, self._jitter_max) if self._jitter_max > 0 else 0.0
+        delay = self._delays[attempt] + jitter
+        with self._lock:
+            new_until = time.time() + delay
+            if new_until > self._pause_until:
+                self._pause_until = new_until
+        return delay
+
+    def is_paused(self) -> bool:
+        with self._lock:
+            return time.time() < self._pause_until
 
 
 def generate_and_upload_batch(configs: List[ImageConfig],
@@ -1279,8 +1354,13 @@ def generate_and_upload_parallel(configs: List[ImageConfig],
     from threading import Lock
     results_lock = Lock()
 
+    # 跨 worker 协调退避：当某个 worker 耗尽模型回退链 (RateLimitExhausted),
+    # 其他 worker 进入 generate_image 之前会被 wait_if_paused() 阻塞,避免在
+    # 已知 rate-limit 的窗口期内继续打 API.
+    coordinator = _ParallelRateLimitCoordinator()
+
     def process_single_image(config: ImageConfig) -> Dict:
-        """处理单张图片的生成"""
+        """处理单张图片的生成（含跨 worker 协调退避）"""
         result = {
             "name": config.name,
             "filename": config.filename,
@@ -1289,65 +1369,95 @@ def generate_and_upload_parallel(configs: List[ImageConfig],
             "prompt": config.prompt,
             "success": False,
             "error": None,
-            "error_type": None  # 新增：错误类型分类
+            "error_type": None  # 错误类型分类
         }
 
-        try:
-            # 生成图片
-            if generate_image(config, resolution, model):
-                result["local_path"] = config.local_path
-                result["success"] = True
+        for attempt in range(len(BATCH_BACKOFF_DELAYS_SEC) + 1):
+            coordinator.wait_if_paused()
+            try:
+                if generate_image(config, resolution, model):
+                    result["local_path"] = config.local_path
+                    result["success"] = True
+                    with results_lock:
+                        results["generated"] += 1
+                else:
+                    result["error"] = "生成失败（未知原因）"
+                    result["error_type"] = "generation_failed"
+                    with results_lock:
+                        results["failed"] += 1
+                        results["errors"].append({
+                            "image": config.name,
+                            "stage": "generation",
+                            "error": result["error"]
+                        })
+                return result
 
-                with results_lock:
-                    results["generated"] += 1
-            else:
-                result["error"] = "生成失败（未知原因）"
-                result["error_type"] = "generation_failed"
+            except RateLimitExhausted as e:
+                delay = coordinator.signal_rate_limit(attempt)
+                if delay <= 0.0:
+                    error_msg = (
+                        f"批量级退避已用尽（{len(BATCH_BACKOFF_DELAYS_SEC)} 次）— "
+                        f"last error: {e.last_error[:120]}"
+                    )
+                    result["error"] = error_msg
+                    result["error_type"] = "rate_limit_exhausted"
+                    with results_lock:
+                        results["failed"] += 1
+                        results["errors"].append({
+                            "image": config.name,
+                            "stage": "generation",
+                            "error": error_msg,
+                            "type": "RateLimitExhausted"
+                        })
+                    return result
+                print(
+                    f"   ⏳ Rate-limit on {config.name} — coord backoff "
+                    f"(retry {attempt + 1}/{len(BATCH_BACKOFF_DELAYS_SEC)}): "
+                    f"pausing pool {delay:.0f}s"
+                )
+                # 下一轮迭代开头的 wait_if_paused() 会阻塞至窗口结束
+                continue
 
+            except FileNotFoundError as e:
+                result["error"] = f"文件系统错误: {str(e)}"
+                result["error_type"] = "filesystem_error"
                 with results_lock:
                     results["failed"] += 1
                     results["errors"].append({
                         "image": config.name,
                         "stage": "generation",
-                        "error": result["error"]
+                        "error": result["error"],
+                        "type": "FileNotFoundError"
                     })
+                return result
 
-        except FileNotFoundError as e:
-            result["error"] = f"文件系统错误: {str(e)}"
-            result["error_type"] = "filesystem_error"
-            with results_lock:
-                results["failed"] += 1
-                results["errors"].append({
-                    "image": config.name,
-                    "stage": "generation",
-                    "error": result["error"],
-                    "type": "FileNotFoundError"
-                })
+            except subprocess.TimeoutExpired as e:
+                result["error"] = f"生成超时: {str(e)}"
+                result["error_type"] = "timeout"
+                with results_lock:
+                    results["failed"] += 1
+                    results["errors"].append({
+                        "image": config.name,
+                        "stage": "generation",
+                        "error": result["error"],
+                        "type": "TimeoutError"
+                    })
+                return result
 
-        except subprocess.TimeoutExpired as e:
-            result["error"] = f"生成超时: {str(e)}"
-            result["error_type"] = "timeout"
-            with results_lock:
-                results["failed"] += 1
-                results["errors"].append({
-                    "image": config.name,
-                    "stage": "generation",
-                    "error": result["error"],
-                    "type": "TimeoutError"
-                })
+            except Exception as e:
+                result["error"] = f"未知错误: {str(e)}"
+                result["error_type"] = "unknown"
+                with results_lock:
+                    results["failed"] += 1
+                    results["errors"].append({
+                        "image": config.name,
+                        "stage": "generation",
+                        "error": result["error"],
+                        "type": type(e).__name__
+                    })
+                return result
 
-        except Exception as e:
-            result["error"] = f"未知错误: {str(e)}"
-            result["error_type"] = "unknown"
-            with results_lock:
-                results["failed"] += 1
-                results["errors"].append({
-                    "image": config.name,
-                    "stage": "generation",
-                    "error": result["error"],
-                    "type": type(e).__name__
-                })
-
+        # 不应到达此处：循环内每条分支都已 return.保险兜底.
         return result
 
     # 阶段1: 并行生成所有图片

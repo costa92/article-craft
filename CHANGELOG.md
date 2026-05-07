@@ -4,9 +4,17 @@
 
 ### Added
 
+- **`_ParallelRateLimitCoordinator` — worker-coordinated backoff for the images parallel path.** Closes the long-standing technical debt called out in `CLAUDE.md` § Known design debt: "images parallel path still lacks coordinated backoff". The sequential `generate_and_upload_batch` path got per-image batch-level backoff (30/60/120s + jitter) in v1.4.3, but `generate_and_upload_parallel` workers had no shared rate-limit awareness — when one worker hit `RateLimitExhausted` from the model fallback chain, all the other workers continued hammering the API.
+
+  The new coordinator gives parallel workers a shared pause window. When any worker sees `RateLimitExhausted`, it calls `signal_rate_limit(attempt)` which sets/extends a pool-wide `_pause_until` deadline; every other worker calls `wait_if_paused()` before its next `generate_image()` call and blocks until the deadline expires. Multiple concurrent signals coalesce — only the longest end-time persists, so concurrent 429s on the same wave do not stack. Per-image attempt counters preserve sequential-equivalent semantics: each image gets up to `len(BATCH_BACKOFF_DELAYS_SEC)` retries against the shared schedule, then gives up and the worker moves on with `error_type="rate_limit_exhausted"`.
+
+  `process_single_image` inside `generate_and_upload_parallel` now wraps its `generate_image()` call in a retry loop with explicit `RateLimitExhausted` handling ahead of the generic `Exception` catch — preserving existing handoff for `FileNotFoundError`, `subprocess.TimeoutExpired`, and unknown failures (single-shot fail, no retry).
+
+  New module-level constant `BATCH_BACKOFF_JITTER_MAX_SEC = 5.0` parameterizes the jitter range so tests can pin both delays and jitter to deterministic values. The coordinator resolves both constants at construction time (when args are `None`) so `monkeypatch` of the module attributes flows through.
 - **`scripts/lint_article.py` — lightweight auto-fix for mechanical AI-style patterns.** New 484-line script invoked by `skills/lint/SKILL.md` for Rule 5 fixes. Removes roadmap filler (`本文将...` / `接下来我们将...` / `下面分别...`), empty judgement wrappers (`可以看到` / `本质上` / `从这个角度看` / `某种意义上` / `回到问题本身`), repetitive paragraph starters (`首先` / `其次` / `另外` / `此外` / `同时`), high-confidence red-flag words (`赋能` / `一站式` / `链路`), splits overlong hook paragraphs, deletes engagement-style closings, and drops standalone trailing `## 参考资料` sections. Intentionally conservative — never touches code blocks, HTML comment placeholders (`<!-- IMAGE: -->`, `<!-- HARVEST: -->`), Markdown headings, or image/link syntax lines. Reports high-risk sections (consecutive 3 paragraphs without concrete anchors, consecutive summary-tone paragraphs without anchors) that cannot be safely auto-fixed.
 - **Rule 5 template-cadence detection** in `references/self-check-rules.md` and `scripts/review_selfcheck.py`. Review now flags: roadmap filler appearing 2+ times, adjacent paragraphs sharing the same starter class (transition-heavy, sequence-heavy), articles with fewer than 2 concrete anchors (numbers, version strings, command snippets, file paths, benchmark output, exact error text), any 3 consecutive body paragraphs with 0 concrete anchors, and sections with 2 consecutive summary-tone paragraphs with 0 anchors. Adds `SEQUENCE_OPENERS`, `EMPTY_JUDGEMENT_PHRASES`, `SUMMARY_TONE_PHRASES`, `ROADMAP_FILLER_PATTERNS` constants. Concrete-anchor heuristic checks for backticks, version strings, multi-segment paths, and error/metric tokens.
-- **Test suites for lint and review extensions.** `tests/test_lint_article.py` (10 tests) covers auto-fix coverage, code-block / placeholder safety, hook splitting, trailing-reference deletion, high-risk-section reporting, and `--fix` writeback. `tests/test_review_selfcheck.py` (7 tests) covers Rule 5 template-cadence flagging, summary-tone detection, anchor-density heuristic, code-block break handling, personal-voice pass case, and Rule 6 / Rule 12 boundary cases. All 17 pass in 0.03s.
+- **Test suites for lint and review extensions.** `tests/test_lint_article.py` (10 tests) covers auto-fix coverage, code-block / placeholder safety, hook splitting, trailing-reference deletion, high-risk-section reporting, and `--fix` writeback. `tests/test_review_selfcheck.py` (7 tests) covers Rule 5 template-cadence flagging, summary-tone detection, anchor-density heuristic, code-block break handling, personal-voice pass case, and Rule 6 / Rule 12 boundary cases.
+- **`tests/test_image_parallel_backoff.py`** (13 tests) covers the parallel rate-limit coordinator: idle state, schedule exhaustion, jitter bounds, coalescing concurrent signals, pool-wide blocking under `wait_if_paused()`, longer-wave extension over a still-active shorter pause, plus two end-to-end tests of `generate_and_upload_parallel` with monkeypatched `generate_image` (one retries through a 429 then succeeds, one exhausts the schedule and gives up). Whole suite (43 tests across all files) runs in 1.57s.
 
 ### Changed
 
@@ -17,11 +25,15 @@
 
 ### Why
 
-Closes the "self-check rules duplicated across three skills" technical debt called out in `CLAUDE.md` § Known design debt. `references/self-check-rules.md` was already the canonical source, but `write/SKILL.md` Step 7, `lint/SKILL.md`, and `review/SKILL.md` Phase 1 each re-stated slices of it in prose, so updating the red-flag list meant remembering three places. Now `write` defers to `review`, `lint` calls the deterministic auto-fix script, and the prose in each skill points at `references/self-check-rules.md` by rule number instead of restating it.
+Closes both technical debt items called out in `CLAUDE.md` § Known design debt:
+
+1. _Self-check rules duplicated across three skills._ `references/self-check-rules.md` was already canonical, but `write/SKILL.md` Step 7, `lint/SKILL.md`, and `review/SKILL.md` Phase 1 each re-stated slices of it in prose, so updating the red-flag list meant remembering three places. Now `write` defers to `review`, `lint` calls the deterministic auto-fix script, and the prose in each skill points at `references/self-check-rules.md` by rule number instead of restating it.
+2. _Images parallel path lacks coordinated backoff._ The sequential path got 30/60/120s + jitter batch backoff in v1.4.3. The parallel path now matches via `_ParallelRateLimitCoordinator`. Workers no longer stampede a rate-limited Gemini quota.
 
 ### Validated
 
-- `python3 -m pytest tests/test_lint_article.py tests/test_review_selfcheck.py -v` → 17 passed in 0.03s
+- `python3 -m pytest tests/ -q` → 43 passed in 1.57s
+- Coordinator integration tests use patched `BATCH_BACKOFF_DELAYS_SEC=(0.05, 0.05)` + `BATCH_BACKOFF_JITTER_MAX_SEC=0.0` for deterministic, fast runs (<2s)
 - Existing tests (`tests/test_config.py`, `tests/test_pipeline_state.py`, `tests/test_verify_claims.py`) unaffected.
 
 ## [Unreleased] - 2026-04-22
