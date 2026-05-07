@@ -16,8 +16,10 @@ import re
 import sys
 import json
 import os
+import hashlib
 import yaml
 import statistics
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Union
 from dataclasses import dataclass, field, asdict
@@ -878,6 +880,42 @@ PERSONAL_VOICE_REGEX = re.compile(
 )
 
 
+def _maybe_log_tone_calibration(
+    *, tone: str, writing_style: str, article_content: str,
+    metrics: Dict, violations: List, passed: bool,
+) -> None:
+    """Append one JSONL line to tone-calibration.jsonl unless disabled.
+
+    Default: enabled. Opt-out via env var ARTICLE_CRAFT_TONE_CALIBRATION=false.
+    Cache dir: ~/.cache/article-craft/ (override via ARTICLE_CRAFT_CACHE_DIR).
+    Stores SHA256 of article content (NOT the content itself), for privacy.
+    """
+    enabled = os.environ.get("ARTICLE_CRAFT_TONE_CALIBRATION", "true").lower() == "true"
+    if not enabled:
+        return
+    cache_dir = Path(os.environ.get(
+        "ARTICLE_CRAFT_CACHE_DIR",
+        Path.home() / ".cache" / "article-craft",
+    ))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    sha = hashlib.sha256(article_content.encode("utf-8")).hexdigest()
+    record = {
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "article": sha,
+        "writing_style": writing_style,
+        "tone_resolved": tone,
+        "metrics": metrics,
+        "violations": [{"severity": s, "text": t} for s, t in violations],
+        "final_pass": passed,
+    }
+    try:
+        with (cache_dir / "tone-calibration.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except (OSError, IOError):
+        # Don't crash the review pipeline if calibration logging fails
+        pass
+
+
 def check_rule_17(content: str, lines: List[str]) -> CheckResult:
     """Rule 17: Register Naturalness (tone-aware).
 
@@ -910,6 +948,13 @@ def check_rule_17(content: str, lines: List[str]) -> CheckResult:
 
     thresholds = TONE_THRESHOLDS[tone]
     violations: List[Violation] = []
+
+    # Safe defaults for metric variables — sub-checks B and D have conditional
+    # execution paths that may leave these unbound.
+    density: float = 0.0
+    opinion_count: int = 0
+    summary_hits: int = 0
+    cv: Optional[float] = None
 
     # ── Sub-check A: First-person density ───────────────────────
     first_person_hits = len(PERSONAL_VOICE_REGEX.findall(body))
@@ -988,10 +1033,26 @@ def check_rule_17(content: str, lines: List[str]) -> CheckResult:
                     severity="warning",
                 ))
 
+    # ── Calibration logging (opt-out via env var) ───────────────
+    _passed = not any(v.severity == "error" for v in violations)
+    _maybe_log_tone_calibration(
+        tone=tone,
+        writing_style=frontmatter.get("writing_style", "?"),
+        article_content=content,
+        metrics={
+            "first_person_per_800w": density,
+            "strong_opinion_count": opinion_count,
+            "summary_phrase_hits": summary_hits,
+            "sentence_len_cv": cv,
+        },
+        violations=[(v.severity, v.text[:50]) for v in violations],
+        passed=_passed,
+    )
+
     return CheckResult(
         rule_id="rule_17",
         rule_name=f"Register Naturalness (tone={tone})",
-        passed=not any(v.severity == "error" for v in violations),
+        passed=_passed,
         violations=violations,
         meta={"tone": tone},
     )
