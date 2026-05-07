@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,6 +71,12 @@ class LintArticleTests(unittest.TestCase):
             self.assertEqual(article.read_text(encoding="utf-8"), "这是一段正文。\n")
 
     def test_auto_fix_rewrites_red_flags_and_closing(self):
+        # BREAKING CHANGE (v1.4.18 / tone-system): neutral tier now uses
+        # config.TONE_LEXICAL_REWRITES["neutral"].
+        # - 一站式 → "完整" (was "集成的")
+        # - 链路 is severity=info → NOT auto-fixed at neutral (was "调用路径")
+        # - 综上所述 moved to opinionated tier → NOT removed at neutral
+        # - 希望本文对你有帮助 still removed by FORBIDDEN_CLOSING_PATTERNS
         text = """# 标题
 
 这个工具可以赋能团队，一站式打通请求链路。
@@ -78,13 +85,21 @@ class LintArticleTests(unittest.TestCase):
 """
         fixed, stats = lint_article.auto_fix_text(text)
 
+        # 赋能 → 支持 (neutral warning)
         self.assertIn("支持团队", fixed)
-        self.assertIn("集成的", fixed)
-        self.assertIn("调用路径", fixed)
-        self.assertNotIn("综上所述", fixed)
+        # 一站式 → 完整 (neutral warning; replacement string changed from v1.4.17)
+        self.assertIn("完整", fixed)
+        self.assertNotIn("一站式", fixed)
+        # 链路: info severity → not auto-fixed at neutral
+        self.assertIn("链路", fixed)
+        # 综上所述: opinionated tier → not removed at neutral
+        self.assertIn("综上所述", fixed)
+        # FORBIDDEN_CLOSING_PATTERNS still applies (separate constant)
         self.assertNotIn("希望本文对你有帮助", fixed)
-        self.assertIn("下一步", fixed)
-        self.assertGreaterEqual(stats["rewrote_red_flag"], 4)
+        # When 综上所述 is still present, the line becomes "综上所述。" (non-empty)
+        # so the fallback "下一步..." is NOT emitted; just the remnant stays.
+        # 2 rewrites at neutral warning: 赋能 and 一站式
+        self.assertGreaterEqual(stats["rewrote_red_flag"], 2)
         self.assertEqual(stats["removed_forbidden_closing"], 1)
         self.assertEqual(stats["added_concrete_closing"], 1)
 
@@ -192,6 +207,71 @@ uv sync
         findings = lint_article.analyze_high_risk_sections(text)
 
         self.assertFalse(any("实战: 连续 3 段缺少具体锚点" in item for item in findings))
+
+    # ── setUp / tearDown helpers for file-based tests ────────────────
+
+    def setUp(self):
+        super().setUp()
+        self._tempfiles: list[str] = []
+
+    def tearDown(self):
+        super().tearDown()
+        for f in self._tempfiles:
+            try:
+                os.unlink(f)
+            except OSError:
+                pass
+
+    def _write_temp_article(self, body: str, frontmatter: str = "writing_style: A") -> Path:
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", delete=False, encoding="utf-8"
+        )
+        tmp.write(f"---\n{frontmatter}\n---\n\n# Title\n\n{body}\n")
+        tmp.close()
+        self._tempfiles.append(tmp.name)
+        return Path(tmp.name)
+
+    # ── Regression test: neutral-tone baseline after tone-system migration ─
+
+    def test_neutral_tone_default_preserves_v1_4_17_redflag_behavior(self):
+        # An article with no `tone:` field — writing_style A resolves to neutral.
+        # Only warning-severity rewrites apply; info-severity (链路) is preserved.
+        from scripts.lint_article import auto_fix
+
+        text = "本产品赋能开发者一站式解决方案，链路清晰。"
+        article_path = self._write_temp_article(text)
+        auto_fix(article_path)
+        result = article_path.read_text(encoding="utf-8")
+
+        # 赋能 → 支持 (neutral warning)
+        self.assertNotIn("赋能", result)
+        # 一站式 → 完整 (neutral warning)
+        self.assertNotIn("一站式", result)
+        # 链路 → severity=info → NOT applied at default --min-severity warning
+        self.assertIn("链路", result)
+
+
+    def test_casual_tone_replaces_opening_fillers_with_colloquial(self):
+        # At casual, "可以看到" should be replaced with "能看出", not just deleted
+        from scripts.lint_article import auto_fix
+        text = "可以看到这个工具非常好用。"
+        article_path = self._write_temp_article(text, frontmatter="writing_style: B\ntone: casual")
+        auto_fix(article_path)
+        result = article_path.read_text(encoding="utf-8")
+        self.assertNotIn("可以看到", result)  # original phrase removed
+        self.assertIn("能看出", result)        # casual replacement applied
+
+    def test_main_honors_frontmatter_tone(self):
+        # Run via subprocess; verify casual replacement fires when frontmatter has tone: casual
+        import subprocess
+        text = "可以看到这个工具非常好用。"
+        article_path = self._write_temp_article(text, frontmatter="writing_style: B\ntone: casual")
+        subprocess.run(
+            ["python3", "-m", "scripts.lint_article", "--article", str(article_path), "--fix"],
+            check=True, cwd="/home/hellotalk/code/article-craft-tone-system",
+        )
+        result = article_path.read_text(encoding="utf-8")
+        self.assertIn("能看出", result)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,14 @@ import difflib
 import re
 import sys
 from pathlib import Path
+from typing import Optional
+
+from scripts.config import (
+    TONE_REGISTER_LEVELS,
+    TONE_LEXICAL_REWRITES,
+    get_rewrites_for_tone,
+    resolve_tone,
+)
 
 
 ROADMAP_LINE_PATTERNS = [
@@ -47,20 +55,6 @@ PARAGRAPH_STARTERS = [
     re.compile(r"^\s*另外[，,:： ]*"),
     re.compile(r"^\s*此外[，,:： ]*"),
     re.compile(r"^\s*同时[，,:： ]*"),
-]
-
-RED_FLAG_REWRITES = [
-    (re.compile(r"赋能"), "支持"),
-    (re.compile(r"一站式"), "集成的"),
-    (re.compile(r"链路"), "调用路径"),
-    (re.compile(r"综上所述[，,:： ]*"), ""),
-    (re.compile(r"总而言之[，,:： ]*"), ""),
-    (re.compile(r"值得注意的是[，,:： ]*"), ""),
-    (re.compile(r"实际上[，,:： ]*"), ""),
-    (re.compile(r"事实上[，,:： ]*"), ""),
-    (re.compile(r"显然[，,:： ]*"), ""),
-    (re.compile(r"众所周知[，,:： ]*"), ""),
-    (re.compile(r"不难看出[，,:： ]*"), ""),
 ]
 
 FORBIDDEN_CLOSING_PATTERNS = [
@@ -174,6 +168,23 @@ def _get_body(text: str) -> str:
     if not match:
         return text
     return text[match.end():]
+
+
+def _parse_frontmatter_simple(text: str) -> dict[str, str]:
+    """Extract key: value pairs from a YAML-style frontmatter block.
+
+    Only handles simple scalar string values — no YAML library dependency.
+    Returns an empty dict if there is no frontmatter or the block is malformed.
+    """
+    match = re.match(r'^---\n(.*?)\n---(?:\n|$)', text, re.DOTALL)
+    if not match:
+        return {}
+    result: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        kv = re.match(r'^([A-Za-z0-9_]+)\s*:\s*(.*)', line)
+        if kv:
+            result[kv.group(1).strip()] = kv.group(2).strip()
+    return result
 
 
 def _strip_code_blocks(text: str) -> str:
@@ -306,7 +317,7 @@ def analyze_high_risk_sections(text: str) -> list[str]:
     return findings
 
 
-def _fix_line(line: str) -> tuple[str, list[str]]:
+def _fix_line(line: str, rewrites: list | None = None) -> tuple[str, list[str]]:
     stripped = line.strip()
     if _protected_line(stripped):
         return line, []
@@ -317,6 +328,17 @@ def _fix_line(line: str) -> tuple[str, list[str]]:
     for pattern in ROADMAP_LINE_PATTERNS:
         if pattern.match(fixed):
             return "", ["removed_roadmap_line"]
+
+    # Tone-tier rewrites run FIRST so higher-tier replacements (e.g. casual
+    # "可以看到 → 能看出") are applied before the legacy OPENING_FILLERS
+    # constant would delete the same phrase outright.
+    if rewrites is None:
+        rewrites = []
+    for pattern, repl in rewrites:
+        updated, n = pattern.subn(repl, fixed)
+        if n:
+            fixed = updated
+            changes.append("rewrote_red_flag")
 
     for pattern, repl in OPENING_FILLERS:
         updated, n = pattern.subn(repl, fixed, count=1)
@@ -331,12 +353,6 @@ def _fix_line(line: str) -> tuple[str, list[str]]:
             changes.append("removed_paragraph_starter")
             break
 
-    for pattern, repl in RED_FLAG_REWRITES:
-        updated, n = pattern.subn(repl, fixed)
-        if n:
-            fixed = updated
-            changes.append("rewrote_red_flag")
-
     fixed, removed = _replace_forbidden_closing(fixed)
     if removed:
         changes.append("removed_forbidden_closing")
@@ -348,7 +364,22 @@ def _fix_line(line: str) -> tuple[str, list[str]]:
     return fixed, changes
 
 
-def auto_fix_text(text: str) -> tuple[str, dict[str, int]]:
+def auto_fix_text(text: str, tone: Optional[str] = None) -> tuple[str, dict[str, int]]:
+    """Apply all mechanical style fixes to *text*.
+
+    *tone* selects the lexical-rewrite tier (neutral / casual / opinionated).
+    When None, the function uses the neutral tier.  Only rewrites with
+    severity != "info" are applied so that info-level suggestions are preserved
+    for the human reviewer rather than silently changed.
+    """
+    resolved = tone if tone in TONE_REGISTER_LEVELS else "neutral"
+    # Filter out info-severity entries — those are suggestions, not auto-fixes.
+    rewrites: list = [
+        (pattern, repl)
+        for (pattern, repl, sev) in get_rewrites_for_tone(resolved)
+        if sev != "info"
+    ]
+
     lines = text.splitlines()
     out: list[str] = []
     stats = {
@@ -388,7 +419,7 @@ def auto_fix_text(text: str) -> tuple[str, dict[str, int]]:
             else:
                 continue
 
-        fixed, changes = _fix_line(line)
+        fixed, changes = _fix_line(line, rewrites)
         for change in changes:
             stats[change] += 1
         out.append(fixed)
@@ -399,6 +430,25 @@ def auto_fix_text(text: str) -> tuple[str, dict[str, int]]:
     if hook_split:
         stats["split_hook_paragraph"] += 1
     return fixed_text, stats
+
+
+def auto_fix(article_path: Path, tone: Optional[str] = None) -> dict[str, int]:
+    """Public entry point: read *article_path*, apply fixes in-place, return stats.
+
+    *tone* precedence: explicit argument > frontmatter ``tone:`` field >
+    frontmatter ``writing_style:`` default > "neutral".
+    """
+    text = article_path.read_text(encoding="utf-8")
+    fm = _parse_frontmatter_simple(text)
+    resolved = resolve_tone(
+        cli_tone=tone,
+        frontmatter_tone=fm.get("tone"),
+        writing_style=fm.get("writing_style"),
+    )
+    fixed, stats = auto_fix_text(text, resolved)
+    if fixed != text:
+        article_path.write_text(fixed, encoding="utf-8")
+    return stats
 
 
 def build_change_summary(stats: dict[str, int]) -> list[str]:
@@ -458,7 +508,17 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     original = article.read_text(encoding="utf-8")
-    fixed, stats = auto_fix_text(original)
+
+    # Resolve tone from frontmatter so the CLI path honours `tone:` in the
+    # article header just as the programmatic auto_fix() entry point does.
+    fm = _parse_frontmatter_simple(original)
+    from scripts.config import resolve_tone
+    resolved_tone = resolve_tone(
+        cli_tone=None,
+        frontmatter_tone=fm.get("tone"),
+        writing_style=fm.get("writing_style"),
+    )
+    fixed, stats = auto_fix_text(original, resolved_tone)
     risk_findings = analyze_high_risk_sections(fixed)
 
     print(build_report(original, fixed, stats, risk_findings))
