@@ -191,6 +191,28 @@ class TextStripHelperTests(unittest.TestCase):
         result = _strip_image_lines(text)
         self.assertIn("![tiny]", result)
 
+    def test_rule_5_personal_marker_subcheck_skipped_at_casual_tone(self):
+        # Body has zero personal markers — Rule 5 would fail at neutral.
+        # At casual, it should be silent (Rule 17 takes over).
+        from scripts.review_selfcheck import check_rule_5
+        article = (
+            "---\nwriting_style: B\ntone: casual\n---\n\n# T\n\n"
+            + "纯技术描述。" * 100
+        )
+        result = check_rule_5(article, article.split("\n"))
+        markers = [v for v in result.violations if "个人视角" in v.text]
+        self.assertEqual(markers, [], "Rule 5 personal-marker check should defer to Rule 17 at casual+")
+
+    def test_rule_5_personal_marker_subcheck_active_at_neutral_tone(self):
+        from scripts.review_selfcheck import check_rule_5
+        article = (
+            "---\nwriting_style: A\ntone: neutral\n---\n\n# T\n\n"
+            + "纯技术描述。" * 100
+        )
+        result = check_rule_5(article, article.split("\n"))
+        markers = [v for v in result.violations if "个人视角" in v.text]
+        self.assertEqual(len(markers), 1, "Rule 5 personal-marker check should fire at neutral")
+
 
 if __name__ == "__main__":
     unittest.main()

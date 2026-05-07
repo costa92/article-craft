@@ -361,6 +361,16 @@ def check_rule_4(content: str, lines: List[str]) -> CheckResult:
 def check_rule_5(content: str, lines: List[str]) -> CheckResult:
     """Anti-AI Structure: varied paragraphs + personal perspective."""
     body = get_body(content)
+
+    # Tone-aware gating: Rule 17 sub-check A owns this dimension at
+    # casual/opinionated; we only fire here at neutral.
+    frontmatter = parse_frontmatter(content)
+    tone = resolve_tone(
+        cli_tone=None,
+        frontmatter_tone=frontmatter.get("tone"),
+        writing_style=frontmatter.get("writing_style"),
+    )
+
     paragraphs = get_paragraphs(body)
     violations = []
 
@@ -404,7 +414,7 @@ def check_rule_5(content: str, lines: List[str]) -> CheckResult:
         r'我(?:在|曾|的|会|用|选|踩|测|最后|发现)|踩坑|实测|我的经验|生产环境中.*我',
         body
     )
-    if len(personal_markers) < 2:
+    if tone == "neutral" and len(personal_markers) < 2:
         violations.append(Violation(
             line=0, text=f"个人视角标记仅 {len(personal_markers)} 处",
             suggestion="增加至少 2 处第一人称经验分享（如踩坑、实测、选型理由）"
