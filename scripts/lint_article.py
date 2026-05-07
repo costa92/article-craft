@@ -33,6 +33,20 @@ from scripts.config import (
     resolve_tone,
 )
 
+# ---------------------------------------------------------------------------
+# Test seam: tests inject synthetic rewrites via _set_test_rewrites_hook()
+# ---------------------------------------------------------------------------
+_TEST_REWRITES_HOOK = None  # callable(tone) -> list of (pattern, repl, severity, rule_id)
+
+
+def _set_test_rewrites_hook(hook):
+    """Test seam: when set, replaces get_rewrites_for_tone in auto_fix_text.
+
+    Tests pass either a callable taking *tone* or ``None`` to clear.
+    """
+    global _TEST_REWRITES_HOOK
+    _TEST_REWRITES_HOOK = hook
+
 
 class FixReport:
     """Result object returned by :func:`auto_fix`.
@@ -441,6 +455,7 @@ def auto_fix_text(
     tone: Optional[str] = None,
     min_severity: str = "warning",
     apply_info: bool = False,
+    test_rewrites_hook=None,
 ) -> tuple[str, dict[str, int], list[str]]:
     """Apply all mechanical style fixes to *text*.
 
@@ -452,6 +467,10 @@ def auto_fix_text(
     *apply_info* is a convenience flag: when True it overrides *min_severity*
     and sets the effective threshold to ``"info"``, ensuring all rewrites run.
 
+    *test_rewrites_hook* is a test seam: when not None it must be a callable
+    ``hook(tone) -> list`` that returns 4-tuples ``(pattern, repl, severity,
+    rule_id)`` and completely replaces ``get_rewrites_for_tone``.
+
     Returns ``(fixed_text, stats, warnings)`` where *warnings* is a list of
     strings describing any structural problems found (e.g. unmatched
     lint:disable markers).
@@ -460,10 +479,14 @@ def auto_fix_text(
     # Rank-based filter: apply_info widens the gate to include info-severity entries.
     effective_min = "info" if apply_info else min_severity
     threshold_rank = SEVERITY_RANK[effective_min]
+
+    # Honour test hook, otherwise use the real rewrite table.
+    raw_rewrites = test_rewrites_hook(resolved) if test_rewrites_hook is not None else get_rewrites_for_tone(resolved)
+
     # 4-tuple entries: (pattern, repl, severity, rule_id) — keep rule_id for disable check.
     rewrites: list = [
         (pattern, repl, rule_id)
-        for (pattern, repl, sev, rule_id) in get_rewrites_for_tone(resolved)
+        for (pattern, repl, sev, rule_id) in raw_rewrites
         if SEVERITY_RANK[sev] >= threshold_rank
     ]
 
@@ -535,6 +558,7 @@ def auto_fix(
     tone: Optional[str] = None,
     min_severity: str = "warning",
     apply_info: bool = False,
+    max_passes: int = 3,
 ) -> FixReport:
     """Public entry point: read *article_path*, apply fixes in-place, return FixReport.
 
@@ -543,6 +567,11 @@ def auto_fix(
 
     *min_severity* / *apply_info* are forwarded to :func:`auto_fix_text`
     unchanged; see that function's docstring for semantics.
+
+    *max_passes* caps the number of fix iterations.  The function iterates
+    until the text stabilises (``status="clean"``), oscillation is detected
+    (same ``(before, after)`` pair repeated — ``status="oscillating"``), or the
+    cap is hit (``status="incomplete"``).
     """
     text = article_path.read_text(encoding="utf-8")
     fm = _parse_frontmatter_simple(text)
@@ -551,10 +580,39 @@ def auto_fix(
         frontmatter_tone=fm.get("tone"),
         writing_style=fm.get("writing_style"),
     )
-    fixed, stats, warnings = auto_fix_text(text, resolved, min_severity=min_severity, apply_info=apply_info)
-    if fixed != text:
-        article_path.write_text(fixed, encoding="utf-8")
-    return FixReport(passes=1, warnings=warnings, status="clean")
+
+    # Use the module-level test hook if set.
+    hook = _TEST_REWRITES_HOOK
+    all_warnings: List[str] = []
+    seen_signatures: set = set()
+
+    for pass_num in range(1, max_passes + 1):
+        fixed, _stats, pass_warnings = auto_fix_text(
+            text,
+            tone=resolved,
+            min_severity=min_severity,
+            apply_info=apply_info,
+            test_rewrites_hook=hook,
+        )
+        all_warnings.extend(pass_warnings)
+
+        if fixed == text:
+            # Text did not change this pass — fully converged.
+            article_path.write_text(text, encoding="utf-8")
+            return FixReport(passes=pass_num - 1, warnings=all_warnings, status="clean")
+
+        # Oscillation detection: if this exact (before, after) pair has been
+        # seen in any previous pass, we are cycling with no net progress.
+        sig = (text, fixed)
+        if sig in seen_signatures:
+            article_path.write_text(fixed, encoding="utf-8")
+            return FixReport(passes=pass_num, warnings=all_warnings, status="oscillating")
+        seen_signatures.add(sig)
+        text = fixed
+
+    # Exhausted max_passes without converging.
+    article_path.write_text(text, encoding="utf-8")
+    return FixReport(passes=max_passes, warnings=all_warnings, status="incomplete")
 
 
 def build_change_summary(stats: dict[str, int]) -> list[str]:
