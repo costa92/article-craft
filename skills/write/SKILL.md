@@ -599,6 +599,16 @@ grep -n '│\|├\|└\|┌\|┐\|─\|▼\|▶\|←\|→\|↑\|↓' article.md 
 - Never start 2 consecutive paragraphs with "此外" / "另外" / "同时" / "值得注意的是".
 - Replace transition words with direct content — jump straight to the next point.
 
+**Hard anti-template rules**:
+- Do not write roadmap filler like "本文将从 A、B、C 三个方面展开" / "接下来我们逐一来看" / "下面分别介绍".
+- Do not stack abstract judgement phrases like "可以看到" / "不难发现" / "本质上" / "从这个角度看".
+- Do not use "首先 / 其次 / 最后" as the default section cadence unless you are literally documenting a 3-step operational procedure.
+- Every article must contain at least:
+  - 2 first-person anchors (`我在...`, `我会...`, `我踩过...`, `本机实测...`)
+  - 2 concrete anchors (numbers, versions, command output, file paths, exact error text, benchmark data)
+  - 1 explicit tradeoff paragraph (`适合什么 / 不适合什么 / 为什么我不用另一个方案`)
+- If a paragraph contains a judgement ("好用" / "克制" / "优雅" / "麻烦"), follow it immediately with evidence or an example in the same paragraph.
+
 ### Step 5: Run Self-Check
 
 Canonical source: **`${CLAUDE_PLUGIN_ROOT}/references/self-check-rules.md`**.
@@ -617,6 +627,11 @@ auto-fix mappings live there — do not re-type them here.
 
 For the quick convenience sweep before Step 6, use the single combined grep in
 the appendix of rules.md.
+
+Before saving, do one manual anti-AI pass:
+- Delete any "本文将 / 接下来 / 下面分别" roadmap sentence unless it adds real information
+- Replace any "可以看到 / 本质上 / 从这个角度看" sentence with a concrete claim
+- Check whether the article contains 2 personal anchors, 2 concrete anchors, and 1 tradeoff paragraph
 
 ### Step 6: Save Article (GATE CHECK REQUIRED)
 

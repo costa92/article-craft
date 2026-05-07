@@ -59,6 +59,19 @@ external links — context-dependent).
 3. Record violations with line numbers.
 4. If `--fix`:
    - Apply the rule's auto-fix mapping from rules.md via the Edit tool.
+   - For Rule 5, run:
+     ```bash
+     python3 ${CLAUDE_PLUGIN_ROOT}/scripts/lint_article.py --article /ABSOLUTE/PATH/article.md --fix
+     ```
+     This removes the safest mechanical AI-style filler:
+     `本文将...` / `接下来我们将...` / `下面分别...` /
+     `可以看到...` / `本质上...` / `从这个角度看...` /
+     paragraph starters like `首先...` / `其次...` / `另外...`,
+     rewrites red-flag words like `赋能` / `一站式` / `链路`,
+     removes engagement closings like `希望本文对你有帮助`,
+     deletes a trailing standalone `## 参考资料` section,
+     and reports Rule-5-style high-risk sections such as
+     `总览: 连续 3 段缺少具体锚点`
    - Never touch handoff-contract comments (`<!-- IMAGE: -->`, `<!-- PROMPT: -->`,
      `<!-- SCREENSHOT: -->`, `<!-- HARVEST: -->`) or CDN image URLs.
    - After all fixes, re-run every check to verify.
@@ -102,11 +115,22 @@ check to verify. Report before/after:
 | Rule | Name | Before | After | Action |
 |------|------|--------|-------|--------|
 | 1  | Red-flag words    | FAIL (3) | PASS | Applied rules.md auto-fix mapping (3 instances) |
+| 5  | Anti-AI structure | FAIL     | PASS | Removed roadmap filler / empty judgement wrappers / paragraph starters |
+| 3  | Closing paragraph | FAIL     | PASS | Removed engagement-style closing and kept concrete ending |
 | 4  | Description field | FAIL     | PASS | Generated from first section |
 | 10 | References inline | FAIL     | PASS | Deleted standalone section (inline links preserved) |
 
 Fixed: 3 rules
 Remaining: 0 (Mermaid rule 9 is report-only — run /article-craft:images)
+```
+
+If `lint_article.py` detects high-risk sections that cannot be safely auto-fixed,
+append them after the fix report as a review queue, for example:
+
+```markdown
+### High-Risk Sections
+- 总览: 连续 3 段缺少具体锚点
+- 判断: 连续 2 段总结腔且缺少锚点
 ```
 
 ---

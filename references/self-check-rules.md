@@ -185,6 +185,27 @@ Never start 2 consecutive paragraphs with the same transition word.
 **Auto-fix strategy (lint)**: delete the transition word from the second occurrence
 and jump straight to the point.
 
+### Template-cadence detection
+
+These patterns do not always fail an article alone, but repeated use strongly
+correlates with AI-written rhythm and should be flagged by review:
+
+- Roadmap filler: `本文将...` / `接下来我们将...` / `下面分别...`
+- Empty judgement wrappers: `可以看到...` / `本质上...` / `从这个角度看...` / `某种意义上...`
+- Mechanical sequencing: `首先...` / `其次...` / `最后...` when not describing an actual 3-step procedure
+
+**Review heuristic**:
+
+- Flag if any of the above appears 2+ times in body text
+- Flag if adjacent paragraphs share the same starter class (e.g. transition-heavy or sequence-heavy)
+- Flag if the article has fewer than 2 concrete anchors: numbers, version strings,
+  command snippets, file paths, benchmark output, or exact error text
+- Flag if any consecutive 3 body paragraphs contain 0 concrete anchors
+- Flag if a section contains 2 consecutive summary-tone paragraphs with 0 concrete anchors
+
+Concrete anchors are not a style flourish; they are evidence that the article is
+grounded in something other than generic summary prose.
+
 ---
 
 ## Rule 6: Chapter Depth
@@ -492,6 +513,12 @@ For a one-shot sweep of the most common violations before running individual rul
 
 ```bash
 grep -nE '无缝|赋能|一站式|综上所述|总而言之|值得注意的是|不难发现|深度解析|全面梳理|链路|闭环|抓手|底层逻辑|方法论|降本增效|实际上|事实上|显然|众所周知|不难看出|希望本文|希望对你|欢迎留言|点个在看|转发给朋友|在当今|随着.*发展|让我们一起' article.md
+```
+
+Supplemental anti-template sweep:
+
+```bash
+grep -nE '本文将|接下来我们将|下面分别|可以看到|本质上|从这个角度看|某种意义上|首先|其次|最后' article.md
 ```
 
 No output = most common low-hanging violations are clear. This is a **convenience

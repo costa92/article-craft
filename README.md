@@ -70,6 +70,74 @@ This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and
 requirements → verify → [evidence if Style H] → write → screenshot → share_card? → images → verify-claims → review → publish
 ```
 
+## Architecture Overview
+
+article-craft uses a two-layer architecture:
+
+- **Skills / workflow layer** — defines pipeline stages, routing, decision rules, and user interaction
+- **Scripts / execution layer** — performs the actual work: state tracking, evidence collection, screenshots, image generation, validation, and publishing support
+
+### Module Relationship
+
+```text
+User commands
+  ├─ /article-craft
+  │    └─ commands/article-craft.md
+  │         └─ skills/orchestrator/SKILL.md
+  ├─ /article-craft:write
+  ├─ /article-craft:verify
+  ├─ /article-craft:evidence
+  ├─ /article-craft:screenshot
+  ├─ /article-craft:images
+  ├─ /article-craft:verify-claims
+  ├─ /article-craft:review
+  ├─ /article-craft:publish
+  ├─ /article-craft:lint
+  ├─ /article-craft:series
+  └─ /article-craft:youtube
+```
+
+```text
+orchestrator
+  ├─ requirements     → infer topic / style / audience / depth
+  ├─ verify           → pre-writing link and command verification
+  ├─ evidence         → scripts/evidence.py
+  │                     └─ calls scripts/screenshot_tool.py harvest
+  ├─ write            → generates article.md with placeholders
+  ├─ screenshot       → scripts/screenshot_tool.py
+  ├─ images           → scripts/generate_and_upload_images.py
+  │                     ├─ uses scripts/nanobanana.py
+  │                     └─ reads scripts/config.py
+  ├─ verify-claims    → scripts/verify_claims.py
+  ├─ review / lint    → applies references/self-check-rules.md
+  └─ publish          → uses scripts/utils.py SmartDirectoryMatcher
+```
+
+### Responsibility by Directory
+
+| Path | Responsibility |
+|------|----------------|
+| `commands/` | Slash-command entrypoints that route to skills |
+| `skills/` | Workflow definitions for each stage in the article pipeline |
+| `scripts/` | Executable support code for screenshots, evidence, images, state, and validation |
+| `lib/` | Shared Node.js helpers for config and skill discovery |
+| `references/` | Canonical writing rules, style references, and knowledge-base placement rules |
+| `tests/` | Regression coverage for config loading, pipeline state, and claim verification |
+
+### Key Runtime Components
+
+- `scripts/pipeline_state.py` — stage state file management and `--upgrade` resume logic
+- `scripts/evidence.py` — parses `materials.md` and builds `_evidence.json`
+- `scripts/screenshot_tool.py` — URL preflight, Playwright rendering, screenshot capture, HARVEST expansion
+- `scripts/generate_and_upload_images.py` — batch image generation, upload, replacement, and recovery
+- `scripts/verify_claims.py` — scans shell code blocks and checks whether referenced tools exist on `PATH`
+- `scripts/config.py` — shared config, timeouts, model fallback chain, and verification cache support
+- `scripts/utils.py` — placeholder history and smart knowledge-base directory matching
+
+### Summary
+
+In practice, `skills/` decides **what should happen next**, while `scripts/` is responsible for **actually doing the work**.
+
 ### Pipeline Details
 
 **requirements** — Smart inference of writing style, depth, audience from topic keywords. Only asks when genuinely ambiguous.

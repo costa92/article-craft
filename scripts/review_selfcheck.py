@@ -41,7 +41,30 @@ FORBIDDEN_CLOSINGS = [
     r'如果这篇文章对你有帮助',
 ]
 
-TRANSITION_WORDS = r'^(此外|另外|同时|值得注意的是)'
+TRANSITION_WORDS = r'^(此外|另外|同时|值得注意的是|除此之外)'
+SEQUENCE_OPENERS = r'^(首先|其次|最后|先说结论|回到问题本身)'
+EMPTY_JUDGEMENT_PHRASES = [
+    r'可以看到',
+    r'本质上',
+    r'从这个角度看',
+    r'某种意义上',
+    r'回到问题本身',
+]
+SUMMARY_TONE_PHRASES = [
+    r'核心问题在于',
+    r'更重要的是',
+    r'说到底',
+    r'归根结底',
+    r'关键在于',
+    r'问题不在于',
+    r'真正的问题是',
+]
+ROADMAP_FILLER_PATTERNS = [
+    r'本文将',
+    r'接下来我们将',
+    r'下面分别',
+    r'下面我们',
+]
 
 
 # ─── Data Classes ────────────────────────────────────────────────
@@ -117,6 +140,60 @@ def get_sections(body: str) -> List[Tuple[str, str]]:
     if current_heading or current_content:
         sections.append((current_heading, '\n'.join(current_content)))
     return sections
+
+
+def _split_blocks(text: str) -> List[str]:
+    blocks: List[str] = []
+    current: List[str] = []
+    in_code = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            current.append(line)
+            continue
+        if not in_code and not stripped:
+            if current:
+                blocks.append("\n".join(current).strip())
+                current = []
+            continue
+        current.append(line)
+    if current:
+        blocks.append("\n".join(current).strip())
+    return [block for block in blocks if block]
+
+
+def _is_structural_anchor_block(block: str) -> bool:
+    stripped = block.strip()
+    lines = stripped.splitlines()
+    first = lines[0].strip() if lines else ""
+    return (
+        stripped.startswith("```")
+        or first.startswith("![")
+        or first.startswith("|")
+        or first.startswith(">")
+        or first.startswith("<!--")
+    )
+
+
+def _has_concrete_anchor(paragraph: str) -> bool:
+    return (
+        re.search(r'`[^`]+`', paragraph) is not None or
+        re.search(r'\b(v?\d+(?:\.\d+){1,3})\b', paragraph) is not None or
+        re.search(r'(/[A-Za-z0-9_.-]+){2,}', paragraph) is not None or
+        re.search(r'(报错|错误|error|exception|warning|404|500|ms|MB|GB|%)', paragraph, re.IGNORECASE) is not None
+    )
+
+
+def _is_summary_tone_paragraph(paragraph: str) -> bool:
+    return any(re.search(pattern, paragraph) for pattern in EMPTY_JUDGEMENT_PHRASES + SUMMARY_TONE_PHRASES)
+
+
+def _section_label(heading: str) -> str:
+    heading = heading.strip()
+    if not heading:
+        return "导言 / 未命名段落"
+    return heading.lstrip("#").strip()
 
 
 # ─── Rule Implementations ────────────────────────────────────────
@@ -247,32 +324,120 @@ def check_rule_5(content: str, lines: List[str]) -> CheckResult:
     paragraphs = get_paragraphs(body)
     violations = []
 
-    # Check consecutive transition words
-    prev_starts_with_transition = False
+    prev_opener = None
+    concrete_anchor_hits = 0
+    empty_judgement_hits = 0
+    roadmap_hits = 0
+    anchor_flags: List[bool] = []
+    summary_flags: List[bool] = []
+
     for i, p in enumerate(paragraphs):
         first_line = p.split('\n')[0]
+        opener = None
         if re.match(TRANSITION_WORDS, first_line):
-            if prev_starts_with_transition:
+            opener = "transition"
+        elif re.match(SEQUENCE_OPENERS, first_line):
+            opener = "sequence"
+
+        if opener:
+            if prev_opener == opener:
                 violations.append(Violation(
                     line=0, text=first_line[:50],
-                    suggestion="连续两段以转折词开头，替换为直接内容"
+                    suggestion="连续两段使用同类段首节奏，改成直接切入内容或换结构"
                 ))
-            prev_starts_with_transition = True
+            prev_opener = opener
         else:
-            prev_starts_with_transition = False
+            prev_opener = None
+
+        if any(re.search(pattern, p) for pattern in ROADMAP_FILLER_PATTERNS):
+            roadmap_hits += 1
+        if any(re.search(pattern, p) for pattern in EMPTY_JUDGEMENT_PHRASES):
+            empty_judgement_hits += 1
+        has_anchor = _has_concrete_anchor(p)
+        anchor_flags.append(has_anchor)
+        summary_flags.append(_is_summary_tone_paragraph(p))
+        if has_anchor:
+            concrete_anchor_hits += 1
 
     # Check personal perspective count
-    personal_markers = re.findall(r'我[在曾的]|踩坑|实测|我的经验|生产环境中.*我', body)
+    personal_markers = re.findall(
+        r'我(?:在|曾|的|会|用|选|踩|测|最后|发现)|踩坑|实测|我的经验|生产环境中.*我',
+        body
+    )
     if len(personal_markers) < 2:
         violations.append(Violation(
             line=0, text=f"个人视角标记仅 {len(personal_markers)} 处",
             suggestion="增加至少 2 处第一人称经验分享（如踩坑、实测、选型理由）"
         ))
 
+    if roadmap_hits >= 1:
+        violations.append(Violation(
+            line=0, text=f"模板化路线图语句 {roadmap_hits} 处",
+            suggestion="删掉“本文将/接下来/下面分别”式路线图，直接进入问题、证据或结论"
+        ))
+
+    if empty_judgement_hits >= 2:
+        violations.append(Violation(
+            line=0, text=f"空泛判断句 {empty_judgement_hits} 处",
+            suggestion="把“可以看到/本质上/从这个角度看”改成具体判断+证据"
+        ))
+
+    if concrete_anchor_hits < 2:
+        violations.append(Violation(
+            line=0, text=f"具体锚点仅 {concrete_anchor_hits} 处",
+            suggestion="补 2 处以上具体锚点：数字、版本、命令、路径、报错或实测结果"
+        ))
+
+    sections = get_sections(body)
+    for heading, section_content in sections:
+        section_blocks = _split_blocks(section_content)
+        if not section_blocks:
+            continue
+        label = _section_label(heading)
+        run: List[str] = []
+        for block in section_blocks + ["```reset```"]:
+            if _is_structural_anchor_block(block):
+                if len(run) >= 3:
+                    anchors = [_has_concrete_anchor(p) for p in run]
+                    for idx in range(max(0, len(run) - 2)):
+                        window = anchors[idx:idx + 3]
+                        if len(window) == 3 and not any(window):
+                            preview = run[idx].split('\n')[0][:50]
+                            violations.append(Violation(
+                                line=0,
+                                text=f"章节「{label}」连续 3 段缺少具体锚点，起始段：{preview}",
+                                suggestion="每连续 3 段正文里至少放 1 段具体锚点：命令、数字、路径、报错或实测结果"
+                            ))
+                            break
+
+                if len(run) >= 2:
+                    anchors = [_has_concrete_anchor(p) for p in run]
+                    summaries = [_is_summary_tone_paragraph(p) for p in run]
+                    for idx in range(max(0, len(run) - 1)):
+                        if (
+                            len(summaries[idx:idx + 2]) == 2 and
+                            all(summaries[idx:idx + 2]) and
+                            not any(anchors[idx:idx + 2])
+                        ):
+                            preview = run[idx].split('\n')[0][:50]
+                            violations.append(Violation(
+                                line=0,
+                                text=f"章节「{label}」连续 2 段总结腔且缺少锚点，起始段：{preview}",
+                                suggestion="把相邻的总结/判断段改成‘判断 + 命令/数字/报错/反例’组合，不要连续两段纯解释"
+                            ))
+                            break
+                run = []
+                continue
+
+            run.append(block)
+
     return CheckResult(
         rule_id=5, rule_name="反 AI 结构",
         passed=len(violations) == 0, violations=violations,
-        details=f"个人视角 {len(personal_markers)} 处，转折词问题 {len(violations)} 处"
+        details=(
+            f"个人视角 {len(personal_markers)} 处，具体锚点 {concrete_anchor_hits} 处，"
+            f"路线图语句 {roadmap_hits} 处，空泛判断句 {empty_judgement_hits} 处"
+        )
     )
 
 
@@ -286,7 +451,14 @@ def check_rule_6(content: str, lines: List[str]) -> CheckResult:
     intro_keywords = re.compile(r'为什么|挑战|争议|背景|动机|现实|痛点|局限|需要|缺什么|之后')
 
     for heading, section_content in sections:
-        if not heading or heading.startswith('## 导言') or heading.startswith('## 总结'):
+        if (
+            not heading or
+            heading.startswith('## 导言') or
+            heading.startswith('## 总结') or
+            heading.startswith('## 写在最后') or
+            heading.startswith('## 结语') or
+            heading.startswith('## 结尾')
+        ):
             continue
         code_blocks = re.findall(r'```', section_content)
         code_count = len(code_blocks) // 2
@@ -660,7 +832,7 @@ ALL_CHECKS = [
 
 
 def run_all_checks(article_path: str) -> Tuple[List[CheckResult], bool]:
-    """Run all 15 rules. Returns (results, all_passed)."""
+    """Run all 16 rules. Returns (results, all_passed)."""
     content = Path(article_path).read_text(encoding='utf-8')
     lines_list = content.split('\n')
     results = [check(content, lines_list) for check in ALL_CHECKS]
@@ -735,7 +907,7 @@ def to_json(results: List[CheckResult]) -> str:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Article self-check (12 rules)")
+    parser = argparse.ArgumentParser(description="Article self-check (16 rules)")
     parser.add_argument("article", help="Path to .md file")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--gate-only", action="store_true", help="Only check Rule 11 (placeholder gate)")

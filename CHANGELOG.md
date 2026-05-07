@@ -1,5 +1,29 @@
 # Changelog
 
+## [Unreleased] - 2026-05-07
+
+### Added
+
+- **`scripts/lint_article.py` — lightweight auto-fix for mechanical AI-style patterns.** New 484-line script invoked by `skills/lint/SKILL.md` for Rule 5 fixes. Removes roadmap filler (`本文将...` / `接下来我们将...` / `下面分别...`), empty judgement wrappers (`可以看到` / `本质上` / `从这个角度看` / `某种意义上` / `回到问题本身`), repetitive paragraph starters (`首先` / `其次` / `另外` / `此外` / `同时`), high-confidence red-flag words (`赋能` / `一站式` / `链路`), splits overlong hook paragraphs, deletes engagement-style closings, and drops standalone trailing `## 参考资料` sections. Intentionally conservative — never touches code blocks, HTML comment placeholders (`<!-- IMAGE: -->`, `<!-- HARVEST: -->`), Markdown headings, or image/link syntax lines. Reports high-risk sections (consecutive 3 paragraphs without concrete anchors, consecutive summary-tone paragraphs without anchors) that cannot be safely auto-fixed.
+- **Rule 5 template-cadence detection** in `references/self-check-rules.md` and `scripts/review_selfcheck.py`. Review now flags: roadmap filler appearing 2+ times, adjacent paragraphs sharing the same starter class (transition-heavy, sequence-heavy), articles with fewer than 2 concrete anchors (numbers, version strings, command snippets, file paths, benchmark output, exact error text), any 3 consecutive body paragraphs with 0 concrete anchors, and sections with 2 consecutive summary-tone paragraphs with 0 anchors. Adds `SEQUENCE_OPENERS`, `EMPTY_JUDGEMENT_PHRASES`, `SUMMARY_TONE_PHRASES`, `ROADMAP_FILLER_PATTERNS` constants. Concrete-anchor heuristic checks for backticks, version strings, multi-segment paths, and error/metric tokens.
+- **Test suites for lint and review extensions.** `tests/test_lint_article.py` (10 tests) covers auto-fix coverage, code-block / placeholder safety, hook splitting, trailing-reference deletion, high-risk-section reporting, and `--fix` writeback. `tests/test_review_selfcheck.py` (7 tests) covers Rule 5 template-cadence flagging, summary-tone detection, anchor-density heuristic, code-block break handling, personal-voice pass case, and Rule 6 / Rule 12 boundary cases. All 17 pass in 0.03s.
+
+### Changed
+
+- **`skills/lint/SKILL.md` Step 4 now invokes `lint_article.py` for Rule 5.** Documents the exact `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/lint_article.py --article PATH --fix` command and which mechanical patterns it touches. Adds a "High-Risk Sections" review queue to the report format for sections the auto-fix flagged but did not modify.
+- **`skills/write/SKILL.md` Step 7 explicitly delegates content-quality rules to `review`.** Adds a 职责分工 block stating that Step 7 only checks downstream-skill handoff contracts (placeholder format, IMAGE / HARVEST validity), and that content-quality rules (red-flag words, template cadence, chapter depth, ending strength) are owned by `review` skill Phase 1's 11 self-check rules. Removes the duplicated instruction to call `review_selfcheck.py` from write.
+- **`skills/write/style-guide.md`** picks up the same anti-template-cadence guidance so the writer model has the rule visible at generation time, not just at review.
+- **`README.md`** gains an Architecture Overview section: two-layer architecture (skills = workflow, scripts = execution), module relationship tree, responsibility-by-directory table, and key runtime component glossary.
+
+### Why
+
+Closes the "self-check rules duplicated across three skills" technical debt called out in `CLAUDE.md` § Known design debt. `references/self-check-rules.md` was already the canonical source, but `write/SKILL.md` Step 7, `lint/SKILL.md`, and `review/SKILL.md` Phase 1 each re-stated slices of it in prose, so updating the red-flag list meant remembering three places. Now `write` defers to `review`, `lint` calls the deterministic auto-fix script, and the prose in each skill points at `references/self-check-rules.md` by rule number instead of restating it.
+
+### Validated
+
+- `python3 -m pytest tests/test_lint_article.py tests/test_review_selfcheck.py -v` → 17 passed in 0.03s
+- Existing tests (`tests/test_config.py`, `tests/test_pipeline_state.py`, `tests/test_verify_claims.py`) unaffected.
+
 ## [Unreleased] - 2026-04-22
 
 ### Fixed

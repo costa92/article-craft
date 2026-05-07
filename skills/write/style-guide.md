@@ -55,6 +55,11 @@ Example: "同一个项目，pip install 用了 45 秒，uv 只用了 2.1 秒—�
 - Consecutive paragraphs must NOT use the same structure. If the previous paragraph was "concept -> explain -> code", the next must use a different pattern.
 - Available structures: code-first with reverse explanation, Q&A dialogue, experience-then-principle, comparison table then conclusion.
 
+**Concrete evidence rules**:
+- Every long article must contain at least 2 concrete anchors: measured numbers, command output, version numbers, file paths, error text, benchmark results, or before/after comparisons.
+- Abstract judgement must be attached to evidence. Don't write "这个设计很优雅" alone; write "这个设计很克制：它只暴露 3 个命令，省掉了 poetry 那套多层配置。"
+- At least 1 paragraph must explicitly state a tradeoff: what the tool does well, what it does poorly, or where you would not use it.
+
 **Personal perspective insertion points** (at least 2 per article):
 - Pitfall experience: "我在迁移旧项目时发现——"
 - Choice rationale: "选 uv 而不是 poetry 的原因很简单——"
@@ -64,6 +69,12 @@ Example: "同一个项目，pip install 用了 45 秒，uv 只用了 2.1 秒—�
 **Diverse paragraph openings**:
 - Never start 2 consecutive paragraphs with "此外" / "另外" / "同时" / "值得注意的是"
 - Replace transition words with direct content: jump straight to the next point instead of "另外，还有一个功能..."
+- Avoid repeated paragraph starters like "首先..." / "其次..." / "最后..." / "总的来说..." / "本质上..." / "从这个角度看...".
+
+**Template-summary ban**:
+- Do not write roadmap-style filler such as "本文将从 A、B、C 三个方面展开" / "接下来我们逐一来看" / "下面分别介绍".
+- Do not use empty judgement wrappers such as "可以看到" / "不难发现" / "某种意义上" / "回到问题本身".
+- If you want to summarize structure, compress it into one sentence with a real payoff: "后面我只看三件事：它快在哪、坑在哪、值不值得换。"
 
 **Closing rules**:
 - Forbidden: "希望本文对你有帮助" / "如果有问题欢迎留言"
@@ -103,6 +114,9 @@ Example: "同一个项目，pip install 用了 45 秒，uv 只用了 2.1 秒—�
 - "随着...的不断发展..."
 - "让我们一起探索..."
 - "综上所述..."
+- "首先/其次/最后" 三段式平铺
+- "本文将..."、"接下来我们将..."、"下面分别..."
+- "可以看到..."、"不难发现..."、"本质上..."、"从这个角度看..."
 
 **3. False promises**
 - "效率提升 300%"
@@ -359,9 +373,13 @@ Before saving the article, confirm:
 - [ ] No fake engagement content
 - [ ] No marketing fluff
 - [ ] No AI boilerplate phrases
+- [ ] No "本文将/接下来/下面分别" style roadmap filler
+- [ ] No repeated paragraph starters like "首先/其次/最后/另外"
 - [ ] Emoji used sparingly, never in headings
 - [ ] Image placeholders use CDN-ready format
 - [ ] At least 2 personal perspective insertions
+- [ ] At least 2 concrete anchors: numbers, versions, commands, paths, errors, or measured output
+- [ ] At least 1 explicit tradeoff paragraph: where this tool is weak, costly, or not worth using
 - [ ] No 2 consecutive paragraphs with identical structure
 - [ ] Hook is within 100 characters
 - [ ] Closing is a concrete action or brief outlook
