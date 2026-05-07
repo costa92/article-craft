@@ -383,3 +383,65 @@ Before saving the article, confirm:
 - [ ] No 2 consecutive paragraphs with identical structure
 - [ ] Hook is within 100 characters
 - [ ] Closing is a concrete action or brief outlook
+
+
+## Tone: neutral
+
+**Position:** standard technical blog. Default for Style A (技术教程), C
+(深度长文), E (资讯快报).
+
+**Rules:**
+- Allow 在某种意义上 / 可以看到 / 本质上 — these are professional written
+  Chinese; do not strip them aggressively
+- 首先 / 其次 / 最后 acceptable when describing an actual sequenced procedure
+- ≥ 2 first-person experience markers per 800 chars (我用 / 我选 / 踩坑 / 实测)
+- No strong-opinion requirement
+- Closing paragraph: factual summary OK
+
+**Sample:**
+> uv 是 Astral 出的 Python 包管理器,定位是 pip 的替代品。Astral 自测下来
+> 比 pip 快约 10 倍。我在小项目里用过 v0.4,确实比 pip install 快得多。
+> 但生态对老 setup.py 项目还有兼容性挑战,选型时建议先在小服务上验证。
+
+
+## Tone: casual
+
+**Position:** mainstream Chinese tech blog voice. Default for Style B
+(经验分享), D (评测对比), F (项目复盘).
+
+**Rules:**
+- Replace formal connectives with colloquial: 在某种意义上 → 其实, 可以看到
+  → 能看出, 本质上 → 说穿了
+- 首先/其次/最后 段首 should be deleted (treat as 模板 节奏 signal)
+- ≥ 4 first-person experience markers per 800 chars
+- Soft target: ≥ 1 author opinion ("我推荐 X" / "我选 Y")
+- Sentence-length variation matters; mix long and short
+- Closing paragraph: must include ≥ 1 line of author position
+
+**Sample:**
+> uv 这玩意儿是 Astral 搞的 Python 包管理器,瞄准的就是 pip 的位置。我实测
+> 下来比 pip 快接近一个数量级,能看出 Rust 写出来的工具确实是另一个量级。
+> 实际项目里我把 CI 切到 uv 后,镜像构建快了 6 分钟。要说短板,生态兼容
+> 老项目还有点磕碰——setup.py 那种古早写法 uv 还得绕一下。
+
+
+## Tone: opinionated
+
+**Position:** strong personal-color tech opinion / hot take. Default for
+Style G (观点输出), H (爆料自媒体).
+
+**Rules:**
+- Reject neutral/abstract phrasing entirely; "在某种意义上 / 本质上 / 从这个
+  角度看" should not appear
+- Strong-opinion sentences required (≥ 1 per article): 我赌 / 真香 / 别学 /
+  这玩意儿坑爹 / 别用 / 纯纯
+- Sentence-length CV ≥ 0.45 — long-short cadence is mandatory
+- ≥ 6 first-person markers per 800 chars
+- No "希望本文对你有帮助" / "如果对你有帮助点个赞" closing — strip them
+- Closing must end on personal judgement / prediction / hot take
+
+**Sample:**
+> 说白了 uv 就是来掀 pip 桌子的。Rust 写的,速度直接快一个数量级——pip 等
+> 于卡你十年了。我赌两年内 pip 在新项目里基本看不见。
+> 当然现在 uv 的兼容性还有坑——老 setup.py 项目摔过几回。但这不是 uv 的
+> 错,是 Python 包生态欠的债。pip 该退休了,uv 是接棒的。
