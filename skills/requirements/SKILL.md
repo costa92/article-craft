@@ -177,6 +177,37 @@ If user chooses to adjust a field:
 - **Depth change**: Show length implications
 - **Manual input**: Collect all fields at once
 
+### Step 5: Tone Resolution
+
+Resolve the article's tone tier (`neutral` / `casual` / `opinionated`) using
+three-tier precedence: CLI flag (`--tone=X`) > frontmatter `tone:` > writing-style default.
+
+```python
+from scripts.config import resolve_tone, STYLE_TO_TONE_DEFAULT
+
+resolved_tone = resolve_tone(
+    cli_tone=args.get("--tone"),                  # from orchestrator
+    frontmatter_tone=existing_frontmatter.get("tone"),
+    writing_style=writing_style_id,               # already determined above
+)
+```
+
+Write the resolved value into article frontmatter as `tone: <value>` so
+downstream skills (write / review / lint) can read it.
+
+**Why no user question**: writing-style is always determined by this point
+(Step 1–4 guarantee it), so `STYLE_TO_TONE_DEFAULT` always resolves a valid tone,
+even when CLI flag and frontmatter are both empty. The three-source-empty
+branch is unreachable.
+
+**If the user manually entered an invalid `tone:` in frontmatter** (e.g.
+`tone: aggressive`), `resolve_tone()` silently degrades to the style
+default. Print one warning line:
+
+```
+WARNING: invalid tone <bad> in frontmatter; using <resolved>
+```
+
 ---
 
 ## Depth → Length Mapping
