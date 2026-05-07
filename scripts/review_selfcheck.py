@@ -113,6 +113,40 @@ def strip_code_blocks(text: str) -> str:
     return re.sub(r'```.*?```', '', text, flags=re.DOTALL)
 
 
+def _strip_callout_blocks(text: str) -> str:
+    """Remove Obsidian callout blocks (> [!type] ... \n> body) from text.
+
+    Plain blockquotes (lines starting with `>` but no `[!type]` marker)
+    are preserved. Implementation: greedy state machine that toggles "inside
+    callout" when it sees `> [!...]` and exits on the first non-`>` line.
+    """
+    lines = text.split("\n")
+    out: List[str] = []
+    in_callout = False
+    for line in lines:
+        stripped = line.lstrip()
+        if not in_callout:
+            if stripped.startswith("> [!") and "]" in stripped:
+                in_callout = True
+                continue
+            out.append(line)
+        else:
+            if stripped.startswith(">"):
+                continue
+            in_callout = False
+            out.append(line)
+    return "\n".join(out)
+
+
+def _strip_image_lines(text: str) -> str:
+    """Drop lines that are *only* a Markdown image (optionally with surrounding whitespace).
+
+    Inline images embedded inside a paragraph are preserved.
+    """
+    image_only = re.compile(r"^\s*!\[[^\]]*\]\([^)]+\)\s*$")
+    return "\n".join(line for line in text.split("\n") if not image_only.match(line))
+
+
 def get_paragraphs(body: str) -> List[str]:
     """Split body into non-empty paragraphs (excluding code blocks)."""
     text = strip_code_blocks(body)

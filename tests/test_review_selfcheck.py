@@ -160,5 +160,37 @@ description: "demo"
         self.assertTrue(result.passed, result.details)
 
 
+class TextStripHelperTests(unittest.TestCase):
+    def test_strip_callout_blocks_removes_obsidian_callouts(self):
+        from scripts.review_selfcheck import _strip_callout_blocks
+        text = "正常一段。\n\n> [!info] 标题\n> 提示内容\n> 第二行\n\n下一段。"
+        result = _strip_callout_blocks(text)
+        self.assertIn("正常一段", result)
+        self.assertIn("下一段", result)
+        self.assertNotIn("提示内容", result)
+
+    def test_strip_callout_blocks_preserves_normal_blockquotes(self):
+        from scripts.review_selfcheck import _strip_callout_blocks
+        # > without [!type] is a normal blockquote — keep it.
+        text = "> 引用一句话\n> 第二行"
+        result = _strip_callout_blocks(text)
+        self.assertIn("引用一句话", result)
+
+    def test_strip_image_lines_removes_markdown_image_syntax(self):
+        from scripts.review_selfcheck import _strip_image_lines
+        text = "段一。\n![alt text](https://x.com/y.png)\n段二。"
+        result = _strip_image_lines(text)
+        self.assertIn("段一", result)
+        self.assertIn("段二", result)
+        self.assertNotIn("![", result)
+
+    def test_strip_image_lines_does_not_touch_inline_image(self):
+        from scripts.review_selfcheck import _strip_image_lines
+        # An image embedded in a sentence (not its own line) should remain.
+        text = "正常段落 ![tiny](inline.png) 句尾继续。"
+        result = _strip_image_lines(text)
+        self.assertIn("![tiny]", result)
+
+
 if __name__ == "__main__":
     unittest.main()
