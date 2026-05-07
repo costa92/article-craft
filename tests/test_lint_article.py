@@ -29,7 +29,7 @@ class LintArticleTests(unittest.TestCase):
 
 从这个角度看，它也比较灵活。
 """
-        fixed, stats = lint_article.auto_fix_text(text)
+        fixed, stats, _w = lint_article.auto_fix_text(text)
 
         self.assertNotIn("本文将", fixed)
         self.assertNotIn("首先，", fixed)
@@ -52,7 +52,7 @@ class LintArticleTests(unittest.TestCase):
 
 另外，这一段在正文里。
 """
-        fixed, _stats = lint_article.auto_fix_text(text)
+        fixed, _stats, _w = lint_article.auto_fix_text(text)
 
         self.assertIn("首先，我们先看这个例子。", fixed)
         self.assertIn("可以看到，这里只是示意。", fixed)
@@ -83,7 +83,7 @@ class LintArticleTests(unittest.TestCase):
 
 综上所述，希望本文对你有帮助。
 """
-        fixed, stats = lint_article.auto_fix_text(text)
+        fixed, stats, _w = lint_article.auto_fix_text(text)
 
         # 赋能 → 支持 (neutral warning)
         self.assertIn("支持团队", fixed)
@@ -112,7 +112,7 @@ class LintArticleTests(unittest.TestCase):
 - [官方文档](https://example.com)
 - [源码](https://example.com/repo)
 """
-        fixed, stats = lint_article.auto_fix_text(text)
+        fixed, stats, _w = lint_article.auto_fix_text(text)
 
         self.assertNotIn("## 参考资料", fixed)
         self.assertNotIn("[官方文档]", fixed)
@@ -127,7 +127,7 @@ pip 装包慢、venv 命令长、pyenv 配置烦，这几个问题在旧项目�
 
 内容。
 """
-        fixed, stats = lint_article.auto_fix_text(text)
+        fixed, stats, _w = lint_article.auto_fix_text(text)
 
         self.assertEqual(stats["split_hook_paragraph"], 1)
         self.assertIn("\n\nuv 用一个二进制", fixed)

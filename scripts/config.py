@@ -352,51 +352,53 @@ STRONG_OPINION_PATTERNS = [
 
 
 # ─── Tone-aware lexical rewrites (lint_article.py consumes this) ─
-# Each entry: (compiled_pattern, replacement_string, severity).
+# Each entry: (compiled_pattern, replacement_string, severity, rule_id).
 # Severity is one of "info" | "warning" | "error".
+# rule_id identifies which lint rule this rewrite enforces (used by the
+# inline <!-- lint:disable rule_id --> / <!-- lint:enable rule_id --> system).
 # Tiers are STACKED via get_rewrites_for_tone(): casual = neutral + casual,
 # opinionated = neutral + casual + opinionated.
 
 TONE_LEXICAL_REWRITES: Dict[str, List[Any]] = {
     "neutral": [
         # Canonical Rule 1 red flags — applied at every tone.
-        (_re_for_tone.compile(r"赋能"),         "支持",   "warning"),
-        (_re_for_tone.compile(r"一站式"),       "完整",   "warning"),
-        (_re_for_tone.compile(r"链路"),         "流程",   "info"),
-        (_re_for_tone.compile(r"底层逻辑"),     "原理",   "info"),
-        (_re_for_tone.compile(r"方法论"),       "做法",   "info"),
-        (_re_for_tone.compile(r"抓手"),         "切入点", "warning"),
-        (_re_for_tone.compile(r"闭环"),         "回路",   "info"),
-        (_re_for_tone.compile(r"降本增效"),     "省钱省力", "warning"),
+        (_re_for_tone.compile(r"赋能"),         "支持",    "warning", "rule1"),
+        (_re_for_tone.compile(r"一站式"),       "完整",    "warning", "rule1"),
+        (_re_for_tone.compile(r"链路"),         "流程",    "info",    "rule1"),
+        (_re_for_tone.compile(r"底层逻辑"),     "原理",    "info",    "rule1"),
+        (_re_for_tone.compile(r"方法论"),       "做法",    "info",    "rule1"),
+        (_re_for_tone.compile(r"抓手"),         "切入点",  "warning", "rule1"),
+        (_re_for_tone.compile(r"闭环"),         "回路",    "info",    "rule1"),
+        (_re_for_tone.compile(r"降本增效"),     "省钱省力", "warning", "rule1"),
     ],
     "casual": [
         # Mid-tier replacements: turn formal connectives into colloquial Chinese.
-        (_re_for_tone.compile(r"在某种意义上[，,]?"),           "其实",       "warning"),
-        (_re_for_tone.compile(r"可以看到[，,]?"),               "能看出",     "warning"),
-        (_re_for_tone.compile(r"本质上[，,]?"),                 "说穿了",     "warning"),
-        (_re_for_tone.compile(r"接下来我们[来]?(看|介绍|分析)"), r"看看\1的",  "warning"),
-        (_re_for_tone.compile(r"下面分别(来看|介绍)"),          r"分别\1",    "warning"),
-        (_re_for_tone.compile(r"值得注意的是[，,]?"),           "这地方注意", "warning"),
-        (_re_for_tone.compile(r"不难发现"),                     "能看出",     "warning"),
-        (_re_for_tone.compile(r"基于以上分析"),                 "由此",       "info"),
-        (_re_for_tone.compile(r"综上[，,]?"),                   "总之",       "info"),
+        (_re_for_tone.compile(r"在某种意义上[，,]?"),           "其实",       "warning", "rule5"),
+        (_re_for_tone.compile(r"可以看到[，,]?"),               "能看出",     "warning", "rule5"),
+        (_re_for_tone.compile(r"本质上[，,]?"),                 "说穿了",     "warning", "rule5"),
+        (_re_for_tone.compile(r"接下来我们[来]?(看|介绍|分析)"), r"看看\1的",  "warning", "rule5"),
+        (_re_for_tone.compile(r"下面分别(来看|介绍)"),          r"分别\1",    "warning", "rule5"),
+        (_re_for_tone.compile(r"值得注意的是[，,]?"),           "这地方注意", "warning", "rule5"),
+        (_re_for_tone.compile(r"不难发现"),                     "能看出",     "warning", "rule5"),
+        (_re_for_tone.compile(r"基于以上分析"),                 "由此",       "info",    "rule5"),
+        (_re_for_tone.compile(r"综上[，,]?"),                   "总之",       "info",    "rule5"),
         # Paragraph-starter sequence words (was in PARAGRAPH_STARTERS pre-v1.4.18)
-        (_re_for_tone.compile(r"^首先[，,:： ]+", _re_for_tone.MULTILINE),  "", "warning"),
-        (_re_for_tone.compile(r"^其次[，,:： ]+", _re_for_tone.MULTILINE),  "", "warning"),
-        (_re_for_tone.compile(r"^最后[，,:： ]+", _re_for_tone.MULTILINE),  "", "warning"),
-        (_re_for_tone.compile(r"^另外[，,:： ]+", _re_for_tone.MULTILINE),  "", "info"),
-        (_re_for_tone.compile(r"^此外[，,:： ]+", _re_for_tone.MULTILINE),  "", "info"),
-        (_re_for_tone.compile(r"^同时[，,:： ]+", _re_for_tone.MULTILINE),  "", "info"),
+        (_re_for_tone.compile(r"^首先[，,:： ]+", _re_for_tone.MULTILINE),  "", "warning", "rule5"),
+        (_re_for_tone.compile(r"^其次[，,:： ]+", _re_for_tone.MULTILINE),  "", "warning", "rule5"),
+        (_re_for_tone.compile(r"^最后[，,:： ]+", _re_for_tone.MULTILINE),  "", "warning", "rule5"),
+        (_re_for_tone.compile(r"^另外[，,:： ]+", _re_for_tone.MULTILINE),  "", "info",    "rule5"),
+        (_re_for_tone.compile(r"^此外[，,:： ]+", _re_for_tone.MULTILINE),  "", "info",    "rule5"),
+        (_re_for_tone.compile(r"^同时[，,:： ]+", _re_for_tone.MULTILINE),  "", "info",    "rule5"),
     ],
     "opinionated": [
         # High-tier: stronger replacements + closing-line removal (error severity).
-        (_re_for_tone.compile(r"显然[，,]?"),                   "明摆着",     "warning"),
-        (_re_for_tone.compile(r"综上所述"),                     "说白了",     "error"),
-        (_re_for_tone.compile(r"总而言之"),                     "一句话",     "error"),
-        (_re_for_tone.compile(r"希望本文对你有帮助[^\n]*"),     "",           "error"),
-        (_re_for_tone.compile(r"如果这篇文章对你有帮助[^\n]*"), "",           "error"),
-        (_re_for_tone.compile(r"欢迎留言讨论[^\n]*"),           "",           "error"),
-        (_re_for_tone.compile(r"点个在看[^\n]*"),               "",           "error"),
+        (_re_for_tone.compile(r"显然[，,]?"),                   "明摆着",     "warning", "rule5"),
+        (_re_for_tone.compile(r"综上所述"),                     "说白了",     "error",   "rule5"),
+        (_re_for_tone.compile(r"总而言之"),                     "一句话",     "error",   "rule5"),
+        (_re_for_tone.compile(r"希望本文对你有帮助[^\n]*"),     "",           "error",   "rule3"),
+        (_re_for_tone.compile(r"如果这篇文章对你有帮助[^\n]*"), "",           "error",   "rule3"),
+        (_re_for_tone.compile(r"欢迎留言讨论[^\n]*"),           "",           "error",   "rule3"),
+        (_re_for_tone.compile(r"点个在看[^\n]*"),               "",           "error",   "rule3"),
     ],
 }
 
@@ -407,6 +409,8 @@ def get_rewrites_for_tone(tone: str) -> List[Any]:
     casual returns neutral + casual; opinionated returns neutral + casual +
     opinionated. Unknown tones fall back to neutral (which is also what
     `resolve_tone` would have returned upstream — defense in depth).
+
+    Each entry is a 4-tuple: (compiled_pattern, replacement, severity, rule_id).
     """
     if tone == "casual":
         return list(TONE_LEXICAL_REWRITES["neutral"]) + list(TONE_LEXICAL_REWRITES["casual"])

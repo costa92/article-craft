@@ -24,7 +24,7 @@ import difflib
 import re
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Set, Tuple
 
 from scripts.config import (
     TONE_REGISTER_LEVELS,
@@ -34,7 +34,41 @@ from scripts.config import (
 )
 
 
+class FixReport:
+    """Result object returned by :func:`auto_fix`.
+
+    Attributes:
+        passes: Number of fix passes applied (always 1 for now).
+        warnings: Structural warnings, e.g. unmatched lint:disable markers.
+        status: Summary status string ("clean").
+    """
+
+    def __init__(
+        self,
+        passes: int = 1,
+        warnings: Optional[List[str]] = None,
+        status: str = "clean",
+    ) -> None:
+        self.passes = passes
+        self.warnings: List[str] = warnings if warnings is not None else []
+        self.status = status
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"FixReport(passes={self.passes!r}, warnings={self.warnings!r}, status={self.status!r})"
+
+
 SEVERITY_RANK = {"info": 0, "warning": 1, "error": 2}
+
+# ─── Inline lint:disable / lint:enable region parser ─────────────────────────
+DISABLE_PATTERN = re.compile(r"<!--\s*lint:disable\s+([^\-]+?)\s*-->")
+ENABLE_PATTERN = re.compile(r"<!--\s*lint:enable\s+([^\-]+?)\s*-->")
+
+
+def _has_unmatched_disable_at_eof(text: str) -> bool:
+    """Return True if <!-- lint:disable --> markers exceed <!-- lint:enable --> markers."""
+    disable_count = len(DISABLE_PATTERN.findall(text))
+    enable_count = len(ENABLE_PATTERN.findall(text))
+    return disable_count > enable_count
 
 ROADMAP_LINE_PATTERNS = [
     re.compile(r"^\s*本文将(?:从.+)?(?:展开|介绍|说明|拆解|讲清楚)[。；;!！]?\s*$"),
@@ -319,13 +353,19 @@ def analyze_high_risk_sections(text: str) -> list[str]:
     return findings
 
 
-def _fix_line(line: str, rewrites: list | None = None) -> tuple[str, list[str]]:
+def _fix_line(
+    line: str,
+    rewrites: list | None = None,
+    disabled: frozenset | None = None,
+) -> tuple[str, list[str]]:
     stripped = line.strip()
     if _protected_line(stripped):
         return line, []
 
     changes: list[str] = []
     fixed = line
+    if disabled is None:
+        disabled = frozenset()
 
     for pattern in ROADMAP_LINE_PATTERNS:
         if pattern.match(fixed):
@@ -336,7 +376,9 @@ def _fix_line(line: str, rewrites: list | None = None) -> tuple[str, list[str]]:
     # constant would delete the same phrase outright.
     if rewrites is None:
         rewrites = []
-    for pattern, repl in rewrites:
+    for pattern, repl, rule_id in rewrites:
+        if "all" in disabled or rule_id in disabled:
+            continue
         updated, n = pattern.subn(repl, fixed)
         if n:
             fixed = updated
@@ -366,12 +408,40 @@ def _fix_line(line: str, rewrites: list | None = None) -> tuple[str, list[str]]:
     return fixed, changes
 
 
+def _build_line_disabled_sets(text: str) -> list[frozenset]:
+    """For each line in *text*, compute the set of disabled rule_ids at that line.
+
+    Lines that are part of (i.e. between) a <!-- lint:disable X --> and its
+    matching <!-- lint:enable X --> carry X in their disabled set.  The marker
+    lines themselves are HTML comments and are skipped by _protected_line, so
+    they don't need special treatment here.
+    """
+    lines = text.splitlines()
+    result: list[frozenset] = []
+    active: set[str] = set()
+    for line in lines:
+        stripped = line.strip()
+        dm = DISABLE_PATTERN.match(stripped)
+        em = ENABLE_PATTERN.match(stripped)
+        if dm:
+            rules = set(dm.group(1).split())
+            active.update(rules)
+            result.append(frozenset(active))
+        elif em:
+            rules = set(em.group(1).split())
+            active.difference_update(rules)
+            result.append(frozenset(active))
+        else:
+            result.append(frozenset(active))
+    return result
+
+
 def auto_fix_text(
     text: str,
     tone: Optional[str] = None,
     min_severity: str = "warning",
     apply_info: bool = False,
-) -> tuple[str, dict[str, int]]:
+) -> tuple[str, dict[str, int], list[str]]:
     """Apply all mechanical style fixes to *text*.
 
     *tone* selects the lexical-rewrite tier (neutral / casual / opinionated).
@@ -381,16 +451,31 @@ def auto_fix_text(
     applied.  Accepted values: ``"info"``, ``"warning"`` (default), ``"error"``.
     *apply_info* is a convenience flag: when True it overrides *min_severity*
     and sets the effective threshold to ``"info"``, ensuring all rewrites run.
+
+    Returns ``(fixed_text, stats, warnings)`` where *warnings* is a list of
+    strings describing any structural problems found (e.g. unmatched
+    lint:disable markers).
     """
     resolved = tone if tone in TONE_REGISTER_LEVELS else "neutral"
     # Rank-based filter: apply_info widens the gate to include info-severity entries.
     effective_min = "info" if apply_info else min_severity
     threshold_rank = SEVERITY_RANK[effective_min]
+    # 4-tuple entries: (pattern, repl, severity, rule_id) — keep rule_id for disable check.
     rewrites: list = [
-        (pattern, repl)
-        for (pattern, repl, sev) in get_rewrites_for_tone(resolved)
+        (pattern, repl, rule_id)
+        for (pattern, repl, sev, rule_id) in get_rewrites_for_tone(resolved)
         if SEVERITY_RANK[sev] >= threshold_rank
     ]
+
+    # Build per-line disabled-rule sets from inline lint:disable/enable markers.
+    line_disabled = _build_line_disabled_sets(text)
+
+    # Collect structural warnings.
+    fix_warnings: list[str] = []
+    if _has_unmatched_disable_at_eof(text):
+        fix_warnings.append("unmatched <!-- lint:disable --> at end of file")
+    if ENABLE_PATTERN.findall(text) and not DISABLE_PATTERN.findall(text):
+        fix_warnings.append("unmatched <!-- lint:enable --> tag (no preceding disable)")
 
     lines = text.splitlines()
     out: list[str] = []
@@ -431,7 +516,8 @@ def auto_fix_text(
             else:
                 continue
 
-        fixed, changes = _fix_line(line, rewrites)
+        disabled = line_disabled[idx] if idx < len(line_disabled) else frozenset()
+        fixed, changes = _fix_line(line, rewrites, disabled)
         for change in changes:
             stats[change] += 1
         out.append(fixed)
@@ -441,7 +527,7 @@ def auto_fix_text(
     fixed_text, hook_split = _split_overlong_hook(fixed_text)
     if hook_split:
         stats["split_hook_paragraph"] += 1
-    return fixed_text, stats
+    return fixed_text, stats, fix_warnings
 
 
 def auto_fix(
@@ -449,8 +535,8 @@ def auto_fix(
     tone: Optional[str] = None,
     min_severity: str = "warning",
     apply_info: bool = False,
-) -> dict[str, int]:
-    """Public entry point: read *article_path*, apply fixes in-place, return stats.
+) -> FixReport:
+    """Public entry point: read *article_path*, apply fixes in-place, return FixReport.
 
     *tone* precedence: explicit argument > frontmatter ``tone:`` field >
     frontmatter ``writing_style:`` default > "neutral".
@@ -465,10 +551,10 @@ def auto_fix(
         frontmatter_tone=fm.get("tone"),
         writing_style=fm.get("writing_style"),
     )
-    fixed, stats = auto_fix_text(text, resolved, min_severity=min_severity, apply_info=apply_info)
+    fixed, stats, warnings = auto_fix_text(text, resolved, min_severity=min_severity, apply_info=apply_info)
     if fixed != text:
         article_path.write_text(fixed, encoding="utf-8")
-    return stats
+    return FixReport(passes=1, warnings=warnings, status="clean")
 
 
 def build_change_summary(stats: dict[str, int]) -> list[str]:
@@ -543,7 +629,7 @@ def main(argv: list[str] | None = None) -> int:
         frontmatter_tone=fm.get("tone"),
         writing_style=fm.get("writing_style"),
     )
-    fixed, stats = auto_fix_text(original, resolved_tone, min_severity=min_severity, apply_info=apply_info)
+    fixed, stats, _warnings = auto_fix_text(original, resolved_tone, min_severity=min_severity, apply_info=apply_info)
     risk_findings = analyze_high_risk_sections(fixed)
 
     print(build_report(original, fixed, stats, risk_findings))

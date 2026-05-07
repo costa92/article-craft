@@ -122,7 +122,7 @@ class ToneLexicalRewritesTests(TestCase):
 
     def test_neutral_rewrites_contain_baseline_red_flags(self):
         # 赋能 / 一站式 are canonical Rule 1 red flags
-        patterns = [p for p, _, _ in config.TONE_LEXICAL_REWRITES["neutral"]]
+        patterns = [p for p, _, _, _ in config.TONE_LEXICAL_REWRITES["neutral"]]
         flat = " ".join(p.pattern for p in patterns)
         self.assertIn("赋能", flat)
         self.assertIn("一站式", flat)
