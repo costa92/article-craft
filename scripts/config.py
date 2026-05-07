@@ -262,3 +262,23 @@ S3_CONFIG = {
     "bucket_name": os.getenv("S3_BUCKET", _user_config.get("s3", {}).get("bucket_name", "")),
     "public_url_prefix": os.getenv("S3_PUBLIC_URL", _user_config.get("s3", {}).get("public_url_prefix", "")),
 }
+
+
+# ─── Tone System (v1.4.18) ───────────────────────────────────────
+# Three-tier register-aware de-AI system. See
+# docs/superpowers/specs/2026-05-07-tone-system-design.md for design rationale.
+
+TONE_REGISTER_LEVELS = ("neutral", "casual", "opinionated")
+
+# Default tone per writing style (references/writing-styles.md A-H).
+# Falls back to "neutral" for unknown style ids.
+STYLE_TO_TONE_DEFAULT = {
+    "A": "neutral",       # 技术教程
+    "B": "casual",        # 经验分享 / 口语化
+    "C": "neutral",       # 深度长文
+    "D": "casual",        # 评测对比
+    "E": "neutral",       # 资讯快报
+    "F": "casual",        # 项目复盘 / Case Study
+    "G": "opinionated",   # 观点输出 / 思考
+    "H": "opinionated",   # AI 资讯爆料 / 自媒体爆款
+}
