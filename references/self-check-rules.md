@@ -507,6 +507,48 @@ will visually contradict the claim. Use one of these instead:
 
 ---
 
+## Rule 17: Register Naturalness (tone-aware)
+
+**Goal:** match author voice to declared tone tier. Detect AI-typical
+register problems (uniform formality, low first-person density, no strong
+opinion, mechanical sentence cadence) at thresholds calibrated per tier.
+
+**Tone tiers** (set via frontmatter `tone:` or `--tone` CLI flag, default
+from writing style):
+
+- `neutral` — standard technical blog (default for Style A/C/E)
+- `casual` — mainstream Chinese tech blog (default for Style B/D/F)
+- `opinionated` — strong personal-color (default for Style G/H)
+
+**Sub-checks:**
+
+| # | Metric | neutral | casual | opinionated | Severity |
+|---|--------|---------|--------|-------------|----------|
+| A | First-person markers per 800 chars (我用/踩坑/实测...) | ≥ 2 | ≥ 4 | ≥ 6 | warning |
+| B | Strong-opinion sentences (我赌/真香/别学...) | (skipped) | (info) | ≥ 1 (error) | varies |
+| C | Summary-phrase ceiling (在某种意义上/可以看到/...) | ≤ 5 | ≤ 2 | 0 | warning |
+| D | Sentence-length coefficient of variation | (skipped) | ≥ 0.30 | ≥ 0.45 | warning |
+
+**Skipped if:** body has < 200 Chinese characters (sample too small).
+
+**Skipped sub-check D if:** body has < 10 sentences after filtering
+fragments and outliers.
+
+**Pass criteria:** no `error`-severity violation. `warning`-severity
+violations don't block but contribute to the 7-dimension AI-trace score.
+
+**Threshold source:** `scripts/config.py TONE_THRESHOLDS`. Calibrated
+against the first 20 articles' real-world data (see `tests/test_tone_calibration.py` — coming in Task 29).
+
+**Auto-fix:** none — Rule 17 is detection only. The `lint` skill's
+tone-aware rewrite map (`TONE_LEXICAL_REWRITES`) addresses register at
+the lexical level, but the structural / opinion / cadence dimensions
+require author judgement.
+
+**Examples:** see `skills/write/style-guide.md` § Tone: <tier>.
+
+---
+
 ## Appendix: Quick-scan grep
 
 For a one-shot sweep of the most common violations before running individual rules:
