@@ -132,5 +132,29 @@ class Rule17SubCheckDTests(TestCase):
         self.assertIsNotNone(result)
 
 
+class Rule17IntegrationTests(TestCase):
+    def test_check_all_includes_rule_17_in_results(self):
+        from scripts.review_selfcheck import check_all
+        article = (
+            "---\nwriting_style: B\ntone: casual\n---\n\n# T\n\n"
+            + "我用过 X。" * 20 + "\n\n踩坑实测过。" * 20
+        )
+        results = check_all(article)
+        rule_ids = {r.rule_id for r in results}
+        self.assertIn("rule_17", rule_ids)
+
+    def test_check_all_runs_rule_17_at_neutral_when_tone_missing(self):
+        from scripts.review_selfcheck import check_all
+        # No `tone:` in frontmatter — should default to style A's neutral.
+        article = (
+            "---\nwriting_style: A\n---\n\n# T\n\n"
+            + "技术描述。" * 100
+        )
+        results = check_all(article)
+        rule_17 = [r for r in results if r.rule_id == "rule_17"]
+        self.assertEqual(len(rule_17), 1)
+        self.assertEqual(rule_17[0].meta.get("tone"), "neutral")
+
+
 if __name__ == "__main__":
     main()

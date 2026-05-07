@@ -1004,14 +1004,20 @@ ALL_CHECKS = [
     check_rule_5, check_rule_6, check_rule_7, check_rule_8,
     check_rule_9, check_rule_10, check_rule_11, check_rule_12,
     check_rule_13, check_rule_14, check_rule_15, check_rule_16,
+    check_rule_17,
 ]
 
 
-def run_all_checks(article_path: str) -> Tuple[List[CheckResult], bool]:
-    """Run all 16 rules. Returns (results, all_passed)."""
-    content = Path(article_path).read_text(encoding='utf-8')
+def check_all(content: str) -> List[CheckResult]:
+    """Run all checks against raw article content. Returns list of CheckResult."""
     lines_list = content.split('\n')
-    results = [check(content, lines_list) for check in ALL_CHECKS]
+    return [check(content, lines_list) for check in ALL_CHECKS]
+
+
+def run_all_checks(article_path: str) -> Tuple[List[CheckResult], bool]:
+    """Run all rules. Returns (results, all_passed)."""
+    content = Path(article_path).read_text(encoding='utf-8')
+    results = check_all(content)
     all_passed = all(r.passed for r in results)
     return results, all_passed
 
@@ -1032,7 +1038,7 @@ def print_report(results: List[CheckResult]) -> None:
 
     print("════════════════════════════════════════════════════════════")
     print()
-    print("📋 Self-Check Results (16 Rules):")
+    print(f"📋 Self-Check Results ({len(results)} Rules):")
 
     for r in results:
         icon = "✅" if r.passed else "❌"
@@ -1091,7 +1097,7 @@ def to_json(results: List[CheckResult]) -> str:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Article self-check (16 rules)")
+    parser = argparse.ArgumentParser(description=f"Article self-check ({len(ALL_CHECKS)} rules)")
     parser.add_argument("article", help="Path to .md file")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--gate-only", action="store_true", help="Only check Rule 11 (placeholder gate)")
