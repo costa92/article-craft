@@ -20,7 +20,7 @@ import yaml
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Union
 from dataclasses import dataclass, field, asdict
-from scripts.config import TONE_THRESHOLDS, resolve_tone
+from scripts.config import TONE_THRESHOLDS, resolve_tone, STRONG_OPINION_PATTERNS
 
 # ─── Rule Definitions ───────────────────────────────────────────────
 
@@ -915,7 +915,27 @@ def check_rule_17(content: str, lines: List[str]) -> CheckResult:
             severity="warning",
         ))
 
-    # Sub-checks B/C/D added in subsequent tasks.
+    # ── Sub-check B: Strong-opinion presence ─────────────────────
+    threshold_b = thresholds["strong_opinion_min"]
+    if threshold_b > 0:
+        opinion_count = sum(
+            len(p.findall(body)) for p in STRONG_OPINION_PATTERNS
+        )
+        if opinion_count < threshold_b:
+            sev = "error" if tone == "opinionated" else "info"
+            msg = (
+                "tone=opinionated 要求至少 1 处明确个人立场"
+                if tone == "opinionated"
+                else "考虑加 1 处个人判断 / 预测, 提升可读性"
+            )
+            violations.append(Violation(
+                line=0,
+                text=f"强观点 sentence 数: {opinion_count} (需要 {threshold_b})",
+                suggestion=msg,
+                severity=sev,
+            ))
+
+    # Sub-checks C/D added in subsequent tasks.
 
     return CheckResult(
         rule_id="rule_17",
