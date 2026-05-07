@@ -18,8 +18,9 @@ import json
 import os
 import yaml
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Union
 from dataclasses import dataclass, field, asdict
+from scripts.config import TONE_THRESHOLDS, resolve_tone
 
 # ─── Rule Definitions ───────────────────────────────────────────────
 
@@ -74,16 +75,20 @@ class Violation:
     line: int
     text: str
     suggestion: str = ""
+    severity: str = "warning"
 
 
 @dataclass
 class CheckResult:
-    rule_id: int
+    rule_id: Union[int, str]
     rule_name: str
     passed: bool
     is_gate: bool = False
     violations: List[Violation] = field(default_factory=list)
     details: str = ""
+    skipped: bool = False
+    skip_reason: str = ""
+    meta: Dict = field(default_factory=dict)
 
 
 # ─── Helper Functions ────────────────────────────────────────────
@@ -855,6 +860,72 @@ def check_rule_16(content: str, lines: List[str]) -> CheckResult:
     )
 
 
+PERSONAL_VOICE_REGEX = re.compile(
+    r"我(?:在|曾|的|会|用|选|踩|测|觉得|发现|猜|赌|最后)"
+    r"|踩坑|实测|我的(?:经验|理解|做法)"
+    r"|生产环境.*?(?:我|本人)"
+)
+
+
+def check_rule_17(content: str, lines: List[str]) -> CheckResult:
+    """Rule 17: Register Naturalness (tone-aware).
+
+    Reads `tone:` from article frontmatter; falls back to writing_style
+    default; final fallback is "neutral". Runs four sub-checks; collects
+    Violation objects with severity; returns a CheckResult.
+    """
+    frontmatter = parse_frontmatter(content)
+    tone = resolve_tone(
+        cli_tone=None,
+        frontmatter_tone=frontmatter.get("tone"),
+        writing_style=frontmatter.get("writing_style"),
+    )
+
+    body = get_body(content)
+    body = strip_code_blocks(body)
+    body = _strip_callout_blocks(body)
+    body = _strip_image_lines(body)
+
+    cn_chars = len(re.findall(r"[一-鿿]", body))
+    if cn_chars < 200:
+        return CheckResult(
+            rule_id="rule_17",
+            rule_name=f"Register Naturalness (tone={tone})",
+            passed=True,
+            skipped=True,
+            skip_reason="样本太小 (<200 字), 密度抖动失真",
+            violations=[],
+        )
+
+    thresholds = TONE_THRESHOLDS[tone]
+    violations: List[Violation] = []
+
+    # ── Sub-check A: First-person density ───────────────────────
+    first_person_hits = len(PERSONAL_VOICE_REGEX.findall(body))
+    density = (first_person_hits / cn_chars) * 800
+    threshold_a = thresholds["first_person_per_800w"]
+    if density < threshold_a:
+        violations.append(Violation(
+            line=0,
+            text=f"第一人称密度: {density:.1f} 处/800字",
+            suggestion=(
+                f"tone={tone} 要求 ≥{threshold_a} 处/800字, "
+                f"补充第一人称经验 / 选型理由 / 踩坑记录"
+            ),
+            severity="warning",
+        ))
+
+    # Sub-checks B/C/D added in subsequent tasks.
+
+    return CheckResult(
+        rule_id="rule_17",
+        rule_name=f"Register Naturalness (tone={tone})",
+        passed=not any(v.severity == "error" for v in violations),
+        violations=violations,
+        meta={"tone": tone},
+    )
+
+
 # ─── Runner ──────────────────────────────────────────────────────
 
 ALL_CHECKS = [
@@ -928,9 +999,17 @@ def to_json(results: List[CheckResult]) -> str:
             "is_gate": r.is_gate,
             "details": r.details,
             "violations": [
-                {"line": v.line, "text": v.text, "suggestion": v.suggestion}
+                {
+                    "line": v.line,
+                    "text": v.text,
+                    "suggestion": v.suggestion,
+                    "severity": v.severity,
+                }
                 for v in r.violations
             ],
+            "skipped": r.skipped,
+            "skip_reason": r.skip_reason,
+            "meta": r.meta,
         }
         data.append(d)
     return json.dumps(data, ensure_ascii=False, indent=2)
