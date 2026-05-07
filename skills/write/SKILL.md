@@ -147,6 +147,18 @@ series_total: 5
 
 The `description` field is critical — it serves as the WeChat article summary and must be a standalone abstract (max 120 Chinese characters).
 
+#### 3a.5: Tone-aware prompt augmentation
+
+After loading the base style guide, read `tone:` from frontmatter (it was set in requirements). Then **append** the matching section from `style-guide.md`:
+
+- `tone: neutral`     → append `## Tone: neutral` section
+- `tone: casual`      → append `## Tone: casual` section
+- `tone: opinionated` → append `## Tone: opinionated` section
+
+If no `tone:` in frontmatter, default to `neutral`.
+
+Each tone section contains: register guidance, sample paragraphs at the chosen tier, and replacement-map examples. The writer should follow the sample register, not just consume the rules verbatim.
+
 #### 3b. Title + Cover Image Placeholder
 
 ```markdown
