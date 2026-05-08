@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] - 2026-05-08 (publish preflight, v1.4.20 dev)
+## [1.5.1] - 2026-05-08 — hardcoding audit + publish preflight
 
 ### Refactor — Eliminate hardcoded paths and brand strings
 
