@@ -648,6 +648,64 @@ Before saving, do one manual anti-AI pass:
 - Replace any "可以看到 / 本质上 / 从这个角度看" sentence with a concrete claim
 - Check whether the article contains 2 personal anchors, 2 concrete anchors, and 1 tradeoff paragraph
 
+### Step 5.5: Word Count Self-Check (do not defer to the orchestrator)
+
+**Why this step exists:** historical orchestrator runs found articles
+written ~30% under target, then needed 3-5 rounds of orchestrator-driven
+`Update` calls to expand to range. Doing the count + expansion in the
+same skill is one round-trip instead of five.
+
+**Compute the Chinese-character count** (excluding code blocks,
+frontmatter, image/screenshot placeholder lines, callout markers):
+
+```bash
+ART=/ABSOLUTE/PATH/article.md
+python3 -c "
+import re, sys
+src = open(sys.argv[1], encoding='utf-8').read()
+# Strip frontmatter
+src = re.sub(r'^---\n.*?\n---\n', '', src, count=1, flags=re.DOTALL)
+# Strip fenced code blocks
+src = re.sub(r'\`\`\`[\s\S]*?\`\`\`', '', src)
+# Strip placeholder/comment lines
+src = re.sub(r'<!--[\s\S]*?-->', '', src)
+# Strip image markdown
+src = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', src)
+# Count Chinese chars (CJK Unified Ideographs)
+n = len(re.findall(r'[一-鿿]', src))
+print(n)
+" "$ART"
+```
+
+**Compare against the target range from the Word Count Reference table
+(line 46) using the requirements skill's `depth` value:**
+
+| depth signal | Min characters | Max characters |
+|---|---|---|
+| `quick` (500-1000) | 500 | 1500 |
+| `tutorial` (2000-3000) | 2000 | 3500 |
+| `deep` (4000+) | 4000 | 6000 |
+
+**If under min**: don't save yet. Pick 2-3 sections that have the
+highest density of conceptual claims and expand each by 100-300
+characters with **concrete additions** — a real example, a specific
+number, a "我自己跑下来发现" personal observation, or a tradeoff
+("但代价是…"). Do **not** pad with restated points or transition
+sentences. Re-run the count; loop up to 2 times. If you still can't
+reach min after 2 expansion rounds, save as-is and note in the handoff
+output (Step 7) that word count fell short — the orchestrator can
+decide whether to push back.
+
+**If over max**: usually fine, but if >1.5× max, look for restated
+points or filler ("总的来说" / "综上") and trim.
+
+**If within [min, max]**: proceed to Step 6.
+
+**Output (one line):**
+```
+WORD_COUNT_CHECK: <count> chars (target [<min>, <max>], depth=<depth>) → PASS|EXPAND|TRIM
+```
+
 ### Step 6: Save Article (GATE CHECK REQUIRED)
 
 **BEFORE saving**，执行最后的 ASCII 图检查（强制性）：
