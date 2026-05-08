@@ -701,9 +701,12 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
 
             # Step 4: 智能选择器（未指定时推荐）
             # comma-separated list → try each candidate in order, pick the first
-            # that exists AND looks "reasonable" (>= 400px tall). Too-small
-            # elements (e.g. a feature card) are rejected so we fall through
-            # to the next candidate rather than producing a cropped thumbnail.
+            # that exists AND looks "reasonable" (>= 100px tall). The 100 floor
+            # filters out tiny icons/buttons but does NOT reject legitimately
+            # short main-content containers like arxiv `#abs` (~250px) or a
+            # single tweet card. v1.5.5 used 400 here, which silently
+            # rejected the host_map matches for arxiv / Reddit / short
+            # tweets and fell through to full-page fallback.
             if not selector:
                 suggested = suggest_selector(url, result["page_title"])
                 if suggested:
@@ -714,7 +717,7 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                             if not el:
                                 continue
                             box = el.bounding_box()
-                            if box and box.get("height", 0) < 400:
+                            if box and box.get("height", 0) < 100:
                                 continue  # too small, try next candidate
                             selector = cand
                             print(f"  🎯 Auto selector: {cand}")
@@ -823,9 +826,29 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                 # 只截取指定元素（且没用 anchor keyword 改写策略）
                 el = page.query_selector(selector)
                 if el:
-                    el.screenshot(path=output_path, timeout=15000)
-                    result["selector_used"] = selector
-                    print(f"  📸 Element screenshot saved: {output_path}")
+                    try:
+                        el.screenshot(path=output_path, timeout=15000)
+                        result["selector_used"] = selector
+                        print(f"  📸 Element screenshot saved: {output_path}")
+                    except PlaywrightError as e:
+                        # Element matched but unstable / not-visible / off-screen.
+                        # Common on lazy-loaded SPAs (YouTube, X) where
+                        # `query_selector` returns the node before it actually
+                        # mounts visibly. Fall back to viewport screenshot so
+                        # the user gets *something* relevant rather than a hard
+                        # failure on the whole pipeline.
+                        msg = str(e).split("\n", 1)[0][:140]
+                        result["warnings"].append(
+                            f"selector '{selector}' element not stable for "
+                            f"screenshot ({msg}); fell back to viewport"
+                        )
+                        page.screenshot(path=output_path, full_page=False,
+                                        timeout=15000)
+                        result["selector_used"] = f"{selector} (timeout → viewport)"
+                        print(
+                            f"  📸 Element timed out → viewport screenshot saved: "
+                            f"{output_path}"
+                        )
                 else:
                     result["warnings"].append(f"选择器 '{selector}' 未找到，回退到全页截图")
                     page.screenshot(path=output_path, full_page=True, timeout=15000)
