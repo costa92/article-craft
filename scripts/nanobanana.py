@@ -41,7 +41,7 @@ except ImportError as e:
 
 # Import shared configuration
 try:
-    from config import ASPECT_RATIO_MAP, RETRY_CONFIG, MODEL_FALLBACK_CHAIN
+    from config import ASPECT_RATIO_MAP, RETRY_CONFIG, MODEL_FALLBACK_CHAIN, TEXT_MODEL
 except ImportError:
     ASPECT_RATIO_MAP = {
         "1024x1024": "1:1",
@@ -71,6 +71,7 @@ except ImportError:
         "gemini-3.1-flash-image-preview",
         "gemini-2.5-flash-image",
     ]
+    TEXT_MODEL = "gemini-2.0-flash"
 
 # Overloaded error patterns (trigger model degradation)
 _OVERLOADED_PATTERNS = ["503", "UNAVAILABLE", "high demand", "overloaded"]
@@ -178,7 +179,7 @@ def enhance_prompt(original_prompt):
     )
 
     response = _get_client().models.generate_content(
-        model="gemini-2.0-flash",
+        model=TEXT_MODEL,
         contents=original_prompt,
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
@@ -297,7 +298,7 @@ def run(default_size="1344x768"):
     _default_model = _env_json_config.get("gemini_image_model", "gemini-3-pro-image-preview")
     parser.add_argument(
         "--model", type=str, default=_default_model,
-        choices=["gemini-3-pro-image-preview", "gemini-2.5-flash-image", "gemini-3.1-flash-image-preview"],
+        choices=MODEL_FALLBACK_CHAIN,
         help=f"Model (default: {_default_model})",
     )
     parser.add_argument(

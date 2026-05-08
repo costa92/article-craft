@@ -289,9 +289,9 @@ AVG_UPLOAD_TIME = 5  # 平均上传时间（秒）
 
 # Import shared configuration
 try:
-    from config import ASPECT_RATIO_TO_SIZE, TIMEOUTS, S3_CONFIG
+    from config import ASPECT_RATIO_TO_SIZE, TIMEOUTS, S3_CONFIG, MODEL_FALLBACK_CHAIN
 except ImportError:
-    # Fallback if config.py not found
+    # Fallback if config.py not found — keep this file runnable standalone.
     ASPECT_RATIO_TO_SIZE = {
         "1:1": "1024x1024",
         "2:3": "832x1248",
@@ -306,6 +306,11 @@ except ImportError:
     }
     TIMEOUTS = {"image_generation": 120, "upload": 60, "screenshot": 60}
     S3_CONFIG = {"enabled": False}
+    MODEL_FALLBACK_CHAIN = [
+        "gemini-3-pro-image-preview",
+        "gemini-3.1-flash-image-preview",
+        "gemini-2.5-flash-image",
+    ]
 
 # Try importing boto3 for S3 support
 try:
@@ -693,15 +698,8 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
     images_dir = ensure_images_dir()
     output_path = images_dir / config.filename
 
-    # 使用降级模型链
-    model_chain = [
-        model,  # 默认模型
-        "gemini-3.1-flash-image-preview",  # 第一次降级
-        "gemini-2.5-flash-image"  # 第二次降级（最终备用模型）
-    ]
-
-    # 移除重复的模型
-    model_chain = list(dict.fromkeys(model_chain))
+    # 使用降级模型链：用户选定模型在前，其余从 config.MODEL_FALLBACK_CHAIN 补齐
+    model_chain = [model] + [m for m in MODEL_FALLBACK_CHAIN if m != model]
 
     # Use shared aspect ratio mapping
     size = ASPECT_RATIO_TO_SIZE.get(config.aspect_ratio, "1248x832")
