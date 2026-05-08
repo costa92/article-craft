@@ -290,7 +290,13 @@ AVG_UPLOAD_TIME = 5  # 平均上传时间（秒）
 
 # Import shared configuration
 try:
-    from config import ASPECT_RATIO_TO_SIZE, TIMEOUTS, S3_CONFIG, MODEL_FALLBACK_CHAIN
+    from config import (
+        ASPECT_RATIO_TO_SIZE,
+        TIMEOUTS,
+        S3_CONFIG,
+        MODEL_FALLBACK_CHAIN,
+        IMAGE_DEFAULTS,
+    )
 except ImportError:
     # Fallback if config.py not found — keep this file runnable standalone.
     ASPECT_RATIO_TO_SIZE = {
@@ -312,6 +318,10 @@ except ImportError:
         "gemini-3.1-flash-image-preview",
         "gemini-2.5-flash-image",
     ]
+    IMAGE_DEFAULTS = {
+        "model": "gemini-3-pro-image-preview",
+        "resolution": "2K",
+    }
 
 # Try importing boto3 for S3 support
 try:
@@ -2174,17 +2184,9 @@ def main():
     parser.add_argument("--check", action="store_true", help="检查依赖")
     parser.add_argument("--dry-run", action="store_true",
                        help="预览模式：显示成本和时间估算，不实际生成图片")
-    # 从 env.json 读取默认模型（与 nanobanana.py 保持一致）
-    _default_model = "gemini-3-pro-image-preview"
-    try:
-        import json as _json
-        _env_path = os.path.expanduser("~/.claude/env.json")
-        if os.path.exists(_env_path):
-            with open(_env_path) as _f:
-                _env = _json.load(_f)
-                _default_model = _env.get("gemini_image_model", _default_model)
-    except Exception:
-        pass
+    # 默认模型来自 config.IMAGE_DEFAULTS["model"]（已经处理过 env.json 的
+    # gemini_image_model 字段），与 nanobanana.py 保持一致——单一来源。
+    _default_model = IMAGE_DEFAULTS["model"]
 
     parser.add_argument("--model", default=_default_model,
                        help="使用的 Gemini 模型 (支持任意模型名，如 gemini-2.0-pro、gemini-2.5-flash-image 等)")
@@ -2235,13 +2237,9 @@ def main():
 
     # --probe 模式：遍历降级链，找到第一个可用的模型后输出并退出
     if args.probe:
-        probe_chain = [
-            args.model,
-            "gemini-3.1-flash-image-preview",
-            "gemini-2.5-flash-image",
-        ]
-        # 去重，保持顺序
-        probe_chain = list(dict.fromkeys(probe_chain))
+        # 用户选定模型在前，其余从 config.MODEL_FALLBACK_CHAIN 补齐
+        # （与 generate_image() 的 model_chain 构造方式一致）。
+        probe_chain = [args.model] + [m for m in MODEL_FALLBACK_CHAIN if m != args.model]
         probe_timeout = 120  # 外层 subprocess 超时（代理环境 SSL 握手+生成需要较长时间）
         probe_output = os.path.join(tempfile.gettempdir(), "gemini_probe.jpg")
 

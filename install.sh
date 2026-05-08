@@ -238,7 +238,14 @@ config_gemini_key() {
   separator "配置 Gemini API Key"
 
   local env_file="${HOME}/.claude/env.json"
-  local env_example="${HOME}/.claude/env.example.json"
+  # 优先用项目内的 env.example.json（跟着代码一起更新，结构永远最新），
+  # 其次回落到用户家目录历史版本。
+  local env_example=""
+  if [ -f "$PLUGIN_ROOT/env.example.json" ]; then
+    env_example="$PLUGIN_ROOT/env.example.json"
+  elif [ -f "${HOME}/.claude/env.example.json" ]; then
+    env_example="${HOME}/.claude/env.example.json"
+  fi
 
   # 检查是否已有有效 key
   local existing_key=""
@@ -250,12 +257,13 @@ config_gemini_key() {
     fi
   fi
 
-  # 检查 .env.example.json 是否有 key
-  if [ -f "$env_example" ]; then
+  # 检查 env.example.json 是否带了真实 key（极少见，但不打破历史行为）
+  if [ -n "$env_example" ] && [ -f "$env_example" ]; then
     local example_key=""
     example_key=$(python3 -c "import json; d=json.load(open('$env_example')); print(d.get('gemini_api_key',''))" 2>/dev/null || echo "")
     if [ -n "$example_key" ] && [[ ! "$example_key" =~ ^your- ]]; then
-      info "从 env.example.json 复制配置到 env.json..."
+      info "从 $env_example 复制配置到 env.json..."
+      mkdir -p "$(dirname "$env_file")"
       cp "$env_example" "$env_file"
       success "GEMINI_API_KEY 已配置"
       return 0
