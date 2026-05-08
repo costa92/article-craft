@@ -18,6 +18,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import hashlib
 import tempfile
@@ -727,32 +729,47 @@ def upload_to_cdn(image_path: str) -> str:
     """
     上传截图到 CDN（通过 PicGo）。
     失败时返回本地路径。
+
+    解析策略（与 generate_and_upload_images.py:upload_to_picgo 对齐）：
+    PicGo 的 stdout 是**多行 INFO log + 末尾一行裸 URL**，不是 JSON。
+    历史版本误以为它输出 JSON，导致整段 strip 后 json.loads 必败、
+    再 startswith("http") 也对不上多行字符串，最终回落到本地路径——
+    截图被 KB 当成"未上传"。这里改成先逐行扫 http(s)://，再回退 JSON
+    （兼容未来格式变化），匹配实际行为。
     """
-    import shutil
     picgo = shutil.which("picgo")
     if not picgo:
         return image_path
 
     try:
-        import subprocess
         result = subprocess.run(
             ["picgo", "upload", image_path],
             capture_output=True,
             text=True,
             timeout=30,
         )
-        if result.returncode == 0:
-            # PicGo 输出通常是 JSON
-            output = result.stdout.strip()
-            try:
-                data = json.loads(output)
-                if isinstance(data, list) and len(data) > 0:
-                    return data[0].get("url", image_path)
-                elif isinstance(data, dict):
-                    return data.get("url", image_path)
-            except json.JSONDecodeError:
-                # 直接返回输出作为 URL
-                return output if output.startswith("http") else image_path
+        if result.returncode != 0:
+            return image_path
+
+        output = result.stdout
+
+        # 1) 优先逐行扫 http(s):// 开头的行（picgo 默认输出形式）。
+        for line in output.splitlines():
+            line = line.strip()
+            if line.startswith("http://") or line.startswith("https://"):
+                return line
+
+        # 2) 兼容兜底：可能未来版本输出 JSON。
+        try:
+            data = json.loads(output.strip())
+            if isinstance(data, list) and len(data) > 0:
+                return data[0].get("url", image_path)
+            if isinstance(data, dict):
+                return data.get("url", image_path)
+        except json.JSONDecodeError:
+            pass
+
+        # 解析不到 URL → 返回本地路径（调用方据此判断"未上传"）。
         return image_path
     except Exception:
         return image_path
@@ -1546,8 +1563,6 @@ def _harvest_via_baoyu_fetch(source_url: str, min_width: int) -> dict:
     调 baoyu-fetch CLI 作为兜底。仅当 baoyu-fetch 可用时成功。
     返回同 harvest_images 的 images/title 子集。
     """
-    import subprocess, shutil
-
     # 寻找 baoyu-fetch vendor 目录（按 CLAUDE_PLUGIN_ROOT 或已知缓存路径）
     candidates = []
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
