@@ -8,14 +8,28 @@ article-craft 通过 `~/.claude/env.json` 统一管理所有配置项。这是 C
 ~/.claude/env.json
 ```
 
-如果文件不存在，请手动创建。
+如果文件不存在，请手动创建，或从项目内的 [env.example.json](./env.example.json) 模板复制：
+
+```bash
+cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.claude/env.json
+# 然后编辑 ~/.claude/env.json 填入真实 API Key
+```
 
 ## 完整配置示例
+
+完整模板见仓库根的 [`env.example.json`](./env.example.json)。下面是同一份示例的内联版：
 
 ```json
 {
   "gemini_api_key": "YOUR_GEMINI_API_KEY",
   "gemini_image_model": "gemini-3-pro-image-preview",
+  "gemini_text_model": "gemini-2.0-flash",
+  "share_card_logo": "",
+  "verify_cdn_whitelist": [
+    "cdn.jsdelivr.net",
+    "mmbiz.qpic.cn",
+    "pbs.twimg.com"
+  ],
   "timeouts": {
     "image_generation": 120,
     "upload": 60,
@@ -54,6 +68,28 @@ article-craft 通过 `~/.claude/env.json` 统一管理所有配置项。这是 C
 - `gemini-3.1-flash-image-preview` — 快速版本
 - `gemini-2.5-flash-image` — 轻量级兜底
 
+#### 文本模型（用于 Prompt 扩写）
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `gemini_text_model` | string | `gemini-2.0-flash` | `nanobanana.py --enhance` 用于把短提示词扩写成详细图像生成 Prompt 的文本模型 |
+
+仅在显式调用 `nanobanana.py --enhance` 时生效，主流水线（`/article-craft:images`）不依赖。
+
+#### Share Card 品牌 logo
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `share_card_logo` | string | `""`（空） | 分享卡片底部的品牌文字。空时回落到 `.claude-plugin/plugin.json` 的 `name` 字段（默认 `article-craft`）。fork 时无须改源码即可换 logo。 |
+
+#### CDN 白名单（verify-claims / lint）
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `verify_cdn_whitelist` | string[] | `["cdn.jsdelivr.net", "mmbiz.qpic.cn", "pbs.twimg.com"]` | 校验外链时被认为"可直接引用"的 CDN 主机名列表。不在此列的 URL 会被提示需要 rehost 到自家 CDN。 |
+
+如果你用了自己的 CDN（例如 `file.your-domain.com` 或 S3 公开桶），把它加进数组即可。
+
 #### 超时配置
 
 | 字段 | 类型 | 默认值（秒） | 说明 |
@@ -85,6 +121,12 @@ S3 配置支持通过环境变量覆盖 JSON 中的值：
 | `S3_SECRET_KEY` | `s3.secret_access_key` |
 | `S3_BUCKET` | `s3.bucket_name` |
 | `S3_PUBLIC_URL` | `s3.public_url_prefix` |
+
+### 缓存目录覆盖
+
+| 环境变量 | 默认值 | 说明 |
+|---------|--------|------|
+| `ARTICLE_CRAFT_CACHE_DIR` | `~/.cache/article-craft/` | 持久化缓存目录（verify cache、screenshot cache 等）。所有跨进程缓存都通过 `scripts/config.py:cache_dir()` 解析此路径，CI 和容器环境中可用此变量重定向到可写目录。 |
 
 ## 验证配置
 

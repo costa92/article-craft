@@ -7,6 +7,7 @@ import os
 import json
 import time
 import atexit
+import tempfile
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -139,7 +140,9 @@ def get_verification_cache() -> VerificationCache:
 
 def load_user_config() -> Dict[str, Any]:
     """
-    Load user configuration from ~/.claude/env.json (unified config)
+    Load user configuration from ~/.claude/env.json (unified config).
+
+    A template lives at the project root: env.example.json.
 
     Returns:
         dict: User configuration or empty dict if not found
@@ -152,7 +155,7 @@ def load_user_config() -> Dict[str, Any]:
         except Exception:
             pass
 
-    # Legacy fallback
+    # Legacy fallback (pre-v1.0 config path; kept for backward compat)
     legacy = Path("~/.article-generator.conf").expanduser()
     if legacy.exists():
         try:
@@ -166,6 +169,43 @@ def load_user_config() -> Dict[str, Any]:
 
 # Load user configuration
 _user_config = load_user_config()
+
+
+def cache_dir() -> Path:
+    """Resolve the persistent cache directory for article-craft.
+
+    Precedence: ``ARTICLE_CRAFT_CACHE_DIR`` env var > ``~/.cache/article-craft/``.
+    The directory is created if missing. All cross-process caches (verify
+    cache, screenshot cache, etc.) should resolve their location through
+    this function so the override env var works uniformly.
+    """
+    override = os.environ.get("ARTICLE_CRAFT_CACHE_DIR")
+    p = Path(override).expanduser() if override else Path.home() / ".cache" / "article-craft"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def share_card_logo() -> str:
+    """Resolve the share-card logo text.
+
+    Precedence: ``share_card_logo`` in env.json > ``name`` field in
+    ``.claude-plugin/plugin.json`` > the literal "article-craft" fallback.
+    Lets a fork override the brand without editing source.
+    """
+    configured = _user_config.get("share_card_logo", "")
+    if configured:
+        return configured
+
+    plugin_root = (
+        os.environ.get("CLAUDE_PLUGIN_ROOT")
+        or str(Path.home() / ".claude" / "plugins" / "article-craft")
+    )
+    plugin_json = Path(plugin_root) / ".claude-plugin" / "plugin.json"
+    try:
+        with open(plugin_json, "r", encoding="utf-8") as f:
+            return json.load(f).get("name", "article-craft")
+    except Exception:
+        return "article-craft"
 
 # Aspect ratio to resolution mapping
 # NOTE: Only these aspect ratios are supported by Gemini API
@@ -197,7 +237,7 @@ ASPECT_RATIO_TO_SIZE = {
 }
 
 # Timeout configurations (in seconds)
-# User config can override these via ~/.article-craft.conf
+# User config can override these via ~/.claude/env.json (timeouts.* keys).
 _default_timeouts = {
     "image_generation": 120,  # 2 minutes per image
     "upload": 60,  # 1 minute for upload
@@ -238,6 +278,19 @@ MODEL_FALLBACK_CHAIN = [
     "gemini-2.5-flash-image",
 ]
 
+# Text model used by nanobanana.py --enhance (prompt expansion).
+# Separate from MODEL_FALLBACK_CHAIN, which is image-only.
+TEXT_MODEL = _user_config.get("gemini_text_model", "gemini-2.0-flash")
+
+# CDN whitelist for verify-claims / lint URL filtering. URLs whose host
+# is not in this list are flagged so the writer can rehost them.
+# Intentionally excludes per-author personal CDNs — set
+# `verify_cdn_whitelist` in env.json to extend.
+VERIFY_CDN_WHITELIST = _user_config.get(
+    "verify_cdn_whitelist",
+    ["cdn.jsdelivr.net", "mmbiz.qpic.cn", "pbs.twimg.com"],
+)
+
 # Image generation defaults (read model from env.json)
 IMAGE_DEFAULTS = {
     "resolution": "2K",  # 1K, 2K, or 4K
@@ -253,7 +306,7 @@ PICGO_CONFIG = {
 }
 
 # S3 Configuration (Optional - Alternative to PicGo)
-# Set these in ~/.article-craft.conf or environment variables
+# Set these in ~/.claude/env.json (s3.* keys) or via environment variables.
 S3_CONFIG = {
     "enabled": _user_config.get("s3", {}).get("enabled", False),
     "endpoint_url": os.getenv("S3_ENDPOINT", _user_config.get("s3", {}).get("endpoint_url", "")),

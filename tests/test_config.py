@@ -2,6 +2,7 @@ import importlib.util
 import os
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -19,6 +20,25 @@ def load_config_module(home_dir: Path, extra_env: dict[str, str] | None = None):
         assert spec and spec.loader
         spec.loader.exec_module(module)
         return module
+    finally:
+        os.environ.clear()
+        os.environ.update(env_backup)
+
+
+@contextmanager
+def isolated_home(home_dir: Path, extra_env: dict[str, str] | None = None):
+    """Run a block of code with HOME (and optional extra env vars) overridden.
+
+    Use this when the code under test calls ``Path.home()`` or reads
+    ``os.environ`` lazily (i.e. AFTER module import). ``load_config_module``
+    only keeps env vars set during import, then restores them.
+    """
+    env_backup = os.environ.copy()
+    try:
+        os.environ["HOME"] = str(home_dir)
+        if extra_env:
+            os.environ.update(extra_env)
+        yield
     finally:
         os.environ.clear()
         os.environ.update(env_backup)
@@ -87,6 +107,93 @@ class ConfigTests(unittest.TestCase):
 
             self.assertEqual(mod.MODEL_FALLBACK_CHAIN[-1], "gemini-2.5-flash-image")
             self.assertEqual(mod.IMAGE_DEFAULTS["model"], "gemini-3-pro-image-preview")
+
+    def test_text_model_default_and_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = load_config_module(Path(tmp))
+            self.assertEqual(mod.TEXT_MODEL, "gemini-2.0-flash")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg_dir = home / ".claude"
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            (cfg_dir / "env.json").write_text(
+                '{"gemini_text_model":"gemini-3-flash"}',
+                encoding="utf-8",
+            )
+            mod = load_config_module(home)
+            self.assertEqual(mod.TEXT_MODEL, "gemini-3-flash")
+
+    def test_verify_cdn_whitelist_default_and_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = load_config_module(Path(tmp))
+            self.assertEqual(
+                mod.VERIFY_CDN_WHITELIST,
+                ["cdn.jsdelivr.net", "mmbiz.qpic.cn", "pbs.twimg.com"],
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg_dir = home / ".claude"
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            (cfg_dir / "env.json").write_text(
+                '{"verify_cdn_whitelist":["my-cdn.example.com","cdn.jsdelivr.net"]}',
+                encoding="utf-8",
+            )
+            mod = load_config_module(home)
+            self.assertEqual(
+                mod.VERIFY_CDN_WHITELIST,
+                ["my-cdn.example.com", "cdn.jsdelivr.net"],
+            )
+
+    def test_cache_dir_default_and_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            mod = load_config_module(home)
+            with isolated_home(home):
+                d = mod.cache_dir()
+                self.assertTrue(d.exists())
+                self.assertEqual(d, home / ".cache" / "article-craft")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            override = Path(tmp) / "custom-cache"
+            mod = load_config_module(home, {"ARTICLE_CRAFT_CACHE_DIR": str(override)})
+            with isolated_home(home, {"ARTICLE_CRAFT_CACHE_DIR": str(override)}):
+                d = mod.cache_dir()
+                self.assertTrue(d.exists())
+                self.assertEqual(d, override)
+
+    def test_share_card_logo_precedence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            plugin_root = home / "plugin"
+            (plugin_root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+            (plugin_root / ".claude-plugin" / "plugin.json").write_text(
+                '{"name":"my-fork"}', encoding="utf-8"
+            )
+
+            mod = load_config_module(home, {"CLAUDE_PLUGIN_ROOT": str(plugin_root)})
+            with isolated_home(home, {"CLAUDE_PLUGIN_ROOT": str(plugin_root)}):
+                self.assertEqual(mod.share_card_logo(), "my-fork")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg_dir = home / ".claude"
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            (cfg_dir / "env.json").write_text(
+                '{"share_card_logo":"My Brand"}', encoding="utf-8"
+            )
+            mod = load_config_module(home)
+            with isolated_home(home):
+                self.assertEqual(mod.share_card_logo(), "My Brand")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            nonexistent = home / "nonexistent"
+            mod = load_config_module(home, {"CLAUDE_PLUGIN_ROOT": str(nonexistent)})
+            with isolated_home(home, {"CLAUDE_PLUGIN_ROOT": str(nonexistent)}):
+                self.assertEqual(mod.share_card_logo(), "article-craft")
 
 
 if __name__ == "__main__":
