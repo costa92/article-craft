@@ -1,5 +1,69 @@
 # Changelog
 
+## [Unreleased] - 2026-05-08 (image variety, v1.4.19 dev)
+
+### Added — Per-position image variation (Layer A + C)
+
+Closes the "image style too monotone" feedback. Two compounding causes:
+
+1. **Within-article**: `image-guide.md` locked all 4 design tokens (palette
+   / preset / mood / background) so sibling images shared camera, composition
+   and framing. Visually they looked like 4 stickers from the same sheet.
+2. **Cross-article**: `STYLE_TO_VISUAL` mapped 80% of articles to 2-3 presets
+   with default palettes (Style A → S1 → blue+teal) — article-after-article
+   looked like one branded series.
+
+**Layer A (rule rewrite)** — `skills/images/image-guide.md` § 风格一致性
+规则 split into:
+
+- **全篇必锁**: visual_style preset, color family, mood keywords, background
+- **鼓励变化** (per image): camera angle, composition, subject framing,
+  visual density
+
+Plus new "镜头/构图轮转表" documenting which directives the script injects
+per image position (cover → establishing wide / centered; img 2 →
+three-quarter perspective / rule-of-thirds; etc.).
+
+**Layer C (script injection)** — `scripts/generate_and_upload_images.py`:
+
+- `CAMERA_ROTATION` (6-tuple) + `COMPOSITION_ROTATION` (6-tuple)
+- `vary_prompt_for_position(base_prompt, image_index, total)` — appends
+  `Camera: ...` + `Composition: ...` based on image position
+- `_CAMERA_KEYWORDS_RE` / `_COMPOSITION_KEYWORDS_RE` — detect author
+  override per axis and skip injection (author wins)
+- `vary_prompts: bool = True` on `generate_and_upload_batch` and
+  `generate_and_upload_parallel`
+- `--no-vary-prompts` CLI flag for opt-out
+
+`skills/write/SKILL.md` updated to tell writers NOT to manually add
+Camera/Composition (script handles it).
+
+**Verified end-to-end (2026-05-08)**: 6 images with the same base PROMPT
+plus varying Camera/Composition directives → Gemini produced visibly
+different framings (vertical stack / wide w/ breathing / horizontal flow
+/ detail dashboard / stair-step / 3D isometric) while keeping locked
+palette + preset + background uniform across all 6.
+
+**Tests**: `tests/test_image_variation.py` (11 tests) — index rotation,
+locked-prefix preservation, author-override skip, partial override,
+structural invariants. Total suite: 118 passed.
+
+### Why not Layer B / D yet
+
+Layer B (expand from 7 → 12-15 visual presets) and Layer D (cross-article
+style rotation cache) are **deferred**. A + C cover within-article
+monotony — the higher-impact complaint. Cross-article variety needs more
+presets first (B), and shuffling needs presets to shuffle from. Decide
+after 5-10 real articles run through A + C.
+
+### Validated
+
+- `python3 -m pytest tests/ -q` → 118 passed (107 baseline + 11 new)
+- 6-image visual A/B confirmed Gemini responds to directives
+- `--no-vary-prompts` opt-out path verified
+
+---
+
 ## [Unreleased] - 2026-05-08 (calibration v1.1)
 
 ### Changed — Rule 17 threshold calibration after 4-article pilot

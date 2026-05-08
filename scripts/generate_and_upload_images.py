@@ -1120,6 +1120,90 @@ BATCH_BACKOFF_DELAYS_SEC = (30, 60, 120)
 BATCH_BACKOFF_JITTER_MAX_SEC = 5.0
 
 
+# ─── Image variation system (v1.4.19) ────────────────────────
+# Inject camera + composition variation per image position to break
+# within-article visual monotony. Locked style tokens (palette, preset,
+# mood, background) are preserved at the start of each PROMPT; only the
+# per-image axes (camera angle, composition framing) get appended.
+#
+# Verified end-to-end on 6 sample generations (2026-05-08) — Gemini
+# responds to these directives with visibly different framing while
+# keeping the palette and style preset locked. See CHANGELOG.md
+# v1.4.19 entry for the rationale.
+
+CAMERA_ROTATION = (
+    "establishing wide shot",
+    "three-quarter perspective view",
+    "top-down overhead view",
+    "close-up detail focus",
+    "side elevation flat view",
+    "isometric corner perspective",
+)
+
+COMPOSITION_ROTATION = (
+    "centered subject with breathing room",
+    "rule-of-thirds composition with off-center focus",
+    "scattered multi-focal composition",
+    "hierarchical layered composition",
+    "asymmetric weight balance",
+    "grid-aligned modular composition",
+)
+
+# Detect prompts that already specify camera/composition so we don't
+# inject conflicting directives. We ONLY check for the literal `Camera:`
+# and `Composition:` directive prefix — matching loose adjectives like
+# "isometric illustration" or "side view" gives false positives because
+# style presets and content descriptions naturally use those words
+# without intending to fix a camera angle. If an author wants to override
+# the per-position injection they should use the Camera:/Composition:
+# convention explicitly (which is also what this script outputs).
+_CAMERA_DIRECTIVE_RE = re.compile(r"\bcamera\s*:\s*", re.IGNORECASE)
+_COMPOSITION_DIRECTIVE_RE = re.compile(r"\bcomposition\s*:\s*", re.IGNORECASE)
+
+
+def vary_prompt_for_position(
+    base_prompt: str, image_index: int, total: int = 0
+) -> str:
+    """Inject camera + composition variation per image position.
+
+    Cover (index 0) gets the establishing wide shot + centered breathing.
+    Subsequent images rotate through CAMERA_ROTATION and COMPOSITION_ROTATION
+    by index, so 4 sibling images get 4 distinct framings while sharing
+    the article's locked style tokens.
+
+    The variation is *appended* after the base prompt, so locked style
+    tokens (which the writer puts first by convention per image-guide.md)
+    remain in effect.
+
+    Skips injection per axis if the base prompt already specifies that
+    axis (author override). The "no readable text" hard constraint is
+    not affected — appended directives don't conflict with it.
+
+    Args:
+        base_prompt: the original PROMPT from the article placeholder
+        image_index: 0-based position within the article's image batch
+        total: total images in the batch (currently unused; reserved for
+            future "vary harder when batch is large" heuristics)
+
+    Returns:
+        The (possibly-augmented) prompt string. If both axes already exist
+        in base_prompt, returns base_prompt unchanged.
+    """
+    has_camera = bool(_CAMERA_DIRECTIVE_RE.search(base_prompt))
+    has_comp = bool(_COMPOSITION_DIRECTIVE_RE.search(base_prompt))
+    if has_camera and has_comp:
+        return base_prompt
+
+    parts = [base_prompt.rstrip(". \n")]
+    if not has_camera:
+        camera = CAMERA_ROTATION[image_index % len(CAMERA_ROTATION)]
+        parts.append(f"Camera: {camera}")
+    if not has_comp:
+        comp = COMPOSITION_ROTATION[image_index % len(COMPOSITION_ROTATION)]
+        parts.append(f"Composition: {comp}")
+    return ". ".join(parts) + "."
+
+
 def _generate_with_batch_backoff(config: ImageConfig, resolution: str, model: str) -> bool:
     """Wrap generate_image() with exponential batch-level backoff on rate-limit exhaustion.
 
@@ -1232,7 +1316,8 @@ class _ParallelRateLimitCoordinator:
 def generate_and_upload_batch(configs: List[ImageConfig],
                                upload: bool = True,
                                resolution: str = "2K",
-                               model: str = "gemini-3-pro-image-preview") -> Dict:
+                               model: str = "gemini-3-pro-image-preview",
+                               vary_prompts: bool = True) -> Dict:
     """
     批量生成和上传图片
 
@@ -1241,13 +1326,24 @@ def generate_and_upload_batch(configs: List[ImageConfig],
         upload: 是否上传到图床
         resolution: 图片分辨率
         model: Gemini 模型名称
+        vary_prompts: 是否按位置注入 camera/composition 变化(默认 True,
+            打破同篇内画面雷同。作者已写明 camera/composition 的会跳过)
 
     Returns:
         dict: 结果统计
     """
     print("=" * 70)
     print("📸 开始批量生成和上传图片")
+    if vary_prompts:
+        print("🎭 已启用 prompt 变化注入(每图独立 camera + composition)")
     print("=" * 70)
+
+    # Apply per-position variation BEFORE generation. Mutates config.prompt
+    # in place so downstream logging / state files capture the actual
+    # prompt sent to Gemini.
+    if vary_prompts:
+        for i, config in enumerate(configs):
+            config.prompt = vary_prompt_for_position(config.prompt, i, len(configs))
 
     results = {
         "total": len(configs),
@@ -1318,7 +1414,8 @@ def generate_and_upload_parallel(configs: List[ImageConfig],
                                    max_workers: int = 2,
                                    fail_fast: bool = True,
                                    model: str = "gemini-3-pro-image-preview",
-                                   keep_files: bool = False) -> Dict:
+                                   keep_files: bool = False,
+                                   vary_prompts: bool = True) -> Dict:
     """
     并行批量生成和上传图片（性能优化版本）
 
@@ -1329,6 +1426,7 @@ def generate_and_upload_parallel(configs: List[ImageConfig],
         max_workers: 最大并行工作线程数（默认2，避免API限流）
         fail_fast: 遇到错误立即停止（True）或继续处理（False）
         model: Gemini 模型名称
+        vary_prompts: 是否按位置注入 camera/composition 变化(默认 True)
 
     Returns:
         dict: 结果统计
@@ -1339,7 +1437,15 @@ def generate_and_upload_parallel(configs: List[ImageConfig],
         print("⚠️  Fail-Fast 模式：任意错误将立即停止")
     else:
         print("🔄 容错模式：遇到错误继续处理其他图片")
+    if vary_prompts:
+        print("🎭 已启用 prompt 变化注入(每图独立 camera + composition)")
     print("=" * 70)
+
+    # Apply per-position variation BEFORE thread dispatch (so each worker
+    # sees the already-augmented prompt and threading order is irrelevant).
+    if vary_prompts:
+        for i, config in enumerate(configs):
+            config.prompt = vary_prompt_for_position(config.prompt, i, len(configs))
 
     results = {
         "total": len(configs),
@@ -2097,6 +2203,8 @@ def main():
                        help="探测最佳可用 Gemini 模型（遍历降级链，输出可用模型名后退出）")
     parser.add_argument("--heartbeat", action="store_true",
                        help="启用心跳监控（编排器模式，写入 .heartbeat/.lock 文件）")
+    parser.add_argument("--no-vary-prompts", action="store_true",
+                       help="关闭 prompt 变化注入(默认开启,每图按位置加 camera + composition 指令)")
 
     args = parser.parse_args()
 
@@ -2385,14 +2493,16 @@ def main():
                     max_workers=args.max_workers,
                     fail_fast=not args.continue_on_error,
                     model=args.model,
-                    keep_files=args.keep_files
+                    keep_files=args.keep_files,
+                    vary_prompts=not args.no_vary_prompts,
                 )
             else:
                 results = generate_and_upload_batch(
                     configs=configs,
                     upload=not args.no_upload,
                     resolution=args.resolution,
-                    model=args.model
+                    model=args.model,
+                    vary_prompts=not args.no_vary_prompts,
                 )
         # Ensure screenshot_results key exists
             if 'screenshot_results' not in results:

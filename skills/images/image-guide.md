@@ -195,23 +195,58 @@ On transient failure (network, SSL, rate-limit):
 > 核心原则：**概念图先行，Token 一致**。封面图锁定整篇文章的视觉语言（色调、风格、氛围），
 > 后续所有节奏图沿着这条审美轨道跑，不跑飞。
 
-### 风格一致性规则
+### 风格一致性规则 (v1.4.19 更新 — "锁感觉,不锁画面")
 
-同一篇文章的所有 PROMPT **必须共享以下设计 Token**：
+> **核心原则**:同篇 4 张图应让读者**感觉**是一套(同色同调同氛围),但**画面**
+> 不应雷同(不同镜头、不同构图、不同主体框选)。两件事解耦 — 锁调色板 + 风格,
+> 放开镜头 + 构图。
 
-1. **色彩方案** — 封面确定主色 + 辅色，后续图片复用
-2. **视觉风格** — 扁平/等距/线描/渐变，全篇统一
-3. **氛围关键词** — clean/modern/warm/bold，全篇一致
-4. **背景处理** — 白底/深色/渐变，全篇统一
+**全篇必锁 (writer 写 PROMPT 时手动保证一致):**
 
-**写 PROMPT 时，先写风格约束，再写具体内容：**
+1. **视觉风格 preset** — 扁平/等距/线描/渐变,从 S1-S7 选一个,全篇统一
+2. **色彩家族** — 封面确定主色 + 辅色组合,后续图片复用
+3. **氛围关键词** — clean/modern/warm/bold,全篇一致
+4. **背景处理** — 白底/深色/渐变,全篇统一
+
+**鼓励变化 (脚本自动按位置注入,作者不必手写):**
+
+1. **镜头角度** (`Camera: ...`) — establishing wide / 3/4 perspective /
+   top-down / close-up / side elevation / isometric corner
+2. **构图取向** (`Composition: ...`) — centered / rule-of-thirds /
+   scattered / hierarchical / asymmetric / grid-aligned
+3. **主体框选** — 单体特写 / 群组 / 上下文场景 (内容描述层自然变化)
+4. **视觉密度** — 极简 / 中等 / 满铺 (内容描述层自然变化)
+
+**写 PROMPT 时,只写风格约束 + 内容,不用手动加 Camera/Composition:**
 
 ```markdown
-<!-- PROMPT: [风格约束], [具体内容描述] -->
+<!-- PROMPT: [风格约束 + 色彩 + 背景], [具体内容] -->
 ```
 
-例如：封面用了 `minimalist isometric, tech blue and coral palette, white background`，
-后续节奏图也要带上这段风格前缀。
+例:封面用 `minimalist isometric illustration, soft blue and coral palette,
+white background` 锁感觉,后续节奏图也带这段前缀。脚本(`generate_and_upload_images.py`
+里的 `vary_prompt_for_position`) 会在每张图 PROMPT 末尾按位置注入不同的
+`Camera:` 和 `Composition:`,4 张图自然拉开画面差异。
+
+### 镜头/构图轮转表 (脚本自动注入,作者了解即可)
+
+| 图片位置 | 自动注入的 Camera | 自动注入的 Composition |
+|---------|------------------|----------------------|
+| 封面 (idx 0) | establishing wide shot | centered subject with breathing room |
+| 节奏图 1 (idx 1) | three-quarter perspective view | rule-of-thirds with off-center focus |
+| 节奏图 2 (idx 2) | top-down overhead view | scattered multi-focal composition |
+| 节奏图 3 (idx 3) | close-up detail focus | hierarchical layered composition |
+| 节奏图 4 (idx 4) | side elevation flat view | asymmetric weight balance |
+| 节奏图 5 (idx 5) | isometric corner perspective | grid-aligned modular composition |
+| (位置 6+ 取模轮转) | | |
+
+**作者覆盖**:如果你在 PROMPT 里**手动写了** Camera/Composition (比如
+`top-down view of...` 或 `centered composition...`),脚本检测到后会跳过
+该轴的注入,你的写法生效。要完全关闭注入用 `--no-vary-prompts` flag。
+
+**验证 (2026-05-08 实测)**:6 张同基础 PROMPT,只换 Camera + Composition
+指令,Gemini 输出的画面**显著不同**(等距 / 俯视 / 横向阶梯 / 信息密集
+dashboard / 3D 透视),但调色板和风格 preset 锁定生效。Layer C 收益验证通过。
 
 ### 6 种视觉风格
 

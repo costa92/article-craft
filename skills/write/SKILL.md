@@ -387,11 +387,14 @@ Insert image placeholders throughout the article. The `article-craft:images` ski
 
 **完整风格指南见：** `skills/images/image-guide.md` 的 "Visual Style Guide" 部分。
 
-**核心规则 — 设计 Token 一致性：**
-1. 根据文章风格从 6 种视觉风格（S1-S6）中选择一种
-2. 封面图的 PROMPT 确定**风格约束前缀**（色调 + 风格 + 背景）
-3. 所有后续节奏图的 PROMPT **必须复用相同的风格约束前缀**
-4. PROMPT 用英文写，结构：`[风格约束], [背景]. [主体内容], [细节]`
+**核心规则 — 设计 Token 一致性 (v1.4.19 — 锁感觉,不锁画面):**
+1. 根据文章风格从 7 种视觉风格(S1-S7)中选择一种
+2. 封面图的 PROMPT 确定**风格约束前缀**(色调 + 风格 + 背景)
+3. 所有后续节奏图的 PROMPT **必须复用相同的风格约束前缀**(全篇感觉一致)
+4. **不要手动加 `Camera:` / `Composition:`** — `scripts/generate_and_upload_images.py`
+   的 `vary_prompt_for_position()` 按图片位置自动注入不同镜头和构图,
+   4 张图自然拉开画面差异。详见 `skills/images/image-guide.md` § 镜头/构图轮转表
+5. PROMPT 用英文写,结构:`[风格约束], [背景]. [主体内容], [细节]`
 
 **Format**:
 ```markdown
