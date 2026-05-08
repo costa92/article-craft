@@ -464,7 +464,8 @@ def crop_to_max_height(image_path: str, max_height: int) -> bool:
 def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                        wait: int = 0, width: int = DEFAULT_VIEWPORT_WIDTH,
                        height: int = DEFAULT_VIEWPORT_HEIGHT,
-                       article_keywords: list = None) -> dict:
+                       article_keywords: list = None,
+                       max_height: int = 900) -> dict:
     """
     完整的智能截图流程。
 
@@ -475,10 +476,15 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
         wait: 额外等待秒数
         width: 视口宽度
         height: 视口高度
-        article_keywords: 文章关键词（用于判断截图相关性）
+        article_keywords: 文章里这一段的关键词。命中页面文本时，
+            scrollIntoView 到该位置后再截图，让"截图符合文章上下文"
+            而不是一刀切截 README 顶部。
+        max_height: 截图后的最大高度（像素）。0 = 不裁剪；默认 900 ≈
+            一屏，避免 element screenshot 把整个长 README 截下来。
 
     Returns:
-        dict with keys: success, url, output_path, file_size_kb, error, warnings
+        dict with keys: success, url, output_path, file_size_kb, error,
+                        warnings, anchor_kw_used (the keyword that hit, if any)
     """
     result = {
         "success": False,
@@ -491,9 +497,10 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
         "page_title": "",
         "content_detected": False,
         "is_404_page": False,
+        "anchor_kw_used": None,
     }
 
-    article_keywords = article_keywords or []
+    article_keywords = [k for k in (article_keywords or []) if k and k.strip()]
 
     # Step 1: URL 状态预检（HEAD 请求）
     print(f"  🔍 Checking URL: {url}")
@@ -617,9 +624,57 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                         except Exception:
                             continue
 
+            # Step 4.5: keyword scroll (anchor) — 让"截图符合文章上下文"
+            # 如果调用方传了 article_keywords，找页面里第一个包含任一关键词
+            # 的元素，scroll 到它顶部对齐。这是 v1.5.3 新加的：之前的版本
+            # article_keywords 完全没接通，截图永远从页面顶部开始。
+            if article_keywords:
+                kw_hit = page.evaluate(
+                    """(kws) => {
+                        const lc = kws.map(k => k.toLowerCase());
+                        // Walk text nodes; the first one whose text contains any
+                        // keyword wins. Skip tiny elements (<50px tall) so we
+                        // don't anchor on a sidebar nav link.
+                        const walker = document.createTreeWalker(
+                            document.body, NodeFilter.SHOW_TEXT, null);
+                        let node;
+                        while (node = walker.nextNode()) {
+                            const t = (node.textContent || '').toLowerCase();
+                            for (const kw of lc) {
+                                if (t.includes(kw)) {
+                                    let el = node.parentElement;
+                                    while (el && el.getBoundingClientRect &&
+                                           el.getBoundingClientRect().height < 50) {
+                                        el = el.parentElement;
+                                    }
+                                    if (el && el.scrollIntoView) {
+                                        el.scrollIntoView({block: 'start',
+                                                           behavior: 'instant'});
+                                        return kw;
+                                    }
+                                }
+                            }
+                        }
+                        return null;
+                    }""",
+                    article_keywords,
+                )
+                if kw_hit:
+                    result["anchor_kw_used"] = kw_hit
+                    print(f"  ⚓ Anchor: scrolled to '{kw_hit}'")
+                    # 命中关键词且没显式 selector → 改用视口截图（截 scroll 到的那一屏），
+                    # 不再走 element screenshot（那会无视 scroll 截整个元素）。
+                    if not selector:
+                        page.wait_for_timeout(300)  # let scroll settle
+                else:
+                    result["warnings"].append(
+                        f"anchor keywords {article_keywords} 都没在页面文本里命中，"
+                        "fallback 到默认截图位置"
+                    )
+
             # Step 5: 截图
-            if selector:
-                # 只截取指定元素
+            if selector and not (article_keywords and result["anchor_kw_used"]):
+                # 只截取指定元素（且没用 anchor keyword 改写策略）
                 el = page.query_selector(selector)
                 if el:
                     el.screenshot(path=output_path, timeout=15000)
@@ -631,10 +686,12 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                     result["selector_used"] = "full-page (fallback)"
                     print(f"  📸 Full page screenshot saved: {output_path}")
             else:
-                # 无选择器 → 视口截图（不滚动），避免冗长全页截图
-                # 如需全页，在占位符中显式指定选择器或 WIDTH: 参数
+                # 视口截图（要么从未指定 selector，要么 anchor 命中 → 截 scroll 到的那一屏）。
+                # 避免 element/full-page 截下整个长 README。
                 page.screenshot(path=output_path, full_page=False, timeout=15000)
-                print(f"  📸 Viewport screenshot saved (no selector): {output_path}")
+                if result["anchor_kw_used"]:
+                    result["selector_used"] = f"anchor:{result['anchor_kw_used']}"
+                print(f"  📸 Viewport screenshot saved: {output_path}")
 
             browser.close()
 
@@ -653,10 +710,17 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
     result["file_size_kb"] = os.path.getsize(output_path) / 1024
     print(f"     File size: {result['file_size_kb']:.1f} KB")
 
-    # Step 7: 裁剪空白 + 压缩
+    # Step 7: 裁剪空白 + 高度上限 + 压缩
     print(f"  ✂️  Optimizing image...")
     was_compressed = compress_image(output_path)
     crop_whitespace(output_path)
+
+    # 默认 max_height=900 ≈ 一屏，让 element screenshot 不至于把整个长
+    # README 截下来。max_height=0 表示不裁。调用方（batch_capture / CLI）
+    # 也可能在外层再裁一次到指定 aspect_ratio，那是后置的语义裁剪。
+    if max_height and max_height > 0:
+        if crop_to_max_height(output_path, max_height):
+            print(f"  ✂️  Cropped to max-height {max_height}px")
 
     result["file_size_kb"] = os.path.getsize(output_path) / 1024
     print(f"     Final size: {result['file_size_kb']:.1f} KB")
@@ -705,19 +769,17 @@ def batch_capture(entries: list, output_dir: str = "", article_keywords: list = 
             selector=entry.get("selector", ""),
             wait=entry.get("wait", 0),
             width=entry.get("width", DEFAULT_VIEWPORT_WIDTH),
-            article_keywords=article_keywords,
+            # entry-level keywords/anchor override batch-level
+            article_keywords=entry.get("keywords") or article_keywords,
+            max_height=max_height,
         )
 
-        # 截图成功后应用可选裁剪
+        # 截图成功后应用 aspect_ratio 裁剪（max_height 已在 capture_screenshot 内部应用过了）
         if res["success"] and os.path.exists(res["output_path"]):
             if aspect_ratio:
                 ok = crop_to_aspect_ratio(res["output_path"], aspect_ratio)
                 if ok:
                     print(f"  ✂️  裁剪至 {aspect_ratio} 完成")
-            if max_height:
-                ok = crop_to_max_height(res["output_path"], max_height)
-                if ok:
-                    print(f"  ✂️  裁剪至最大高度 {max_height}px 完成")
                 res["file_size_kb"] = os.path.getsize(res["output_path"]) / 1024
 
         results.append(res)
@@ -1672,22 +1734,30 @@ def main():
     sc.add_argument("-w", "--wait", type=int, default=0, help="额外等待秒数")
     sc.add_argument("--width", type=int, default=DEFAULT_VIEWPORT_WIDTH, help="视口宽度")
     sc.add_argument("--no-upload", action="store_true", help="跳过 CDN 上传")
-    sc.add_argument("--keywords", nargs="*", default=[], help="文章关键词（用于相关性判断）")
+    sc.add_argument("--keywords", nargs="*", default=[],
+                     help="anchor 关键词。命中页面文本时 scroll 到该位置后再截，"
+                          "让截图与文章上下文相关，而不是从页面顶部一刀切。")
     sc.add_argument("--aspect-ratio", default="", metavar="W:H",
                      help="截图后裁剪到指定宽高比，如 16:9、4:3、1:1")
-    sc.add_argument("--max-height", type=int, default=0, metavar="PX",
-                     help="截图后若高度超过 PX 像素，裁剪底部至该高度")
+    sc.add_argument("--max-height", type=int, default=900, metavar="PX",
+                     help="截图最大高度（默认 900 ≈ 一屏）。0 = 不裁剪。")
+    sc.add_argument("--fold", action="store_true",
+                     help="只截首屏（max-height = 视口高度，默认 800px）。"
+                          "等价于 --max-height 800。")
 
     # batch 子命令
     ba = sub.add_parser("batch", help="批量截图（从 JSON 文件读取）")
     ba.add_argument("file", help="JSON 文件，每行一个 URL 或结构化对象")
     ba.add_argument("-o", "--output-dir", default="", help="输出目录")
     ba.add_argument("--no-upload", action="store_true", help="跳过 CDN 上传")
-    ba.add_argument("--keywords", nargs="*", default=[], help="文章关键词")
+    ba.add_argument("--keywords", nargs="*", default=[],
+                     help="anchor 关键词。同 screenshot 子命令的 --keywords。")
     ba.add_argument("--aspect-ratio", default="", metavar="W:H",
                      help="截图后裁剪到指定宽高比，如 16:9、4:3、1:1")
-    ba.add_argument("--max-height", type=int, default=0, metavar="PX",
-                     help="截图后若高度超过 PX 像素，裁剪底部至该高度")
+    ba.add_argument("--max-height", type=int, default=900, metavar="PX",
+                     help="截图最大高度（默认 900 ≈ 一屏）。0 = 不裁剪。")
+    ba.add_argument("--fold", action="store_true",
+                     help="只截首屏（max-height = 视口高度）。")
 
     # check 子命令
     ck = sub.add_parser("check", help="只验证 URL 可用性，不截图")
@@ -1790,6 +1860,11 @@ def main():
         sys.exit(0 if res.get("ok") else 1)
 
     if args.command == "screenshot":
+        # --fold ⇒ max-height = 视口高度（首屏）。优先级低于显式 --max-height 0/正整数。
+        effective_max_height = args.max_height
+        if args.fold:
+            effective_max_height = DEFAULT_VIEWPORT_HEIGHT
+
         res = capture_screenshot(
             url=args.url,
             output_path=args.output,
@@ -1797,20 +1872,16 @@ def main():
             wait=args.wait,
             width=args.width,
             article_keywords=args.keywords,
+            max_height=effective_max_height,
         )
 
-        # 截图成功后应用可选裁剪
+        # 截图成功后应用 aspect_ratio 裁剪（max_height 已在 capture_screenshot 内部应用过了）
         if res["success"] and os.path.exists(res["output_path"]):
             target_ratio = _parse_aspect_ratio(args.aspect_ratio)
             if target_ratio:
                 ok = crop_to_aspect_ratio(res["output_path"], target_ratio)
                 if ok:
                     print(f"  ✂️  裁剪至 {args.aspect_ratio} 完成")
-                    res["file_size_kb"] = os.path.getsize(res["output_path"]) / 1024
-            if args.max_height:
-                ok = crop_to_max_height(res["output_path"], args.max_height)
-                if ok:
-                    print(f"  ✂️  裁剪至最大高度 {args.max_height}px 完成")
                     res["file_size_kb"] = os.path.getsize(res["output_path"]) / 1024
 
         print(json.dumps(res, indent=2, ensure_ascii=False))
@@ -1839,10 +1910,14 @@ def main():
                         entries.append({"url": line})
 
         target_ratio = _parse_aspect_ratio(args.aspect_ratio)
+        # --fold ⇒ max-height = 视口高度（首屏）
+        effective_max_height = args.max_height
+        if args.fold:
+            effective_max_height = DEFAULT_VIEWPORT_HEIGHT
         results = batch_capture(
             entries, args.output_dir, args.keywords,
             aspect_ratio=target_ratio,
-            max_height=args.max_height,
+            max_height=effective_max_height,
         )
 
         # 汇总报告

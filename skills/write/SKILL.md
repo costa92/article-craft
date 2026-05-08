@@ -485,8 +485,17 @@ No readable text anywhere, no letters, no numbers, no labels, no captions, no lo
 <!-- SCREENSHOT: https://example.com -->
 <!-- SCREENSHOT: https://example.com #selector -->
 <!-- SCREENSHOT: https://example.com WAIT:3 WIDTH:800 -->
+<!-- SCREENSHOT: https://example.com ANCHOR:keyword1,keyword2 -->
+<!-- SCREENSHOT: https://example.com FOLD -->
 ```
-支持的选项：`#selector`（CSS 选择器）、`WAIT:N`（等待秒数）、`WIDTH:N`（视口宽度）。
+支持的选项：`#selector`（CSS 选择器）、`WAIT:N`（等待秒数）、`WIDTH:N`（视口宽度）、`ANCHOR:k1,k2`（**v1.5.3+** 关键词锚点：scroll 到第一处出现 k1/k2 的元素再截）、`FOLD`（**v1.5.3+** 仅截首屏 ~800px）、`MAX_HEIGHT:N`（**v1.5.3+** 自定义高度上限，默认 900）。
+
+**默认带 `ANCHOR:` 是强烈推荐做法（v1.5.3+）** — 一个 SCREENSHOT 占位符通常是为了证明前后段落里讲的某件事。把那段在讲的核心词当 ANCHOR 写进去，截图就会从相关段落开始而不是页面顶部。例：
+
+> 我自己觉得这是 Hindsight 工程上最有意思的一块。TEMPR 用四路并行检索…
+> <!-- SCREENSHOT: https://github.com/vectorize-io/hindsight ANCHOR:TEMPR -->
+
+如果一段引用本来就在讲整个项目（"我们看一下 X 项目的 README"），不带 ANCHOR 也合理（默认从顶部截）。但只要段落主题更细，**第一选择是写 ANCHOR**，第二选择才是 `#selector`，最次才是裸 URL。
 
 **常见 URL 的推荐选择器（不写则退为视口截图，写了则精准裁剪）：**
 

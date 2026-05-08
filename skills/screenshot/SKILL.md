@@ -141,14 +141,30 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py expand-harvest \
 <!-- SCREENSHOT: https://example.com #element-selector -->
 <!-- SCREENSHOT: https://example.com WAIT:3 -->
 <!-- SCREENSHOT: https://example.com WIDTH:800 -->
+<!-- SCREENSHOT: https://example.com ANCHOR:TEMPR,reflect -->
+<!-- SCREENSHOT: https://example.com FOLD -->
+<!-- SCREENSHOT: https://example.com MAX_HEIGHT:1200 -->
 ```
 
 **扩展语法：**
-| 语法 | 说明 |
-|------|------|
-| `#selector` | CSS 选择器，只截取该元素 |
-| `WAIT:N` | 额外等待 N 秒（SPA 页面） |
-| `WIDTH:N` | 视口宽度（默认 1280） |
+| 语法 | 说明 | CLI 等价 |
+|------|------|---------|
+| `#selector` | CSS 选择器，只截取该元素 | `--selector …` |
+| `WAIT:N` | 额外等待 N 秒（SPA 页面） | `--wait N` |
+| `WIDTH:N` | 视口宽度（默认 1280） | `--width N` |
+| `ANCHOR:kw1,kw2` | **[v1.5.3+]** 关键词锚点。命中页面文本时 scrollIntoView 后再截，让截图与文章上下文相关。多个关键词用逗号隔开，按顺序首个命中的胜出。 | `--keywords kw1 kw2` |
+| `FOLD` | **[v1.5.3+]** 只截首屏（视口高度 ≈ 800px）。等价于 `MAX_HEIGHT:800`。 | `--fold` |
+| `MAX_HEIGHT:N` | **[v1.5.3+]** 截图最大高度，超过即从顶部裁。默认 900px（一屏）。设 `0` 则不裁。 | `--max-height N` |
+
+**为什么 `ANCHOR:` 是默认推荐**：在 SCREENSHOT 占位符里**总是**写一个 ANCHOR，是让截图"符合文章内容"的最简单方式。例如文章在讲 Hindsight 的 TEMPR 检索机制，写：
+
+```markdown
+> 我自己觉得这是 Hindsight 工程上最有意思的一块。
+
+<!-- SCREENSHOT: https://github.com/vectorize-io/hindsight ANCHOR:TEMPR -->
+```
+
+截图工具会在 GitHub README 里 scroll 到第一处出现 "TEMPR" 的元素，然后截一屏（默认 900px 上限）。读者看到的截图正是文章这一段在讨论的部分，而不是 README 顶部的 logo。
 
 ### HARVEST 占位符（Style H 爆料自媒体专用）
 
@@ -226,12 +242,40 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py screenshot "URL" \
   -w 2 \                      # 额外等待秒数
   --width 1280 \              # 视口宽度
   --no-upload \               # 跳过 CDN 上传
-  --keywords AI Python \      # 文章关键词（用于相关性判断）
-  --aspect-ratio 16:9 \       # 截图后裁剪到指定宽高比（16:9、4:3、1:1、9:16）
-  --max-height 1200          # 截图后若高度超过此像素，裁剪底部至该高度
+  --keywords TEMPR reflect \  # anchor 关键词，命中即 scroll 到该位置再截
+  --max-height 900 \          # 默认 900；0 = 不裁
+  --fold \                    # 等价 --max-height 800（视口高，仅首屏）
+  --aspect-ratio 16:9         # 截后再按比例裁剪（可叠加，最后一步）
 ```
 
 **长宽比裁剪说明：** 适用于 GitHub README / 文档页等超长截图。裁剪居中执行——图过宽切左右，图过高切上下。接受 `W:H` 格式（如 `16:9`）或直接写小数（如 `1.78`）。**不传此参数则不裁剪。**
+
+### 占位符到 CLI 的映射 [v1.5.3+]
+
+scan 文章时遇到 `<!-- SCREENSHOT: URL [opts] -->`，按下表把 opts 映射成 CLI 参数后调脚本：
+
+| 占位符片段 | CLI 参数 |
+|---|---|
+| URL（必填） | 第一个位置参数 |
+| `#selector` | `--selector "selector"` |
+| `WAIT:N` | `--wait N` |
+| `WIDTH:N` | `--width N` |
+| `ANCHOR:k1,k2,k3` | `--keywords k1 k2 k3` |
+| `FOLD` | `--fold`（互斥于 `MAX_HEIGHT`） |
+| `MAX_HEIGHT:N` | `--max-height N` |
+
+例：
+
+```markdown
+<!-- SCREENSHOT: https://github.com/vectorize-io/hindsight ANCHOR:TEMPR FOLD -->
+```
+
+→
+```bash
+python3 .../screenshot_tool.py screenshot \
+  "https://github.com/vectorize-io/hindsight" \
+  --keywords TEMPR --fold -o /tmp/...
+```
 ```
 
 ### 批量截图
