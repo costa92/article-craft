@@ -625,50 +625,101 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                             continue
 
             # Step 4.5: keyword scroll (anchor) — 让"截图符合文章上下文"
-            # 如果调用方传了 article_keywords，找页面里第一个包含任一关键词
-            # 的元素，scroll 到它顶部对齐。这是 v1.5.3 新加的：之前的版本
-            # article_keywords 完全没接通，截图永远从页面顶部开始。
+            # 如果调用方传了 article_keywords，在主内容区内找第一个包含
+            # 任一关键词的元素，scroll 到它顶部对齐。
+            #
+            # v1.5.3 第一版用 document.body 全局 treeWalker，结果在
+            # GitHub 之类的页面上 sidebar/Topics/file-tree 的命中会盖过
+            # README 内容（DOM 顺序 sidebar 在前），截出来不是文章想引用
+            # 的内容。v1.5.4 改成：优先 scope=selector → 主内容 selectors
+            # → body 全局，且只在前两层命中时才 scroll，全局命中只打
+            # warning，不动 scroll 位置（避免误导）。
             if article_keywords:
+                # 主内容候选选择器，按优先级从严到宽。selector 已经是调用方
+                # 显式传入或上一步 suggest_selector 给的——优先用它。
+                # 故意不放裸 `main` 和裸 `article`：GitHub 用 `<main>` 包
+                # 文件树+README，命中文件名会让截图截到无关区域。所有候选
+                # 都必须能"明确标识为正文渲染容器"。
+                scope_candidates = []
+                if selector:
+                    scope_candidates.append(selector)
+                scope_candidates.extend([
+                    "article#readme",                     # GitHub README
+                    "article.markdown-body",              # GitHub generic
+                    ".markdown-body",                     # generic markdown render
+                    ".docs-content",                      # docs sites
+                    ".documentation",
+                    ".main-content",
+                    "[role='main'] article",
+                    "article[itemprop='mainContentOfPage']",
+                ])
+
                 kw_hit = page.evaluate(
-                    """(kws) => {
+                    """([kws, scopes]) => {
                         const lc = kws.map(k => k.toLowerCase());
-                        // Walk text nodes; the first one whose text contains any
-                        // keyword wins. Skip tiny elements (<50px tall) so we
-                        // don't anchor on a sidebar nav link.
-                        const walker = document.createTreeWalker(
-                            document.body, NodeFilter.SHOW_TEXT, null);
-                        let node;
-                        while (node = walker.nextNode()) {
-                            const t = (node.textContent || '').toLowerCase();
-                            for (const kw of lc) {
-                                if (t.includes(kw)) {
-                                    let el = node.parentElement;
-                                    while (el && el.getBoundingClientRect &&
-                                           el.getBoundingClientRect().height < 50) {
-                                        el = el.parentElement;
-                                    }
-                                    if (el && el.scrollIntoView) {
-                                        el.scrollIntoView({block: 'start',
-                                                           behavior: 'instant'});
-                                        return kw;
+                        const findIn = (root) => {
+                            if (!root) return null;
+                            const walker = document.createTreeWalker(
+                                root, NodeFilter.SHOW_TEXT, null);
+                            let node;
+                            while (node = walker.nextNode()) {
+                                const t = (node.textContent || '').toLowerCase();
+                                for (const kw of lc) {
+                                    if (t.includes(kw)) {
+                                        let el = node.parentElement;
+                                        while (el && el.getBoundingClientRect &&
+                                               el.getBoundingClientRect().height < 50) {
+                                            el = el.parentElement;
+                                        }
+                                        if (el && el.scrollIntoView) {
+                                            el.scrollIntoView({block: 'start',
+                                                               behavior: 'instant'});
+                                            return {kw, scope: 'main'};
+                                        }
                                     }
                                 }
+                            }
+                            return null;
+                        };
+                        for (const sc of scopes) {
+                            try {
+                                const root = document.querySelector(sc);
+                                const hit = findIn(root);
+                                if (hit) { hit.matched_scope = sc; return hit; }
+                            } catch (_) { /* invalid selector → skip */ }
+                        }
+                        // Last-ditch: see if any kw appears anywhere on the
+                        // page; if yes, return its location so we can warn
+                        // (but don't scroll — staying at top is more honest).
+                        for (const kw of lc) {
+                            if ((document.body.innerText || '').toLowerCase().includes(kw)) {
+                                return {kw, scope: 'global', no_scroll: true};
                             }
                         }
                         return null;
                     }""",
-                    article_keywords,
+                    [article_keywords, scope_candidates],
                 )
-                if kw_hit:
-                    result["anchor_kw_used"] = kw_hit
-                    print(f"  ⚓ Anchor: scrolled to '{kw_hit}'")
+                if kw_hit and not kw_hit.get("no_scroll"):
+                    result["anchor_kw_used"] = kw_hit["kw"]
+                    print(
+                        f"  ⚓ Anchor: scrolled to '{kw_hit['kw']}' "
+                        f"in '{kw_hit.get('matched_scope', 'main')}'"
+                    )
                     # 命中关键词且没显式 selector → 改用视口截图（截 scroll 到的那一屏），
                     # 不再走 element screenshot（那会无视 scroll 截整个元素）。
                     if not selector:
                         page.wait_for_timeout(300)  # let scroll settle
+                elif kw_hit and kw_hit.get("no_scroll"):
+                    # 关键词只在主内容外（sidebar/file-tree/topics 等）出现 → 不 scroll
+                    result["warnings"].append(
+                        f"anchor 关键词 '{kw_hit['kw']}' 只在主内容外的元素里命中"
+                        f"（如 sidebar / file-tree / topics 标签），"
+                        "保持默认截图位置以避免误导"
+                    )
                 else:
                     result["warnings"].append(
-                        f"anchor keywords {article_keywords} 都没在页面文本里命中，"
+                        f"anchor keywords {article_keywords} 都没在页面里命中，"
                         "fallback 到默认截图位置"
                     )
 
