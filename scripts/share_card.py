@@ -103,6 +103,14 @@ def make_card_html(title: str, description: str, tags: list, author: str,
                    platform: str) -> str:
     """生成卡片 HTML"""
 
+    # Brand logo text — env.json `share_card_logo` > plugin.json `name` >
+    # "article-craft". Forks can re-brand without editing this file.
+    try:
+        from config import share_card_logo
+        brand_logo = share_card_logo()
+    except ImportError:
+        brand_logo = "article-craft"
+
     # 截断标题和描述
     title = title.strip()
     if len(title) > 60:
@@ -293,7 +301,7 @@ body::after {{
   <div class="footer">
     <div class="author">{author}</div>
     {logo_html}
-    <div class="logo">article-craft</div>
+    <div class="logo">{brand_logo}</div>
   </div>
 </body>
 </html>"""

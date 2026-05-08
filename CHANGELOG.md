@@ -2,6 +2,70 @@
 
 ## [Unreleased] - 2026-05-08 (publish preflight, v1.4.20 dev)
 
+### Refactor — Eliminate hardcoded paths and brand strings
+
+Project-wide audit (12 files) to remove hardcoded paths, model lists,
+personal CDN domains, and `/tmp` literals. Behavior is unchanged on a
+default install; the audit only opens up customization seams.
+
+**`scripts/config.py` — four new APIs:**
+
+- `cache_dir() -> Path` — single source for `~/.cache/article-craft/`,
+  honoring `ARTICLE_CRAFT_CACHE_DIR`. `screenshot_tool.py`,
+  `write_verify_cache.py`, and `review_selfcheck.py` now all flow through
+  it (previously only the last one did).
+- `TEXT_MODEL` — separates the prompt-expansion text model used by
+  `nanobanana.py --enhance` (`gemini-2.0-flash` default) from the
+  image-only `MODEL_FALLBACK_CHAIN`. Override via env.json
+  `gemini_text_model`.
+- `VERIFY_CDN_WHITELIST` — the CDN allowlist that used to live as a
+  hardcoded `grep -v` filter inside `skills/write/SKILL.md`. Default
+  excludes per-author personal domains. Override via env.json
+  `verify_cdn_whitelist`.
+- `share_card_logo()` — resolves card logo text from env.json >
+  `.claude-plugin/plugin.json` `name` > `"article-craft"`. Forks can
+  re-brand without source edits.
+
+**Configuration template:** new `env.example.json` at repo root,
+referenced by `ENV.md` (the template `install.sh` had been copying from
+`~/.claude/env.example.json` was never in this repo until now).
+
+**DRY cleanup:**
+
+- `nanobanana.py` and `generate_and_upload_images.py` no longer carry
+  parallel copies of `MODEL_FALLBACK_CHAIN` — both import from
+  `config`. Standalone `try/except ImportError` fallbacks are kept.
+- `generate_and_upload_images.py` model-chain construction switched from
+  the buggy `[user_model, gemini-3.1-flash, gemini-2.5-flash]` (which
+  silently dropped `gemini-3-pro` whenever the user picked a non-pro
+  default) to `[user_model] + canonical chain` with order preserved.
+
+**Cross-platform `/tmp`:**
+
+- Six `/tmp/...` literals migrated to `tempfile.gettempdir()`:
+  `VerificationCache` default, `gemini_probe.jpg`, `verify-tmp.txt`,
+  `utils.py` demo, plus the cache-dir helpers above. Same effective path
+  on Linux, now portable to Windows.
+
+**De-personalization:**
+
+- `skills/write/SKILL.md`: example URL `file.costalong.com` → generic
+  placeholder `your-cdn.example.com` with note about
+  `verify_cdn_whitelist`. Coverage-warning shell snippet now reads the
+  whitelist from `config.VERIFY_CDN_WHITELIST` instead of hardcoding it.
+- `scripts/share_card.py`: card-footer logo HTML uses
+  `share_card_logo()` instead of the literal `"article-craft"`.
+
+**Stale comment fixes:** `config.py` references to a non-existent
+`~/.article-craft.conf` corrected to `~/.claude/env.json`. The
+`screenshot_tool.py` doc comment citing
+`/tmp/article-craft-verify-cache.json` corrected to the actual
+`~/.cache/article-craft/verify-cache.json` path.
+
+**Tests:** 8 new `test_config.py` cases cover defaults + env-json
+overrides for all four new APIs (`cache_dir`, `TEXT_MODEL`,
+`VERIFY_CDN_WHITELIST`, `share_card_logo`). Total: 132/132 pass.
+
 ### Added — Pre-publish placeholder gate
 
 Closes the "article published with unresolved `<!-- IMAGE/SCREENSHOT/PROMPT/HARVEST: -->`

@@ -421,7 +421,7 @@ No readable text anywhere, no letters, no numbers, no labels, no captions, no lo
 
 **"自证悖论"特别警告**：当文章讨论"某模型的文字渲染能力"（例如 GPT-Image-2、nano-banana、Imagen 的文字准确率）时，**绝对不能**用 `<!-- IMAGE: -->` + Gemini 生成示意图去"展示"那个模型的文字效果——你是在用一个不擅长渲染文字的模型证明另一个模型擅长渲染文字，视觉上自相矛盾。这类场景必须：
 1. 用 `<!-- SCREENSHOT: -->` 截取真实模型的输出页
-2. 或让作者人工插入真实截图 URL（`![](https://file.costalong.com/img/xxx.png)`）
+2. 或让作者人工插入真实截图 URL（`![](https://your-cdn.example.com/img/xxx.png)`，把 `your-cdn.example.com` 换成你自己的 CDN，并确保它在 `~/.claude/env.json` 的 `verify_cdn_whitelist` 里）
 3. 或用 Markdown 表格替代（`| 旧版 | 新版 |`）
 4. 或写纯抽象示意图（剪影、色块、图标组合，无可读字符）
 
@@ -724,7 +724,9 @@ Print the absolute file path after saving so subsequent skills can find it.
 
    ```bash
    # 统计引用数 vs SCREENSHOT 数
-   URL_COUNT=$(grep -oE '\]\(https?://[^)]+\)' /ABSOLUTE/PATH/article.md | grep -v 'file.costalong.com\|cdn.jsdelivr.net\|mmbiz.qpic.cn\|pbs.twimg.com' | wc -l)
+   # 白名单从 config.VERIFY_CDN_WHITELIST 读（env.json `verify_cdn_whitelist` 可覆盖）
+   WHITELIST_RE=$(python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}/scripts'); from config import VERIFY_CDN_WHITELIST; print('|'.join(VERIFY_CDN_WHITELIST))")
+   URL_COUNT=$(grep -oE '\]\(https?://[^)]+\)' /ABSOLUTE/PATH/article.md | grep -vE "$WHITELIST_RE" | wc -l)
    SHOT_COUNT=$(grep -c '<!-- SCREENSHOT:' /ABSOLUTE/PATH/article.md || echo 0)
    if [ "$URL_COUNT" -ge 3 ] && [ "$SHOT_COUNT" -eq 0 ]; then
      echo "⚠️  SCREENSHOT coverage warning: $URL_COUNT external URLs cited, 0 SCREENSHOT placeholders."
