@@ -1,5 +1,65 @@
 # Changelog
 
+## [Unreleased] - 2026-05-08 (publish preflight, v1.4.20 dev)
+
+### Added — Pre-publish placeholder gate
+
+Closes the "article published with unresolved `<!-- IMAGE/SCREENSHOT/PROMPT/HARVEST: -->`
+placeholders" silent-failure mode. Caught during round4 e2e testing —
+running image generation with `--no-upload` produced an article that the
+script reported as "1 placeholder replaced" (only the screenshot got a
+local path) while 4 IMAGE placeholders remained intact, but the publish
+skill would happily move that half-baked file into the knowledge base.
+
+**New CLI subcommand**: `pipeline_state.py check-publish-ready --article PATH`
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py check-publish-ready \
+    --article /abs/path/article.md
+```
+
+Exit codes:
+- `0` — clean (no `<!-- IMAGE/PROMPT/SCREENSHOT/HARVEST: -->` placeholders remain)
+- `1` — unresolved placeholders detected (BLOCK publish)
+- `2` — article path doesn't exist
+
+Output: JSON on stdout for machine consumption, human-readable summary
+on stderr listing per-kind placeholder counts and likely cause.
+
+**Wiring**: `skills/publish/SKILL.md` adds Step 0 — runs the preflight
+gate before any directory matching or file movement. Block-with-detail
+on placeholder presence; never override.
+
+### Tests
+
+`tests/test_pipeline_state.py` adds `CheckPublishReadyTests` (6 tests):
+- clean article returns 0 + ready=true
+- IMAGE/PROMPT placeholder pair blocks with both counted
+- SCREENSHOT placeholder blocks
+- HARVEST placeholder (Style H) blocks
+- multi-kind article reports each kind separately
+- nonexistent article returns exit 2
+
+Total suite: 128 passed (122 baseline + 6 new).
+
+### Why this layer at publish, not earlier
+
+The pipeline already has earlier checks (write Step 7 handoff, verify-claims
+post-write) but those happen *before* image generation. The preflight gate
+is the last line of defense — it runs *after* all generation/upload stages
+and catches any silent failure (--no-upload, CDN error, manual edit drift)
+right before the article enters the knowledge base. Cheap to run (single
+regex scan of the article body) and fail-loud.
+
+### Validated
+
+- `python3 -m pytest tests/test_pipeline_state.py -v` → 12 passed
+- Manual smoke test on round4-final.md (clean) → exit 0
+- Manual smoke test on round4-test-run.md (--no-upload artifact) →
+  exit 1, BLOCK with "IMAGE: 4, PROMPT: 4"
+
+---
+
 ## [Unreleased] - 2026-05-08 (image variety, v1.4.19 dev)
 
 ### Added — Per-position image variation (Layer A + C)

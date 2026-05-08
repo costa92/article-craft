@@ -131,5 +131,105 @@ class PipelineStateTests(unittest.TestCase):
             self.assertIsNone(scan.tone)
 
 
+class CheckPublishReadyTests(unittest.TestCase):
+    """Pre-publish placeholder gate (`pipeline_state.py check-publish-ready`).
+
+    Catches the silent failure where --no-upload (or upload error) leaves
+    <!-- IMAGE/PROMPT/SCREENSHOT/HARVEST: --> placeholders intact and
+    publish moves a half-baked file into the knowledge base.
+    """
+
+    def _run(self, article_path):
+        """Invoke the CLI and return (exit_code, stdout, stderr)."""
+        import subprocess
+        repo_root = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            [
+                "python3",
+                str(repo_root / "scripts" / "pipeline_state.py"),
+                "check-publish-ready",
+                "--article", str(article_path),
+            ],
+            capture_output=True, text=True,
+        )
+        return result.returncode, result.stdout, result.stderr
+
+    def test_clean_article_returns_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text(
+                "---\nwriting_style: A\n---\n\n# Title\n\n"
+                "Body text. Image already replaced: ![](https://cdn.example.com/img.jpg)\n",
+                encoding="utf-8",
+            )
+            code, stdout, stderr = self._run(article)
+            self.assertEqual(code, 0, msg=stderr)
+            self.assertIn('"ready": true', stdout)
+
+    def test_unresolved_image_placeholder_blocks_publish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text(
+                "---\nwriting_style: A\n---\n\n# Title\n\n"
+                "Body. <!-- IMAGE: cover - test (16:9) -->\n"
+                "<!-- PROMPT: Test prompt. -->\n",
+                encoding="utf-8",
+            )
+            code, stdout, stderr = self._run(article)
+            self.assertEqual(code, 1)
+            self.assertIn('"ready": false', stdout)
+            self.assertIn("BLOCK publish", stderr)
+            self.assertIn("IMAGE: 1", stderr)
+            self.assertIn("PROMPT: 1", stderr)
+
+    def test_unresolved_screenshot_placeholder_blocks_publish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text(
+                "---\nwriting_style: B\n---\n\n# T\n\n"
+                "<!-- SCREENSHOT: https://example.com -->\n",
+                encoding="utf-8",
+            )
+            code, stdout, stderr = self._run(article)
+            self.assertEqual(code, 1)
+            self.assertIn("SCREENSHOT: 1", stderr)
+
+    def test_unresolved_harvest_placeholder_blocks_publish(self):
+        # Style H articles use HARVEST placeholders for source-image picking.
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text(
+                "---\nwriting_style: H\n---\n\n# T\n\n"
+                '<!-- HARVEST: https://example.com idx=2 caption="..." -->\n',
+                encoding="utf-8",
+            )
+            code, stdout, stderr = self._run(article)
+            self.assertEqual(code, 1)
+            self.assertIn("HARVEST: 1", stderr)
+
+    def test_multiple_placeholder_kinds_counted_separately(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text(
+                "---\nwriting_style: D\n---\n\n# T\n\n"
+                "<!-- IMAGE: a - x (16:9) -->\n"
+                "<!-- PROMPT: x. -->\n"
+                "<!-- IMAGE: b - y (16:9) -->\n"
+                "<!-- PROMPT: y. -->\n"
+                "<!-- SCREENSHOT: https://example.com -->\n",
+                encoding="utf-8",
+            )
+            code, stdout, stderr = self._run(article)
+            self.assertEqual(code, 1)
+            self.assertIn("IMAGE: 2", stderr)
+            self.assertIn("PROMPT: 2", stderr)
+            self.assertIn("SCREENSHOT: 1", stderr)
+
+    def test_nonexistent_article_returns_two(self):
+        code, stdout, stderr = self._run("/tmp/definitely-does-not-exist-xyz.md")
+        self.assertEqual(code, 2)
+        self.assertIn("not found", stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

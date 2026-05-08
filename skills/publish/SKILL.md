@@ -39,6 +39,34 @@ Question: "Which article file should I publish?"
 
 ## Execution Steps
 
+### Step 0: Pre-publish placeholder gate (v1.4.20+)
+
+Before any directory matching or file movement, refuse to publish if the
+article still contains unresolved `<!-- IMAGE: -->`, `<!-- PROMPT: -->`,
+`<!-- SCREENSHOT: -->`, or `<!-- HARVEST: -->` placeholders. This catches
+the silent-failure case where image generation ran with `--no-upload` (or
+upload itself failed), leaving an article that *looks* finished in stdout
+but still has raw placeholders that downstream readers will see as broken
+HTML comments.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py check-publish-ready \
+    --article /ABSOLUTE/PATH/article.md
+```
+
+Exit codes:
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| 0 | Clean — all placeholders resolved | Continue to Step 1 |
+| 1 | Unresolved placeholders detected | **BLOCK publish.** Print the structured report (placeholder counts per kind) to the user and exit. |
+| 2 | Article path doesn't exist | Fail with a clear "file not found" error |
+
+The script emits a JSON line on stdout (machine-readable) plus a
+human-readable summary on stderr listing how many of each placeholder
+kind remain. **Do not override this gate** — re-run image generation or
+manually replace placeholders, then re-invoke publish.
+
 ### Step 1: Determine Output Mode
 
 Two modes, selected by presence of `--output`:

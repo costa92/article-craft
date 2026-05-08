@@ -402,6 +402,63 @@ def cmd_artifact(args) -> int:
     return 0
 
 
+def cmd_check_publish_ready(args) -> int:
+    """Refuse publish if any unresolved placeholder remains in the article.
+
+    Catches the silent failure mode where `--no-upload` (or a generation
+    error) leaves `<!-- IMAGE: -->`, `<!-- PROMPT: -->`, `<!-- SCREENSHOT: -->`,
+    or `<!-- HARVEST: -->` placeholders in the article body, then publish
+    happily moves the half-baked file into the knowledge base.
+
+    Exit codes:
+      0 — clean, safe to publish
+      1 — placeholders remain (BLOCK publish)
+      2 — article path doesn't exist
+    """
+    article_path = Path(args.article)
+    if not article_path.exists():
+        sys.stderr.write(f"error: article not found: {article_path}\n")
+        return 2
+
+    scan = _scan_article(article_path)
+    counts = {
+        "IMAGE": scan.image_placeholders,
+        "SCREENSHOT": scan.screenshot_placeholders,
+        "HARVEST": scan.harvest_placeholders,
+    }
+    # Also detect orphan PROMPT lines (IMAGE removed but PROMPT left,
+    # or PROMPT-only blocks from manual edits). Cheap regex scan.
+    text = article_path.read_text(encoding="utf-8")
+    prompt_count = len(re.findall(r"<!--\s*PROMPT:\s*", text))
+    counts["PROMPT"] = prompt_count
+
+    total = sum(counts.values())
+    payload = {
+        "ready": total == 0,
+        "article": str(article_path),
+        "counts": counts,
+        "total_unresolved": total,
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+
+    if total == 0:
+        return 0
+
+    # Human-readable summary on stderr (still emit structured JSON on stdout).
+    sys.stderr.write(
+        f"\nBLOCK publish: {total} unresolved placeholder(s) in {article_path.name}\n"
+    )
+    for kind, n in counts.items():
+        if n > 0:
+            sys.stderr.write(f"  - {kind}: {n}\n")
+    sys.stderr.write(
+        "\nLikely cause: ran image generation with --no-upload, or upload failed.\n"
+        "Fix: re-run image generation without --no-upload, or replace placeholders\n"
+        "manually before publish.\n"
+    )
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pipeline_state", description=__doc__.splitlines()[1])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -448,6 +505,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("artifact"); add_article(sp)
     sp.add_argument("--key", required=True); sp.add_argument("--value", required=True)
     sp.set_defaults(func=cmd_artifact)
+
+    sp = sub.add_parser(
+        "check-publish-ready",
+        help="Refuse publish when any IMAGE / PROMPT / SCREENSHOT / HARVEST placeholder remains.",
+    )
+    add_article(sp)
+    sp.set_defaults(func=cmd_check_publish_ready)
 
     return p
 
