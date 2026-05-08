@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.5.4] - 2026-05-08 — anchor scope fix (followup to v1.5.3)
+
+v1.5.3 added ANCHOR keyword scrolling but searched the whole
+`document.body`. On GitHub repo pages the DOM order is header →
+file tree → README → sidebar (Topics / About / Releases). If the
+keyword existed anywhere outside the README (sidebar tag, file
+name fragment, topic chip), tree-walker hit it first and scrolled
+there. Screenshots came out showing file lists / commit history
+instead of the README section the article was discussing.
+
+User-visible repro on github.com/vectorize-io/hindsight:
+  - `ANCHOR:TEMPR`        → README has no "TEMPR"; v1.5.3 scrolled to
+                            commit list anyway. Now: doesn't scroll,
+                            falls back to README top.
+  - `ANCHOR:LongMemEval`  → README has "LongMemEval"; v1.5.3 scrolled
+                            to a sidebar/file match. Now: scrolls to
+                            the README's Memory Performance section.
+  - `ANCHOR:memory bank`  → same story, now correct.
+
+Fix: scope the tree walker to a prioritized list of content
+containers: explicit selector → `article#readme` →
+`article.markdown-body` → `.markdown-body` → `.docs-content` etc.
+Bare `<main>` and bare `<article>` are intentionally excluded
+because GitHub wraps both file tree and README in them.
+
+If the keyword exists on the page but only outside the content
+containers, return a `no_scroll` hit so we can warn instead of
+silently misleading. If the keyword isn't on the page at all,
+keep the default screenshot position.
+
+144/144 tests still pass.
+
 ## [1.5.3] - 2026-05-08 — screenshot framing: anchor keywords + 900px cap
 
 User report after the v1.5.2 verification run: screenshots came out at
