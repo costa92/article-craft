@@ -1,5 +1,66 @@
 # Changelog
 
+## [Unreleased] - 2026-05-08 (calibration v1.1)
+
+### Changed — Rule 17 threshold calibration after 4-article pilot
+
+Drove a 4-article pilot (1 Style A neutral PostgreSQL tutorial / 1 Style D
+casual Bun-vs-Node review / 1 Style G opinionated Cursor hot take / 1
+deliberately-AI-flavor LangChain article) and discovered two real-world
+miscalibrations in v1's starting thresholds:
+
+- **`TONE_THRESHOLDS["neutral"]["max_summary_phrases"]: 5 → 3`.** v1's
+  ceiling of 5 let the deliberately-AI-flavor article through with only 2
+  warnings (passed under "warnings don't block" semantics). v1.1's ceiling
+  of 3 catches that article with a clearer signal. Unit tests updated:
+  `test_neutral_allows_3_summary_phrases` (was `test_neutral_allows_5_*`)
+  + new regression test `test_neutral_fails_on_4_summary_phrases_v1_1_regression`.
+
+- **`TONE_THRESHOLDS["casual"]["first_person_per_800w"]: 4 → 3`.** Real
+  casual blogs in the pilot hovered at first-person density 2–3 per 800
+  chars. v1's threshold of 4 was rejecting genuinely casual writing that
+  read fine. Lowered to 3 to match the observed distribution.
+
+### Fixed — Lint replacement preserves trailing punctuation
+
+Casual + opinionated tier lexical rewrites (`在某种意义上`, `可以看到`,
+`本质上`, `值得注意的是`, `综上`, `显然`) used regex `[，,]?` to consume
+the optional trailing comma but the replacement string didn't put it
+back. Result: `"值得注意的是，LangChain..."` → `"这地方注意LangChain..."`
+(missing comma → ungrammatical join).
+
+Switched to named capture group `(?P<sep>[，,]?)` + back-reference
+`\g<sep>` in the replacement. Comma-when-present is preserved; no phantom
+comma added when original had none. Tests: 3 new in
+`tests/test_lint_tone_aware.py` `CommaPreservationTests`.
+
+### Documented — Rule 17 warning-vs-error semantics
+
+Expanded `references/self-check-rules.md` § Rule 17 with explicit
+guidance on what `passed=True` with multiple warnings actually means.
+Rule 17 is **detection-only with three signal levels**; warnings feed
+the review skill's Phase 2 7-dimension AI-trace score, they don't gate
+publication on their own. Calibrated articles can ship with warnings;
+articles drowning in warnings will lose enough 7-dim points to trigger
+revision. v2 may upgrade severe sub-check violations to `error`.
+
+### Validated
+
+- `python3 -m pytest tests/ -q` → 107 passed (103 baseline + 4 new
+  calibration tests)
+- 4-article pilot data preserved at `~/.cache/article-craft/tone-calibration.jsonl`
+  (108 records pre-pilot, 12 added during the cross-tier matrix run)
+- v2 calibration target: re-run on 20 published articles before further tuning
+
+### Fixed (also rolled in)
+
+- `tests/test_lint_article.py::test_main_honors_frontmatter_tone` had a
+  hardcoded path to the now-removed `feat/tone-system` worktree. Replaced
+  with `Path(__file__).resolve().parent.parent` so the test runs from any
+  repo location (worktree or main).
+
+---
+
 ## [Unreleased] - 2026-05-08
 
 ### Added

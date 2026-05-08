@@ -75,16 +75,34 @@ class Rule17SubCheckBTests(TestCase):
 
 
 class Rule17SubCheckCTests(TestCase):
-    def test_neutral_allows_5_summary_phrases(self):
+    def test_neutral_allows_3_summary_phrases(self):
+        # v1.1 calibration: neutral ceiling tightened from 5 → 3.
+        # Body has exactly 3 summary phrases — at the ceiling, no violation.
         body = (
-            ("可以看到这个问题。本质上其实如此。" * 2 + "在某种意义上有道理。")
+            "可以看到这个问题。本质上其实如此。在某种意义上有道理。"
             + "我实测过这个工具。" * 40
         )
         article = _article(body, tone="neutral", style="A")
         result = check_rule_17(article, article.split("\n"))
         sub_c = [v for v in result.violations if "总结腔" in v.text]
-        # Exactly 5 summary hits; under neutral ceiling of 5 → no violations.
+        # Exactly 3 summary hits; at neutral ceiling of 3 → no violations.
         self.assertEqual(sub_c, [])
+
+    def test_neutral_fails_on_4_summary_phrases_v1_1_regression(self):
+        # v1.1 calibration regression test: 4 summary phrases would have passed
+        # under v1's ceiling of 5, but v1.1 tightened to 3. Verify the new
+        # behavior catches what v1 missed.
+        body = (
+            "可以看到这个问题。本质上其实如此。在某种意义上有道理。从这个角度看也行。"
+            + "我实测过这个工具。" * 40
+        )
+        article = _article(body, tone="neutral", style="A")
+        result = check_rule_17(article, article.split("\n"))
+        sub_c = [v for v in result.violations if "总结腔" in v.text]
+        self.assertEqual(len(sub_c), 1)
+        self.assertEqual(sub_c[0].severity, "warning")
+        self.assertIn("4", sub_c[0].text)  # "命中: 4"
+        self.assertIn("3", sub_c[0].text)  # "上限 3"
 
     def test_casual_fails_on_5_summary_phrases(self):
         body = (

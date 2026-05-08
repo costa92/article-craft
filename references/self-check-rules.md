@@ -524,21 +524,51 @@ from writing style):
 
 | # | Metric | neutral | casual | opinionated | Severity |
 |---|--------|---------|--------|-------------|----------|
-| A | First-person markers per 800 chars (我用/踩坑/实测...) | ≥ 2 | ≥ 4 | ≥ 6 | warning |
+| A | First-person markers per 800 chars (我用/踩坑/实测...) | ≥ 2 | ≥ 3 | ≥ 6 | warning |
 | B | Strong-opinion sentences (我赌/真香/别学...) | (skipped) | (info) | ≥ 1 (error) | varies |
-| C | Summary-phrase ceiling (在某种意义上/可以看到/...) | ≤ 5 | ≤ 2 | 0 | warning |
+| C | Summary-phrase ceiling (在某种意义上/可以看到/...) | ≤ 3 | ≤ 2 | 0 | warning |
 | D | Sentence-length coefficient of variation | (skipped) | ≥ 0.30 | ≥ 0.45 | warning |
+
+> **v1.1 calibration (2026-05-08)**: tightened `neutral.max_summary_phrases`
+> from 5 → 3 (caught a synthetic AI-flavor article that was passing v1) and
+> `casual.first_person_per_800w` from 4 → 3 (real casual blogs hover at 2–3,
+> not 4+). See `CHANGELOG.md` for the calibration data trail.
 
 **Skipped if:** body has < 200 Chinese characters (sample too small).
 
 **Skipped sub-check D if:** body has < 10 sentences after filtering
 fragments and outliers.
 
-**Pass criteria:** no `error`-severity violation. `warning`-severity
-violations don't block but contribute to the 7-dimension AI-trace score.
+**Pass criteria (Rule 17 in isolation):** no `error`-severity violation.
+`warning`-severity violations don't block Rule 17 from returning `passed=True`.
 
-**Threshold source:** `scripts/config.py TONE_THRESHOLDS`. Calibrated
-against the first 20 articles' real-world data (see `tests/test_tone_calibration.py` — coming in Task 29).
+**Why warnings don't block Rule 17 alone:**
+
+Rule 17 is **detection-only with three signal levels** by design:
+
+- `error` (only sub-check B at opinionated tone): the article violates a
+  structural requirement of its declared tier. Rule 17 returns
+  `passed=False` and review skill records it as a hard failure.
+- `warning`: the article has a register issue worth flagging but not so
+  severe it would justify rejection on its own. Rule 17 lets it through.
+- `info`: advisory only, no blocking pressure.
+
+The `review` skill aggregates Rule 17's warnings into the 7-dimension
+AI-trace score (Phase 2). An article that ships 3 warnings from Rule 17
+typically loses 4–6 points on the AI-trace dimension, pushing the
+combined 7-dim score below the 55/70 threshold and triggering revision.
+
+**Calibration note:** if you run lint/review on an article and Rule 17
+reports `passed=True` with multiple warnings, that is **not a green
+light to publish**. It means "Rule 17 alone wouldn't reject this, but
+the warnings still feed the 7-dim score." Watch for the combined score.
+A v2 calibration may upgrade severity for *severe* sub-check violations
+(e.g., 2× ceiling overrun on summary phrases) to `error`; pending more
+real-world data.
+
+**Threshold source:** `scripts/config.py TONE_THRESHOLDS`. v1 starting
+values calibrated against a 4-article pilot (2026-05-08). v2 target:
+re-run on 20 published articles before further tuning.
 
 **Auto-fix:** none — Rule 17 is detection only. The `lint` skill's
 tone-aware rewrite map (`TONE_LEXICAL_REWRITES`) addresses register at

@@ -174,5 +174,45 @@ class CliFlagsTests(TestCase):
         self.assertNotEqual(result.returncode, 0)
 
 
+class CommaPreservationTests(TestCase):
+    """v1.1 calibration: casual rewrites preserve trailing comma when present."""
+
+    def test_replacement_preserves_comma_when_present(self):
+        # "可以看到，X" → "能看出，X" (comma preserved, no awkward join)
+        article = _temp_article(
+            "我用过这个工具。可以看到，这个工具非常好用。我实测过的。",
+            frontmatter="writing_style: B\ntone: casual",
+        )
+        auto_fix(article)
+        text = article.read_text(encoding="utf-8")
+        self.assertIn("能看出，", text)
+        self.assertNotIn("可以看到", text)
+
+    def test_replacement_no_comma_when_original_lacks_one(self):
+        # "可以看到X" (no comma) → "能看出X" (still no comma, no spurious comma added)
+        article = _temp_article(
+            "我用过这个工具。可以看到这个工具非常好用。我实测过的。",
+            frontmatter="writing_style: B\ntone: casual",
+        )
+        auto_fix(article)
+        text = article.read_text(encoding="utf-8")
+        self.assertIn("能看出这个工具", text)
+        self.assertNotIn("可以看到", text)
+        # No phantom comma should have been inserted
+        self.assertNotIn("能看出，这个工具", text)
+
+    def test_zhi_de_zhuyi_preserves_comma(self):
+        # The most awkward v1 case: "值得注意的是，LangChain..." should
+        # become "这地方注意，LangChain..." not "这地方注意LangChain..."
+        article = _temp_article(
+            "我用过的。值得注意的是，这个框架的设计理念。我实测的。",
+            frontmatter="writing_style: B\ntone: casual",
+        )
+        auto_fix(article)
+        text = article.read_text(encoding="utf-8")
+        self.assertIn("这地方注意，", text)
+        self.assertNotIn("值得注意的是", text)
+
+
 if __name__ == "__main__":
     main()

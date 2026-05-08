@@ -309,17 +309,21 @@ def resolve_tone(
 
 
 # ─── Tone thresholds (Rule 17 sub-checks) ────────────────────────
-# Calibration: v1 starting values. Will be revisited after 20 articles
-# of real review-cycle data accumulate in tone-calibration.jsonl.
+# v1.1 calibration (2026-05-08): tightened after 4-article pilot.
+#   - neutral.max_summary_phrases: 5 → 3 (caught AI-flavor article that
+#     was passing with 7 summary phrases at warn-only severity)
+#   - casual.first_person_per_800w: 4 → 3 (real casual blogs hover at 2-3,
+#     not 4+; threshold was filtering out genuinely casual writing)
+# v2 calibration target: re-run on 20 published articles and tune further.
 TONE_THRESHOLDS = {
     "neutral": {
         "first_person_per_800w": 2,
         "strong_opinion_min": 0,
-        "max_summary_phrases": 5,
+        "max_summary_phrases": 3,            # was 5 in v1
         "sentence_len_variance_min": 0.0,    # 0 = sub-check D skipped
     },
     "casual": {
-        "first_person_per_800w": 4,
+        "first_person_per_800w": 3,          # was 4 in v1
         "strong_opinion_min": 0,
         "max_summary_phrases": 2,
         "sentence_len_variance_min": 0.30,
@@ -373,15 +377,19 @@ TONE_LEXICAL_REWRITES: Dict[str, List[Any]] = {
     ],
     "casual": [
         # Mid-tier replacements: turn formal connectives into colloquial Chinese.
-        (_re_for_tone.compile(r"在某种意义上[，,]?"),           "其实",       "warning", "rule5"),
-        (_re_for_tone.compile(r"可以看到[，,]?"),               "能看出",     "warning", "rule5"),
-        (_re_for_tone.compile(r"本质上[，,]?"),                 "说穿了",     "warning", "rule5"),
-        (_re_for_tone.compile(r"接下来我们[来]?(看|介绍|分析)"), r"看看\1的",  "warning", "rule5"),
-        (_re_for_tone.compile(r"下面分别(来看|介绍)"),          r"分别\1",    "warning", "rule5"),
-        (_re_for_tone.compile(r"值得注意的是[，,]?"),           "这地方注意", "warning", "rule5"),
-        (_re_for_tone.compile(r"不难发现"),                     "能看出",     "warning", "rule5"),
-        (_re_for_tone.compile(r"基于以上分析"),                 "由此",       "info",    "rule5"),
-        (_re_for_tone.compile(r"综上[，,]?"),                   "总之",       "info",    "rule5"),
+        # Patterns with optional trailing punctuation use a named (?P<sep>...)
+        # capture group + \g<sep> in the replacement so commas/colons are
+        # preserved when present (avoids "值得注意的是LangChain" → "这地方注意LangChain"
+        # awkwardness; v1.1 calibration fix).
+        (_re_for_tone.compile(r"在某种意义上(?P<sep>[，,]?)"),    r"其实\g<sep>",       "warning", "rule5"),
+        (_re_for_tone.compile(r"可以看到(?P<sep>[，,]?)"),        r"能看出\g<sep>",     "warning", "rule5"),
+        (_re_for_tone.compile(r"本质上(?P<sep>[，,]?)"),          r"说穿了\g<sep>",     "warning", "rule5"),
+        (_re_for_tone.compile(r"接下来我们[来]?(看|介绍|分析)"),  r"看看\1的",          "warning", "rule5"),
+        (_re_for_tone.compile(r"下面分别(来看|介绍)"),            r"分别\1",            "warning", "rule5"),
+        (_re_for_tone.compile(r"值得注意的是(?P<sep>[，,]?)"),    r"这地方注意\g<sep>", "warning", "rule5"),
+        (_re_for_tone.compile(r"不难发现"),                       "能看出",             "warning", "rule5"),
+        (_re_for_tone.compile(r"基于以上分析"),                   "由此",               "info",    "rule5"),
+        (_re_for_tone.compile(r"综上(?P<sep>[，,]?)"),            r"总之\g<sep>",       "info",    "rule5"),
         # Paragraph-starter sequence words (was in PARAGRAPH_STARTERS pre-v1.4.18)
         (_re_for_tone.compile(r"^首先[，,:： ]+", _re_for_tone.MULTILINE),  "", "warning", "rule5"),
         (_re_for_tone.compile(r"^其次[，,:： ]+", _re_for_tone.MULTILINE),  "", "warning", "rule5"),
@@ -392,7 +400,7 @@ TONE_LEXICAL_REWRITES: Dict[str, List[Any]] = {
     ],
     "opinionated": [
         # High-tier: stronger replacements + closing-line removal (error severity).
-        (_re_for_tone.compile(r"显然[，,]?"),                   "明摆着",     "warning", "rule5"),
+        (_re_for_tone.compile(r"显然(?P<sep>[，,]?)"),          r"明摆着\g<sep>", "warning", "rule5"),
         (_re_for_tone.compile(r"综上所述"),                     "说白了",     "error",   "rule5"),
         (_re_for_tone.compile(r"总而言之"),                     "一句话",     "error",   "rule5"),
         (_re_for_tone.compile(r"希望本文对你有帮助[^\n]*"),     "",           "error",   "rule3"),

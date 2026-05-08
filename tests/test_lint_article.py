@@ -264,11 +264,13 @@ uv sync
     def test_main_honors_frontmatter_tone(self):
         # Run via subprocess; verify casual replacement fires when frontmatter has tone: casual
         import subprocess
+        from pathlib import Path
         text = "可以看到这个工具非常好用。"
         article_path = self._write_temp_article(text, frontmatter="writing_style: B\ntone: casual")
+        repo_root = Path(__file__).resolve().parent.parent
         subprocess.run(
             ["python3", "-m", "scripts.lint_article", "--article", str(article_path), "--fix"],
-            check=True, cwd="/home/hellotalk/code/article-craft-tone-system",
+            check=True, cwd=str(repo_root),
         )
         result = article_path.read_text(encoding="utf-8")
         self.assertIn("能看出", result)
