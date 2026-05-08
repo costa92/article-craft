@@ -358,24 +358,56 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py rehost \
 
 ---
 
-## 智能选择器推荐
+## 智能选择器推荐 + ANCHOR 主内容范围（v1.5.5+）
 
-脚本根据 URL 自动推荐最佳截图区域：
+脚本按 URL host 自动选最佳"正文容器"。这份 host map（`HOST_MAIN_SELECTORS`）同时驱动两个机制：
 
-| URL 类型 | 推荐选择器 |
-|---------|-----------|
-| GitHub 仓库首页 | `#repo-content-pjax-container` |
-| GitHub README | `.markdown-body` |
-| GitHub Issue/PR | `.Timeline-Message` |
-| Twitter 帖子 | `[data-testid="tweet"]` |
-| Stack Overflow | `#question` |
-| npm 包页面 | `.npm__container` |
-| 文档类页面 | `article, main, .content` |
+1. **`suggest_selector()`** — 截图默认就用第一个候选作为 element selector
+2. **`ANCHOR:` 关键词搜索** — scope 限制在这些容器内，避免命中 sidebar/file-tree/topics
+
+| 平台 | 选择器（按优先级） |
+|---|---|
+| **代码 / 开发** | |
+| GitHub 仓库首页 | `article#readme` / `article.markdown-body` / `.markdown-body` |
+| GitHub Issue/PR | `#repo-content-pjax-container` / `.Timeline-Message`（评论） |
+| Stack Overflow | `#question` / `#answer` / `#mainbar` |
+| npm | `.npm__container` |
+| **欧美社交 / 新闻** | |
+| X/Twitter (status) | `article[data-testid='tweet']` / `[data-testid='tweet']` |
+| Reddit | `shreddit-post`（新版）/ `[data-testid='post-container']` / `.Post`（旧版） |
+| Hacker News | `.fatitem` / `tr.athing` |
+| **中文社交 / 内容** | |
+| 微博 | `.WB_feed_detail` / `[class*='Feed_body']` / `article` |
+| 小红书 | `#noteContainer` / `.note-content` / `.note-detail-content` |
+| 知乎 | `.Post-RichTextContainer`（专栏）/ `.RichContent-inner`（答案）/ `.QuestionRichText`（问题）/ `.AnswerCard` |
+| 微信公众号 | `#js_content` / `.rich_media_content` |
+| **视频** | |
+| YouTube | `#description-inline-expander` / `#meta` / `#primary` |
+| B 站 | `#viewbox_report` / `.video-info-detail` / `.basic-info` |
+| **长文** | |
+| Medium | `article` |
+| arxiv | `#abs` / `.abstract` |
+| **文档站** | `.markdown-body` / `.docs-content` / `.documentation` / `.main-content` |
+
+匹配是 host 子串：`x.com` 会匹配 `x.com` 和 `m.x.com`，`weibo.com` 同理。`www.` 前缀自动剥离。
+
+### 自定义 / 覆盖
+
+不在内置列表里的站点（私有博客、内部平台、新平台）通过 `~/.claude/env.json` 加：
+
+```json
+"screenshot_main_content_selectors": {
+  "myblog.com": [".post-body"],
+  "x.com": ["[data-testid='tweet']"]
+}
+```
+
+User override 命中即短路，所以也可以**覆盖**内置默认（比如某平台改版后内置的 selector 失效）。
 
 未指定选择器时：
-1. 脚本根据 URL 推荐
+1. 脚本按 host 推荐
 2. 推荐后验证元素是否存在
-3. 存在则使用，不存在则回退到全页截图
+3. 存在则使用，不存在则回退到视口截图
 
 ---
 

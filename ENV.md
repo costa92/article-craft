@@ -97,6 +97,31 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 
 如果你用了自己的 CDN（例如 `file.your-domain.com` 或 S3 公开桶），把它加进数组即可。
 
+#### Screenshot 平台主内容识别（v1.5.5+）
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `screenshot_main_content_selectors` | `{host: [selector]}` | `{}` | 按域名追加/覆盖 screenshot_tool 的主内容选择器。键是 host 子串（如 `x.com`、`mp.weixin.qq.com`），值是按优先级排序的 CSS selector 列表。`anchor` 关键词搜索 + `suggest_selector` 都用这份配置。 |
+
+内置已经覆盖 X/Twitter、微博、小红书、知乎、微信公众号、Reddit、HN、Stack Overflow、YouTube、B 站、GitHub、Medium、arxiv、npm 等。**只有当你引用的站点不在内置列表里**（自己的博客、私有平台、新平台等），才需要在 env.json 里加：
+
+```json
+"screenshot_main_content_selectors": {
+  "myblog.com": [".post-body"],
+  "internal.tools": ["#article-content"]
+}
+```
+
+也可以**覆盖**内置默认（比如某平台改版了，你想用更新的 selector）：
+
+```json
+"screenshot_main_content_selectors": {
+  "weibo.com": [".New_Feed_Content_Container"]
+}
+```
+
+匹配是 host 子串匹配，所以 `x.com` 会匹配 `x.com` 和 `m.x.com`，`weibo.com` 会匹配 `weibo.com` 和 `m.weibo.com`。
+
 #### 超时配置
 
 | 字段 | 类型 | 默认值（秒） | 说明 |

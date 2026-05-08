@@ -89,3 +89,103 @@ def test_screenshot_subcommand_max_height_default_in_argparse(mod):
         f"(screenshot + batch subcommands), found {occurrences}. "
         "Did you change one but forget the other?"
     )
+
+
+# ─── Per-host main-content selector tests ──────────────────────────────────
+# These guard the v1.5.5 multi-platform expansion. Anchor scope and
+# suggest_selector both consume HOST_MAIN_SELECTORS via
+# main_content_selectors_for_host(); regressions show up here as a
+# "selector list shrunk for host X" diff, which is what we want.
+
+
+@pytest.mark.parametrize("url, must_contain", [
+    # X / Twitter — tweet container
+    ("https://x.com/user/status/123",          "[data-testid='tweet']"),
+    ("https://twitter.com/user/status/456",    "[data-testid='tweet']"),
+    # Reddit — modern + legacy
+    ("https://www.reddit.com/r/python/comments/xyz/foo/", "shreddit-post"),
+    # HN — fatitem
+    ("https://news.ycombinator.com/item?id=1234567",      ".fatitem"),
+    # Stack Overflow — question container
+    ("https://stackoverflow.com/questions/123/foo",       "#question"),
+    # Chinese platforms
+    ("https://m.weibo.cn/status/1234567890",              ".WB_feed_detail"),
+    ("https://weibo.com/u/123",                           ".WB_feed_detail"),
+    ("https://www.xiaohongshu.com/explore/abc123",        "#noteContainer"),
+    ("https://xhslink.com/abc",                           "#noteContainer"),
+    ("https://www.zhihu.com/question/123/answer/456",     ".RichContent-inner"),
+    ("https://mp.weixin.qq.com/s/abc123",                 "#js_content"),
+    # Video
+    ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",       "#description-inline-expander"),
+    ("https://www.bilibili.com/video/BV1xx411c7XW",       "#viewbox_report"),
+    # Long-form
+    ("https://medium.com/@author/post-title",             "article"),
+    ("https://arxiv.org/abs/2512.12818",                  "#abs"),
+])
+def test_host_main_selectors_recognize_platform(mod, url, must_contain):
+    """Each known host returns a non-empty selector list including the
+    canonical content container."""
+    sels = mod.main_content_selectors_for_host(url)
+    assert sels, f"No selectors returned for {url}"
+    assert must_contain in sels, (
+        f"Expected '{must_contain}' in selectors for {url}, got {sels}"
+    )
+
+
+def test_host_main_selectors_unknown_host(mod):
+    """Unknown hosts return an empty list — caller falls back to GENERIC."""
+    assert mod.main_content_selectors_for_host("https://random-blog.example.com/post") == []
+
+
+def test_host_main_selectors_strips_www(mod):
+    """www. prefix doesn't break host matching."""
+    sels_www = mod.main_content_selectors_for_host("https://www.x.com/u/status/1")
+    sels_bare = mod.main_content_selectors_for_host("https://x.com/u/status/1")
+    assert sels_www == sels_bare
+    assert sels_www, "www.x.com should match the x.com entry"
+
+
+def test_user_overrides_win_over_builtin(mod, monkeypatch, tmp_path):
+    """env.json `screenshot_main_content_selectors` overrides the built-in
+    HOST_MAIN_SELECTORS for matching hosts."""
+    # Patch the override-resolver to return a custom dict.
+    monkeypatch.setattr(
+        mod, "_user_main_content_overrides",
+        lambda: {"x.com": [".my-custom-tweet"]},
+    )
+    sels = mod.main_content_selectors_for_host("https://x.com/u/status/1")
+    assert sels == [".my-custom-tweet"], (
+        "User override should win over built-in HOST_MAIN_SELECTORS"
+    )
+
+
+def test_user_overrides_for_new_host(mod, monkeypatch):
+    """Users can register hosts that aren't in HOST_MAIN_SELECTORS."""
+    monkeypatch.setattr(
+        mod, "_user_main_content_overrides",
+        lambda: {"my-blog.example.com": [".post-body"]},
+    )
+    sels = mod.main_content_selectors_for_host("https://my-blog.example.com/2026/post")
+    assert sels == [".post-body"]
+
+
+def test_suggest_selector_uses_host_map_for_video(mod):
+    """Refactor sanity: suggest_selector() should now produce a non-empty
+    selector for YouTube even though there's no path-sensitive special-case
+    for it. The host map is the single source of truth."""
+    out = mod.suggest_selector("https://www.youtube.com/watch?v=foo")
+    assert "#description-inline-expander" in out
+
+
+def test_suggest_selector_zhihu_answer(mod):
+    """Same idea for zhihu — host map drives behavior."""
+    out = mod.suggest_selector("https://www.zhihu.com/question/123/answer/456")
+    assert ".RichContent-inner" in out
+
+
+def test_generic_content_selectors_excludes_bare_main_and_article(mod):
+    """v1.5.4 lesson: bare `main` and bare `article` are layout containers
+    on GitHub etc. — they must not be in GENERIC_CONTENT_SELECTORS or
+    anchor will scroll to file trees again."""
+    assert "main" not in mod.GENERIC_CONTENT_SELECTORS
+    assert "article" not in mod.GENERIC_CONTENT_SELECTORS

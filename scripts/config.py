@@ -323,6 +323,21 @@ VERIFY_CDN_WHITELIST = _user_config.get(
     ["cdn.jsdelivr.net", "mmbiz.qpic.cn", "pbs.twimg.com"],
 )
 
+# Per-host main content selectors used by screenshot_tool for both
+# `suggest_selector` (auto element-screenshot target) and anchor scope
+# (constrains where ANCHOR keyword search runs). Users can override or
+# extend per host in env.json:
+#
+#   "screenshot_main_content_selectors": {
+#     "myblog.com": [".post-body"],
+#     "x.com":      ["[data-testid='tweet']"]
+#   }
+#
+# Returned dict shape: { "<host_substring>": [ "<css_selector>", ... ] }
+SCREENSHOT_MAIN_CONTENT_OVERRIDES: Dict[str, List[str]] = (
+    _user_config.get("screenshot_main_content_selectors", {}) or {}
+)
+
 # Image generation defaults (read model from env.json)
 IMAGE_DEFAULTS = {
     "resolution": "2K",  # 1K, 2K, or 4K

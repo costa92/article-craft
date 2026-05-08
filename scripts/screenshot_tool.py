@@ -25,6 +25,7 @@ import hashlib
 import tempfile
 import time
 from pathlib import Path
+from typing import Dict, List
 from urllib.parse import urlparse
 
 # 延迟导入，方便快速失败时显示友好错误
@@ -240,6 +241,104 @@ def is_404_content(page_text: str, url: str) -> bool:
     return False
 
 
+# ─── Per-host 主内容容器选择器 ───────────────────────────────────────────────
+# 该映射既给 suggest_selector 用（取第一个候选作为自动 selector），也给
+# anchor scope 用（限制关键词搜索范围，避免 sidebar/file-tree 命中）。
+# 加新平台只改这一处即可两边受益。env.json 的
+# `screenshot_main_content_selectors` 字段允许用户按域名追加/覆盖。
+#
+# 选择器顺序：从最专属（带 ID/data-attr）到最宽泛。GitHub user/repo 之
+# 类的"路径敏感"逻辑还在 suggest_selector 里单独处理。
+HOST_MAIN_SELECTORS: Dict[str, List[str]] = {
+    # ─── 代码 / 开发 ───────────────────────────────
+    "github.com":          ["article#readme", "article.markdown-body", ".markdown-body"],
+    "stackoverflow.com":   ["#question", "#answer", "#mainbar"],
+    "npmjs.com":           [".npm__container"],
+
+    # ─── 欧美社交 / 新闻 ───────────────────────────
+    "x.com":               ["article[data-testid='tweet']", "[data-testid='tweet']"],
+    "twitter.com":         ["article[data-testid='tweet']", "[data-testid='tweet']"],
+    "reddit.com":          ["shreddit-post", "[data-testid='post-container']", ".Post"],
+    "news.ycombinator.com":[".fatitem", "tr.athing"],
+
+    # ─── 中文社交 / 内容 ──────────────────────────
+    "weibo.com":           [".WB_feed_detail", "[class*='Feed_body']", "article"],
+    "weibo.cn":            [".WB_feed_detail", "article"],
+    "xiaohongshu.com":     ["#noteContainer", ".note-content", ".note-detail-content"],
+    "xhslink.com":         ["#noteContainer", ".note-content"],
+    "zhihu.com":           [
+        ".Post-RichTextContainer",   # 专栏文章
+        ".RichContent-inner",        # 答案
+        ".QuestionRichText",         # 问题描述
+        ".AnswerCard",
+    ],
+    "mp.weixin.qq.com":    ["#js_content", ".rich_media_content"],
+
+    # ─── 视频 ────────────────────────────────────
+    "youtube.com":         ["#description-inline-expander", "#meta", "#primary"],
+    "bilibili.com":        ["#viewbox_report", ".video-info-detail", ".basic-info"],
+
+    # ─── 长文 ────────────────────────────────────
+    "medium.com":          ["article"],
+    "arxiv.org":           ["#abs", ".abstract"],
+}
+
+
+# 通用 fallback：当 host 不匹配且 URL 不像专属平台时使用。anchor scope
+# 永远把这个列表加到候选末尾。**故意不放裸 main / 裸 article**：
+# GitHub 等站把它们当 layout 容器（含文件树/sidebar），命中后 anchor
+# 会跑到无关位置（v1.5.4 的 bug 历史）。
+GENERIC_CONTENT_SELECTORS: List[str] = [
+    "article#readme",
+    "article.markdown-body",
+    ".markdown-body",
+    ".docs-content",
+    ".documentation",
+    ".main-content",
+    "[role='main'] article",
+    "article[itemprop='mainContentOfPage']",
+]
+
+
+def _user_main_content_overrides() -> Dict[str, List[str]]:
+    """Read env.json `screenshot_main_content_selectors` per-host overrides."""
+    try:
+        from config import SCREENSHOT_MAIN_CONTENT_OVERRIDES
+        return SCREENSHOT_MAIN_CONTENT_OVERRIDES or {}
+    except ImportError:
+        return {}
+
+
+def main_content_selectors_for_host(url: str) -> List[str]:
+    """Return the prioritized list of main-content CSS selectors for the
+    URL's host. User overrides win; otherwise fall back to HOST_MAIN_SELECTORS.
+    Returns empty list when the host isn't recognized — callers should
+    append GENERIC_CONTENT_SELECTORS as a final fallback.
+    """
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return []
+    if not host:
+        return []
+    # Strip leading "www."
+    if host.startswith("www."):
+        host = host[4:]
+
+    overrides = _user_main_content_overrides()
+    # User override matches by substring → short-circuit.
+    for key, sels in overrides.items():
+        if key.lower() in host:
+            return list(sels)
+
+    # Built-in match by substring (e.g. "weibo.com" matches "m.weibo.com").
+    for key, sels in HOST_MAIN_SELECTORS.items():
+        if key in host:
+            return list(sels)
+
+    return []
+
+
 def suggest_selector(url: str, page_title: str = "", content_type: str = "") -> str:
     """
     根据 URL 和页面特征推荐最佳截图元素选择器。
@@ -247,18 +346,18 @@ def suggest_selector(url: str, page_title: str = "", content_type: str = "") -> 
 
     返回空字符串时，capture_screenshot 会改为截取视口内容（非全页），
     避免因无选择器而产生冗长滚动截图。
+
+    路径敏感的逻辑（如 GitHub /issues/、/blob/）仍在这里特判；
+    通用按域名匹配的部分走 main_content_selectors_for_host()。
     """
     url_lower = url.lower()
 
-    # GitHub
+    # GitHub 路径敏感分支：根据路径段决定截 README / Issue / Code
     if "github.com" in url_lower:
         parsed = urlparse(url)
         path_parts = [p for p in parsed.path.strip("/").split("/") if p]
 
-        if len(path_parts) == 2:  # user/repo — 只截 README 区域，不含侧边栏
-            # Try in order: the canonical anchor, the article wrapper,
-            # the markdown body directly. GitHub renders README below the
-            # file tree so the first match is what we want.
+        if len(path_parts) == 2:  # user/repo
             return "article#readme, #readme, article.markdown-body, .markdown-body" if not content_type else ""
         elif len(path_parts) >= 3 and path_parts[2] in ("issues", "pulls"):
             return ".Timeline-Message" if content_type == "comments" else "#repo-content-pjax-container"
@@ -268,22 +367,21 @@ def suggest_selector(url: str, page_title: str = "", content_type: str = "") -> 
             return ".highlight"  # 代码文件页
         return ""
 
-    # Twitter/X
+    # Twitter/X — 只在 status 页面给 selector，profile 页面留空
     if "twitter.com" in url_lower or "x.com" in url_lower:
         if "status" in url_lower:
             return '[data-testid="tweet"]' if not content_type else ""
         return ""
 
-    # Stack Overflow
-    if "stackoverflow.com" in url_lower:
-        return "#question" if not content_type else ""
+    if content_type:
+        return ""
 
-    # npm
-    if "npmjs.com" in url_lower:
-        return ".npm__container" if not content_type else ""
+    # 通用按域名匹配 — 用 host map 的第一个候选
+    host_sels = main_content_selectors_for_host(url)
+    if host_sels:
+        return ", ".join(host_sels)
 
-    # 文档类 — 扩展匹配：URL 含 docs./documentation//docs//readme/wiki，
-    # 或域名看起来像文档站（以 official、docs、guide、ref 结尾的子路径）
+    # 文档类 — 扩展匹配：URL 路径含 docs./documentation//docs//readme/wiki
     doc_patterns = [
         "docs.", "documentation", "/docs/", "/guide/", "/reference/",
         "/getting-started", "/quickstart", "/tutorial", "/manual",
@@ -291,7 +389,7 @@ def suggest_selector(url: str, page_title: str = "", content_type: str = "") -> 
     ]
     for pattern in doc_patterns:
         if pattern in url_lower:
-            return "article, main, .content, .documentation, .docs-content, .main-content"
+            return ", ".join(GENERIC_CONTENT_SELECTORS)
 
     # 默认：返回空字符串 → capture_screenshot 改为视口截图（非全页）
     return ""
@@ -635,24 +733,21 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
             # → body 全局，且只在前两层命中时才 scroll，全局命中只打
             # warning，不动 scroll 位置（避免误导）。
             if article_keywords:
-                # 主内容候选选择器，按优先级从严到宽。selector 已经是调用方
-                # 显式传入或上一步 suggest_selector 给的——优先用它。
-                # 故意不放裸 `main` 和裸 `article`：GitHub 用 `<main>` 包
-                # 文件树+README，命中文件名会让截图截到无关区域。所有候选
-                # 都必须能"明确标识为正文渲染容器"。
-                scope_candidates = []
+                # 主内容候选选择器，按优先级从严到宽。selector 已经是
+                # 调用方显式传入或上一步 suggest_selector 给的——优先用它。
+                # 然后按 URL host 加该平台的专属 selector（X/微博/小红书/
+                # 知乎/微信/Reddit/HN/SO/YouTube/B 站等），再加通用 fallback。
+                # 故意不放裸 `main` 和裸 `article`：GitHub 等把它们当
+                # layout 容器（含文件树+sidebar），命中后 anchor 会跑偏。
+                scope_candidates: List[str] = []
                 if selector:
                     scope_candidates.append(selector)
-                scope_candidates.extend([
-                    "article#readme",                     # GitHub README
-                    "article.markdown-body",              # GitHub generic
-                    ".markdown-body",                     # generic markdown render
-                    ".docs-content",                      # docs sites
-                    ".documentation",
-                    ".main-content",
-                    "[role='main'] article",
-                    "article[itemprop='mainContentOfPage']",
-                ])
+                scope_candidates.extend(main_content_selectors_for_host(url))
+                scope_candidates.extend(GENERIC_CONTENT_SELECTORS)
+                # Dedup while preserving order
+                seen = set()
+                scope_candidates = [s for s in scope_candidates
+                                     if not (s in seen or seen.add(s))]
 
                 kw_hit = page.evaluate(
                     """([kws, scopes]) => {
