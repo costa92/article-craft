@@ -23,7 +23,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Union
 from dataclasses import dataclass, field, asdict
-from scripts.config import TONE_THRESHOLDS, resolve_tone, STRONG_OPINION_PATTERNS
+
+# Make this script work three ways:
+#   1. Direct script:    python3 scripts/review_selfcheck.py article.md
+#   2. Module from root: python3 -m scripts.review_selfcheck article.md
+#   3. Pytest import:    from scripts.review_selfcheck import check_rule_17
+# Path 1 broke historically because the import was `from scripts.config`,
+# which requires the repo root on sys.path. Adding the script's own
+# directory makes `from config import ...` work in all three modes.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
+from config import TONE_THRESHOLDS, resolve_tone, STRONG_OPINION_PATTERNS
 
 # ─── Rule Definitions ───────────────────────────────────────────────
 
