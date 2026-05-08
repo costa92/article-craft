@@ -1,5 +1,70 @@
 # Changelog
 
+## [1.5.2] - 2026-05-08 — orchestrator pipeline fixes from real-world run
+
+After a full `/article-craft:orchestrator` run on a real article
+yesterday (3025-char Hindsight intro), four pain points surfaced.
+This release closes all four:
+
+### Fix — `screenshot_tool.upload_to_cdn()` parsed picgo wrong
+
+`upload_to_cdn()` assumed picgo emitted JSON, but picgo's actual stdout
+is multi-line `[PicGo INFO]` log lines + a final bare URL. The old
+parser called `json.loads(stdout)` (always failed) then checked
+`stdout.startswith("http")` on the multi-line blob (also always
+failed) and returned the local path — so callers silently treated
+every screenshot as "upload failed". During the Hindsight run, both
+screenshots had to be uploaded by hand and the CDN URL pasted into
+the article manually.
+
+The matching parser in `generate_and_upload_images.upload_to_picgo()`
+was already doing this right (line-by-line scan, JSON fallback).
+Aligned `upload_to_cdn` to the same strategy. Also promoted
+`import shutil` and `import subprocess` to the top of
+`screenshot_tool.py` so the function is unit-testable.
+
+Adds `tests/test_screenshot_upload.py` (6 cases): multiline log +
+bare URL, JSON dict / list output, no URL → local path, no picgo on
+PATH, nonzero exit.
+
+### Fix — `review_selfcheck.py` couldn't be invoked as a direct script
+
+`from scripts.config import ...` (package-style import) at the top
+of the file required the repo root to be on `sys.path`, so
+`python3 scripts/review_selfcheck.py article.md` always failed with
+`ModuleNotFoundError: No module named 'scripts'`. The Usage docstring
+explicitly advertised that invocation, and the review skill kept
+working around it with `cd` + `python3 -m scripts.review_selfcheck`.
+
+Now the file inserts its own directory into `sys.path` before the
+import, so all three modes work:
+1. `python3 scripts/review_selfcheck.py article.md`
+2. `python3 -m scripts.review_selfcheck article.md`
+3. `from scripts.review_selfcheck import check_rule_17` (pytest)
+
+### Feat — `write` skill self-checks word count before save
+
+The Hindsight run wrote ~2000 chars on first pass against a
+3000-4000 target, then needed 5 rounds of orchestrator-driven
+`Update` calls to expand. New **Step 5.5: Word Count Self-Check**
+in `skills/write/SKILL.md` does the count + targeted expansion
+inside the write skill, with explicit guidance against padding via
+restated transitions. Loops up to 2 rounds; if still under min,
+saves and surfaces the shortfall in the handoff output instead of
+spinning forever.
+
+### Feat — frontmatter `author` field, resolved at write time
+
+`share_card` auto-skipped on the Hindsight article with "missing:
+author" because `write`'s frontmatter template literally never
+emitted the field. New `config.author_name()` resolves
+`env.json user_name > git config user.name > "Anonymous"`. The
+write template now includes `author:` and shows how to fill it
+inline. `env.example.json` and `ENV.md` document the new
+`user_name` env field.
+
+139/139 tests pass (+7 new: 6 screenshot, 1 author).
+
 ## [1.5.1] - 2026-05-08 — hardcoding audit + publish preflight
 
 ### Refactor — Eliminate hardcoded paths and brand strings
