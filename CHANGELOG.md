@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.5.5] - 2026-05-08 — multi-platform main-content selectors
+
+User report after v1.5.4: anchor + auto-suggest still only had useful
+entries for GitHub. On X / 微博 / 小红书 / 知乎 / 微信公众号 /
+Reddit / HN / YouTube / B 站, screenshots fell back to viewport
+mode, anchor scope fell through to the generic markdown-body family
+(nothing matched), then to body-global (sidebar/header noise).
+
+### Refactor
+
+Pull all platform-specific selector knowledge into a single
+`HOST_MAIN_SELECTORS` dict consumed by both `suggest_selector()`
+and `capture_screenshot`'s anchor scope. Adding a new platform is
+one entry; both code paths benefit immediately.
+
+### New built-in coverage
+
+| Category | Hosts |
+|---|---|
+| Code/dev | github.com, stackoverflow.com, npmjs.com |
+| Western UGC | x.com + twitter.com, reddit.com, news.ycombinator.com |
+| Chinese UGC | weibo.com, xiaohongshu.com + xhslink.com, zhihu.com, mp.weixin.qq.com |
+| Video | youtube.com, bilibili.com |
+| Long-form | medium.com, arxiv.org |
+| Docs (generic) | `.markdown-body` / `.docs-content` / `.documentation` / `.main-content` |
+
+`www.` prefix is stripped before matching; host substring match means
+`x.com` covers `m.x.com` too.
+
+### Configuration
+
+env.json `screenshot_main_content_selectors` lets users add private
+platforms or override built-ins when sites redesign:
+
+```json
+"screenshot_main_content_selectors": {
+  "myblog.com": [".post-body"],
+  "weibo.com":  [".New_Feed_Content_Container"]
+}
+```
+
+User entries win over built-ins via host substring match.
+
+### Tests
+
+`tests/test_screenshot_crop.py` adds 22 cases: 14 per-platform
+recognition tests (parameterized), www. stripping, unknown-host
+empty-list, user-override-wins-over-builtin, user-override-for-new-host,
+suggest_selector reading host map for video/zhihu, and the v1.5.4
+guardrail (`main`/`article` must NOT be in GENERIC_CONTENT_SELECTORS).
+
+166/166 tests pass.
+
 ## [1.5.4] - 2026-05-08 — anchor scope fix (followup to v1.5.3)
 
 v1.5.3 added ANCHOR keyword scrolling but searched the whole
