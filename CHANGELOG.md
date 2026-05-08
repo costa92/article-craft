@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.5.6] - 2026-05-08 — robustness fixes from v1.5.5 e2e testing
+
+End-to-end testing v1.5.5 across 14 platforms surfaced two robustness
+issues that the unit tests didn't catch.
+
+### Fix — selector candidate height floor: 400 → 100
+
+`capture_screenshot` rejected any `suggest_selector` candidate whose
+bounding box was <400px tall. The threshold was originally meant to
+filter out tiny nav icons, but it also discarded legitimately short
+main-content containers:
+  - arxiv `#abs` is ~375px — silently dropped, fell through to
+    full-page (1280×wide × very long).
+  - Single tweets, short Reddit threads, etc. — same fate.
+
+Lowered to 100px (matches `MIN_CONTENT_HEIGHT_PX`). E2E confirmed:
+arxiv now produces a clean 1021×375 element screenshot.
+
+### Fix — element-timeout fallback to viewport
+
+`el.screenshot()` raises `PlaywrightError` when the element matches
+but isn't stable/visible — common on lazy-loaded SPAs. YouTube hit
+this consistently: `#meta` matched but mounted later, screenshot
+timed out after 15s, entire run failed.
+
+Wrapped the call in try/except: on timeout, fall back to
+`page.screenshot(full_page=False)` (viewport) plus a warning. User
+gets a working screenshot tagged `selector_used: "X (timeout →
+viewport)"` instead of the whole pipeline failing.
+
+E2E confirmed: YouTube watch page now produces a 1280×800 viewport
+shot with the warning surfaced.
+
+### Out of scope
+
+Hard-network-blocked / aggressive-anti-bot platforms (HN via HTTPS,
+Reddit / 知乎 / 微博 / 小红书 from headless) still need cookie
+support to work end-to-end — that's a much bigger fix involving
+`setup-browser-cookies` integration and is intentionally deferred.
+
+166/166 tests pass.
+
 ## [1.5.5] - 2026-05-08 — multi-platform main-content selectors
 
 User report after v1.5.4: anchor + auto-suggest still only had useful
