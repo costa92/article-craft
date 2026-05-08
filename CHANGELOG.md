@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.5.3] - 2026-05-08 — screenshot framing: anchor keywords + 900px cap
+
+User report after the v1.5.2 verification run: screenshots came out at
+1400px tall and didn't reflect what the surrounding article paragraph
+was actually discussing. Two-part fix.
+
+### Fix — Default screenshot height capped at 900px
+
+`screenshot_tool.upload_to_cdn` already worked from v1.5.2, but
+`capture_screenshot` had no height cap on element screenshots — a
+GitHub README selector matched the entire 1400px+ `article#readme`
+container and that's what got returned. `--max-height` defaulted to
+`0` (no cap), so the only thing keeping screenshots reasonable was
+manual user intervention.
+
+`--max-height` now defaults to **900px** (≈ one viewport). The
+`crop_to_max_height` call moved from `batch_capture`'s outer loop
+into `capture_screenshot` itself, so CLI / batch / programmatic
+callers all benefit equally. Verified: same GitHub repo URL that
+produced 756×1400 yesterday now produces 445×900.
+
+`--max-height 0` still disables the cap if needed.
+
+### Feat — `ANCHOR:` placeholder syntax wires up keyword scrolling
+
+The `article_keywords` parameter on `capture_screenshot` had been
+declared in the signature for many releases but never actually used
+inside the function — the local variable was set then ignored. Now
+it drives a `page.evaluate` walk that scrolls the page to the first
+text node containing any of the keywords (skipping elements <50px
+tall so we don't anchor on sidebar nav links), then takes a viewport
+screenshot at that scroll position. The result: the image shows the
+part of the page that's relevant to the surrounding article
+paragraph, not the page header.
+
+New placeholder syntax (documented in both `skills/screenshot/SKILL.md`
+and `skills/write/SKILL.md`):
+
+```
+<!-- SCREENSHOT: URL ANCHOR:kw1,kw2 -->     # scroll to first kw
+<!-- SCREENSHOT: URL FOLD -->               # ≤ viewport height (800)
+<!-- SCREENSHOT: URL MAX_HEIGHT:1200 -->    # custom height cap
+```
+
+CLI gains `--fold` (== `--max-height 800`). `--keywords` already
+existed; now it actually does something.
+
+The `write` skill is told to default-include `ANCHOR:` when emitting
+a SCREENSHOT placeholder — at write time the skill already knows what
+each section is about, so picking 1-3 keywords from the surrounding
+paragraph is essentially free.
+
+### E2E verification (`https://github.com/vectorize-io/hindsight`)
+
+| Mode | Output | What it proves |
+|---|---|---|
+| no flags | 445×900 | Default cap kicks in |
+| `--keywords TEMPR` | 1280×800, `anchor_kw_used: "tempr"` | Scrolled to TEMPR section + screenshot is viewport-sized at that scroll |
+| `--fold` | 642×800 | Viewport-only screenshot |
+
+144/144 tests pass (+5 new in `tests/test_screenshot_crop.py`).
+
 ## [1.5.2] - 2026-05-08 — orchestrator pipeline fixes from real-world run
 
 After a full `/article-craft:orchestrator` run on a real article
