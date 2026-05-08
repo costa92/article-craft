@@ -7,6 +7,7 @@
 import os
 import re
 import json
+import tempfile
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -309,7 +310,7 @@ if __name__ == "__main__":
     print(f"Recent prompts: {pm.get_recent_prompts(2)}")
 
     print("\nTesting SmartDirectoryMatcher...")
-    dm = SmartDirectoryMatcher("/tmp/test-kb")
+    dm = SmartDirectoryMatcher(os.path.join(tempfile.gettempdir(), "test-kb"))
     dm.learn_feedback("Docker 入门教程", "02-技术/基础设施/Docker", is_correct=True)
     dm.learn_feedback("Claude Code 高级用法", "02-技术/AI-生态/Claude-Code", is_correct=True)
     print(f"Matched for 'Docker': {dm.match_directory('Docker 入门教程')}")

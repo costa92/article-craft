@@ -21,7 +21,12 @@ class VerificationCache:
     content. The cache is automatically cleaned up when the session ends.
     """
 
-    def __init__(self, cache_dir: str = "/tmp/article-gen-cache"):
+    def __init__(self, cache_dir: Optional[str] = None):
+        # Session-only scratch dir; uses the OS temp dir so it works on
+        # Linux/macOS/Windows uniformly (was hardcoded to /tmp/ before).
+        # Distinct from cache_dir() above, which is the persistent cache.
+        if cache_dir is None:
+            cache_dir = os.path.join(tempfile.gettempdir(), "article-gen-cache")
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
 

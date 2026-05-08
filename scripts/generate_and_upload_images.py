@@ -9,6 +9,7 @@ import sys
 import re
 import json
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -2242,7 +2243,7 @@ def main():
         # 去重，保持顺序
         probe_chain = list(dict.fromkeys(probe_chain))
         probe_timeout = 120  # 外层 subprocess 超时（代理环境 SSL 握手+生成需要较长时间）
-        probe_output = "/tmp/gemini_probe.jpg"
+        probe_output = os.path.join(tempfile.gettempdir(), "gemini_probe.jpg")
 
         print(f"🔍 探测可用 Gemini 模型（超时 {probe_timeout}s/模型）...")
         for i, model_name in enumerate(probe_chain, 1):

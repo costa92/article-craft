@@ -17,14 +17,29 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import time
 import re
 from pathlib import Path
 
-CACHE_FILE = os.environ.get(
-    "VERIFY_CACHE_FILE",
-    os.path.join(os.path.expanduser("~"), ".cache", "article-craft", "verify-cache.json")
-)
+
+def _default_cache_file() -> str:
+    """Resolve the verify-cache file path through config.cache_dir() when
+    available, falling back to a ~/.cache/article-craft/... path otherwise.
+    Either way ARTICLE_CRAFT_CACHE_DIR is honored."""
+    try:
+        from config import cache_dir
+        return str(cache_dir() / "verify-cache.json")
+    except ImportError:
+        override = os.environ.get("ARTICLE_CRAFT_CACHE_DIR")
+        base = os.path.expanduser(override) if override else os.path.join(
+            os.path.expanduser("~"), ".cache", "article-craft"
+        )
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, "verify-cache.json")
+
+
+CACHE_FILE = os.environ.get("VERIFY_CACHE_FILE", _default_cache_file())
 CACHE_TTL = 3600  # 1 hour
 
 
@@ -157,7 +172,7 @@ def main():
         return
 
     # No args: read from previous curl output saved by verify skill
-    tmp_file = "/tmp/article-craft-verify-tmp.txt"
+    tmp_file = os.path.join(tempfile.gettempdir(), "article-craft-verify-tmp.txt")
     if os.path.exists(tmp_file):
         with open(tmp_file) as f:
             content = f.read()

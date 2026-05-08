@@ -85,7 +85,19 @@ def sanitize_filename(url: str) -> str:
     return f"{name}-{hash_suffix}"
 
 
-VERIFY_CACHE_FILE = os.path.join(os.path.expanduser("~"), ".cache", "article-craft", "verify-cache.json")
+# Cache file path: respects ARTICLE_CRAFT_CACHE_DIR env var via config.cache_dir().
+# Falls back to ~/.cache/article-craft/ when config.py is not importable
+# (e.g. when this script is run outside the plugin layout).
+try:
+    from config import cache_dir as _cache_dir
+    VERIFY_CACHE_FILE = str(_cache_dir() / "verify-cache.json")
+except ImportError:
+    _override = os.environ.get("ARTICLE_CRAFT_CACHE_DIR")
+    _base = os.path.expanduser(_override) if _override else os.path.join(
+        os.path.expanduser("~"), ".cache", "article-craft"
+    )
+    os.makedirs(_base, exist_ok=True)
+    VERIFY_CACHE_FILE = os.path.join(_base, "verify-cache.json")
 CACHE_TTL_SECONDS = 3600  # 缓存有效期 1 小时
 
 
@@ -106,7 +118,7 @@ def check_url_status(url: str, timeout: int = 10,
     用 HEAD 请求检查 URL 状态，跟踪重定向，返回诊断信息。
 
     优先读取 verify skill 缓存，避免重复请求。
-    缓存路径: /tmp/article-craft-verify-cache.json
+    缓存路径: ~/.cache/article-craft/verify-cache.json（或 $ARTICLE_CRAFT_CACHE_DIR）
     缓存 TTL: 1 小时
 
     Returns:
