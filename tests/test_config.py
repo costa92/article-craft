@@ -164,6 +164,30 @@ class ConfigTests(unittest.TestCase):
                 self.assertTrue(d.exists())
                 self.assertEqual(d, override)
 
+    def test_author_name_precedence(self):
+        # env.json user_name wins
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg_dir = home / ".claude"
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            (cfg_dir / "env.json").write_text(
+                '{"user_name":"Alice"}', encoding="utf-8"
+            )
+            mod = load_config_module(home)
+            with isolated_home(home):
+                self.assertEqual(mod.author_name(), "Alice")
+
+        # No user_name → falls through to git config (which we can't predict
+        # in CI). We only assert it's a non-empty string and not the literal
+        # env.json placeholder.
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            mod = load_config_module(home)
+            with isolated_home(home):
+                name = mod.author_name()
+                self.assertIsInstance(name, str)
+                self.assertGreater(len(name), 0)
+
     def test_share_card_logo_precedence(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)

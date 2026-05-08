@@ -24,6 +24,7 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
   "gemini_api_key": "YOUR_GEMINI_API_KEY",
   "gemini_image_model": "gemini-3-pro-image-preview",
   "gemini_text_model": "gemini-2.0-flash",
+  "user_name": "",
   "share_card_logo": "",
   "verify_cdn_whitelist": [
     "cdn.jsdelivr.net",
@@ -75,6 +76,12 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 | `gemini_text_model` | string | `gemini-2.0-flash` | `nanobanana.py --enhance` 用于把短提示词扩写成详细图像生成 Prompt 的文本模型 |
 
 仅在显式调用 `nanobanana.py --enhance` 时生效，主流水线（`/article-craft:images`）不依赖。
+
+#### 作者署名
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `user_name` | string | `""`（空） | 文章 frontmatter 的 `author` 字段在 write 阶段从 `config.author_name()` 取值；空时回落到 `git config user.name`，再回落到 `"Anonymous"`。设这个字段就能让 share_card 等下游 skill 不再因为 `author` 缺失而 auto-skip。 |
 
 #### Share Card 品牌 logo
 

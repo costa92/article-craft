@@ -212,6 +212,33 @@ def share_card_logo() -> str:
     except Exception:
         return "article-craft"
 
+
+def author_name() -> str:
+    """Resolve the article author's display name.
+
+    Precedence: env.json ``user_name`` > ``git config user.name`` >
+    ``"Anonymous"``. Used by the write skill to populate the ``author``
+    field in YAML frontmatter so downstream skills (share_card, publish)
+    have a non-empty value to work with.
+    """
+    configured = _user_config.get("user_name", "")
+    if configured:
+        return configured
+
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "config", "--get", "user.name"],
+            capture_output=True, text=True, timeout=2,
+        )
+        name = (result.stdout or "").strip()
+        if result.returncode == 0 and name:
+            return name
+    except Exception:
+        pass
+
+    return "Anonymous"
+
 # Aspect ratio to resolution mapping
 # NOTE: Only these aspect ratios are supported by Gemini API
 ASPECT_RATIO_MAP = {

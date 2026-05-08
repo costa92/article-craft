@@ -124,6 +124,7 @@ Every article must begin with complete YAML frontmatter:
 ---
 title: "文章标题（15-25 字，含核心技术关键词和读者收益）"
 date: YYYY-MM-DD
+author: 作者名
 tags:
   - tag1
   - tag2
@@ -136,7 +137,18 @@ description: "120 字以内摘要，用作微信文章摘要。必须是有意�
 ---
 ```
 
-**Required fields**: title, date, tags, category, status, description.
+**Resolving `author`:** at write time, fill the field from
+`config.author_name()` — that resolves env.json `user_name` first, then
+`git config user.name`, then `"Anonymous"`. One-liner:
+
+```bash
+AUTHOR=$(python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}/scripts'); from config import author_name; print(author_name())")
+```
+
+Without `author` in frontmatter, downstream skills (e.g. share_card)
+auto-skip because they detect "missing required field".
+
+**Required fields**: title, date, author, tags, category, status, description.
 **Optional fields**: aliases.
 **Series fields** (auto-injected when writing as part of a series):
 ```yaml
