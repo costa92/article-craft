@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.1] - 2026-05-19 — /article-craft:doctor command
+
+### New — `/article-craft:doctor` slash command
+
+`commands/article-craft/doctor.md` — a thin command wrapping
+`scripts/doctor.py check`, so the runtime healthcheck (the same preflight
+the orchestrator runs as its Step 0) has a standalone slash entry point.
+Supports `--json`. No matching skill directory — `doctor.py` is a script,
+not a skill — mirroring how `commands/article-craft/upgrade.md` wraps an
+orchestrator mode.
+
 ## [1.6.0] - 2026-05-19 — doctor preflight, publish/series state scripts, pipeline hardening
 
 The post-1.5.6 batch: three new deterministic helper scripts, broad
