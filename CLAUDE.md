@@ -107,6 +107,9 @@ shot-scraper install     # or: playwright install chromium
 # Shortcut for the orchestrator's --upgrade mode (no matching skill directory)
 /article-craft:upgrade /abs/path/article.md
 
+# Runtime healthcheck command — thin wrapper around scripts/doctor.py (no matching skill directory)
+/article-craft:doctor          # or: /article-craft:doctor --json
+
 # Bump the plugin version (source of truth: .claude-plugin/plugin.json)
 python3 scripts/bump_version.py patch    # or: major | minor | 1.4.0
 
