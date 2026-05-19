@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.6.0] - 2026-05-19 — doctor preflight, publish/series state scripts, pipeline hardening
+
+The post-1.5.6 batch: three new deterministic helper scripts, broad
+hardening of the image / screenshot / install paths, and a round of
+review-driven fixes folded in.
+
+### New — `scripts/doctor.py` runtime healthcheck
+
+Unified preflight CLI (`doctor.py check [--json]`) that delegates to
+`setup_dependencies.run_all_checks`, summarizes pass/warn/block counts,
+and maps them to exit codes 0/1/2. Backs the orchestrator's "Step 0:
+Preflight Dependency Check".
+
+### New — `scripts/series_state.py` series state machine
+
+`status` / `next` / `mark-published` / `validate` subcommands. The
+`series` skill's modes 2/3/7 now delegate state handling here instead
+of carrying their own ad-hoc logic. `next` returns full prev/next
+navigation context. A documented `validate` mode (模式 7) was added.
+
+### New — `scripts/publish_plan.py` publish planner
+
+Single command with a `--dry-run` preview: KB auto-placement (via
+`SmartDirectoryMatcher`), SHA-256 collision detection with timestamped
+rename, and Style H sidecar (`_evidence.json` / `_harvest_menu.md`)
+collection. The `publish` skill's Steps 1–3 now delegate to it.
+
+### Config — KB directory names are no longer hardcoded
+
+`config.kb_category_root()` / `config.kb_uncategorized_dir()` replace
+the literal `02-技术` / `未分类` strings, overridable via env.json so a
+fork with a differently-named KB tree works unchanged. `ENV.md` and
+`env.example.json` updated.
+
+### Fixes — review-driven
+
+- `publish_plan.py`: planning is now side-effect-free — a `--dry-run`
+  no longer creates directories; `mkdir` happens only on the executed
+  run. The earlier `plan` / `apply` subcommand split (where `apply`
+  silently re-computed the plan) was collapsed into one command so the
+  preview and the executed run share a single code path.
+- `series_state.py`: `mark-published` now fails loudly (exit 1,
+  `error_code: series_row_not_found`) on an unknown `--index` instead
+  of silently rewriting nothing and reporting success.
+- `series_state.py`: dropped the unused `slug` parameter from
+  `_article_filename`.
+
+228 tests pass.
+
 ## [1.5.6] - 2026-05-08 — robustness fixes from v1.5.5 e2e testing
 
 End-to-end testing v1.5.5 across 14 platforms surfaced two robustness
