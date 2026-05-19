@@ -210,7 +210,6 @@ notebooklm-mcp --help
 | GEMINI_API_KEY | `~/.claude/env.json` | Gemini fallback / `--enhance` |
 | yt-dlp | `pip3 install yt-dlp` | YouTube 视频解析 |
 | NotebookLM CLI | `uv tool install notebooklm-cli` | 长文调研 / 资料整理 |
-| content-reviewer | Claude Code skill | 7 维度文章评分 |
 
 ---
 

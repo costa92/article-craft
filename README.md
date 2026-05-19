@@ -170,7 +170,7 @@ In practice, `skills/` decides **what should happen next**, while `scripts/` is 
 
 **verify-claims** — Post-write shell-command validation. Scans code blocks in the completed article and checks the referenced tools exist on PATH before review.
 
-**review** — Quality gate with 12 self-check rules + content-reviewer scoring (≥55/70 to pass). Includes image count validation by word count.
+**review** — Quality gate with 12 self-check rules + 7-dimension scoring (≥55/70 to pass). Self-contained — no external scoring dependency. Includes image count validation by word count.
 
 **publish** — Auto-detects Obsidian knowledge base, matches subdirectory, optionally runs WeChat SEO optimization.
 

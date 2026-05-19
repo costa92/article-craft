@@ -602,5 +602,5 @@ if no arguments are provided.
 ## Integration
 
 - **content-pipeline agent**: Already updated to use `article-craft` as the writing skill
-- **review skill**: Self-contained — embeds the 11 self-check rules plus 7-dim scoring inline. No external `content-reviewer` dependency in `plugin.json`.
+- **review skill**: Self-contained — embeds the 11 self-check rules plus 7-dim scoring inline. No external scoring dependency.
 - **wechat-seo-optimizer**: Called by publish skill for WeChat optimization

@@ -47,6 +47,14 @@ fork with a differently-named KB tree works unchanged. `ENV.md` and
 - `series_state.py`: dropped the unused `slug` parameter from
   `_article_filename`.
 
+### Docs
+
+- Purged the last stale `content-reviewer` references (`INSTALL.md`,
+  `README.md`, `write/style-guide.md`, `orchestrator/SKILL.md`). The
+  `content-reviewer` script was superseded long ago — review is
+  self-contained (`review_selfcheck.py` + inline 7-dim scoring) — but
+  these textual mentions had lingered.
+
 228 tests pass.
 
 ## [1.5.6] - 2026-05-08 — robustness fixes from v1.5.5 e2e testing
