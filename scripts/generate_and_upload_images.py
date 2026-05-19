@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 文章配图生成和上传工具
-支持使用 Gemini API 生成图片，并通过 PicGo 上传到图床
+支持使用 Minimax 生成图片，失败后回退到 Gemini，并通过统一上传器发布到 PicGo 或 S3
 """
 
 import os
@@ -11,6 +11,7 @@ import json
 import subprocess
 import tempfile
 import time
+import base64
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,6 +19,22 @@ import threading
 import hashlib
 from datetime import datetime
 from urllib.parse import urlparse
+from io import BytesIO
+
+
+def _cli_payload(ok: bool, message: str, details: Dict, error_code: str | None = None) -> Dict:
+    payload = {
+        "ok": ok,
+        "message": message,
+        "details": details,
+    }
+    if error_code is not None:
+        payload["error_code"] = error_code
+    return payload
+
+
+def _print_cli_payload(ok: bool, message: str, details: Dict, error_code: str | None = None) -> None:
+    print(json.dumps(_cli_payload(ok, message, details, error_code), ensure_ascii=False, indent=2))
 
 # 心跳监控支持（可选，编排器模式下使用）
 HEARTBEAT_AVAILABLE = False
@@ -96,6 +113,15 @@ except ImportError:
 
         def __exit__(self, *args):
             pass
+
+try:
+    from google import genai
+    from google.genai import types
+    GOOGLE_GENAI_AVAILABLE = True
+except ImportError:
+    GOOGLE_GENAI_AVAILABLE = False
+    genai = None
+    types = None
 
 class RecoveryManager:
     """
@@ -242,12 +268,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 NANOBANANA_PATH = os.path.join(SCRIPT_DIR, "nanobanana.py")
 IMAGES_DIR = "./images"
 PICGO_CMD = "picgo"
+MINIMAX_API_URL = "https://api.minimaxi.com/v1/image_generation"
 
 # 全局验证标记（延迟验证）
 _github_token_validated = False
 _github_token_lock = threading.Lock()
 
-# Gemini API 定价（基于 2025-2026 年定价，仅用于 --dry-run 成本估算）
+    # Image API 定价（基于 2025-2026 年定价，仅用于 --dry-run 成本估算）
 # 参考: https://ai.google.dev/pricing
 # 默认定价（用于未知模型）
 DEFAULT_PRICING = {"1K": 0.10, "2K": 0.20, "4K": 0.40}
@@ -278,6 +305,13 @@ GEMINI_PRICING = {
         "4K": 0.16,
     },
 }
+MINIMAX_PRICING = {
+    "image-01": {
+        "1K": 0.04,
+        "2K": 0.08,
+        "4K": 0.16,
+    },
+}
 
 # 平均生成时间估算（秒）
 AVG_GENERATION_TIME = {
@@ -296,6 +330,7 @@ try:
         S3_CONFIG,
         MODEL_FALLBACK_CHAIN,
         IMAGE_DEFAULTS,
+        TEXT_MODEL,
     )
 except ImportError:
     # Fallback if config.py not found — keep this file runnable standalone.
@@ -314,14 +349,16 @@ except ImportError:
     TIMEOUTS = {"image_generation": 120, "upload": 60, "screenshot": 60}
     S3_CONFIG = {"enabled": False}
     MODEL_FALLBACK_CHAIN = [
+        "minimax-image-01",
         "gemini-3-pro-image-preview",
         "gemini-3.1-flash-image-preview",
         "gemini-2.5-flash-image",
     ]
     IMAGE_DEFAULTS = {
-        "model": "gemini-3-pro-image-preview",
+        "model": "minimax-image-01",
         "resolution": "2K",
     }
+    TEXT_MODEL = "gemini-2.0-flash"
 
 # Try importing boto3 for S3 support
 try:
@@ -433,7 +470,7 @@ def process_and_upload_image(config: ImageConfig,
         # 上传到图床
         if upload and config.local_path:
             time.sleep(1)  # 避免请求过快
-            cdn_url = upload_to_picgo(config.local_path)
+            cdn_url = upload_image(config.local_path)
             config.cdn_url = cdn_url
             result["cdn_url"] = cdn_url
 
@@ -458,6 +495,27 @@ def ensure_images_dir():
     images_dir = Path(IMAGES_DIR)
     images_dir.mkdir(exist_ok=True)
     return images_dir
+
+
+def _load_env_json() -> Dict:
+    env_json = Path("~/.claude/env.json").expanduser()
+    if not env_json.exists():
+        return {}
+    try:
+        return json.loads(env_json.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _minimax_api_key() -> str:
+    env_val = os.getenv("MINIMAX_API_KEY", "").strip()
+    if env_val:
+        return env_val
+    return str(_load_env_json().get("minimax_api_key", "")).strip()
+
+
+def _minimax_model_name(model: str) -> str:
+    return "image-01" if model == "minimax-image-01" else model
 
 
 def validate_github_token(config_path: str = "~/.picgo/config.json") -> Dict[str, any]:
@@ -581,7 +639,7 @@ def validate_github_token(config_path: str = "~/.picgo/config.json") -> Dict[str
         return result
 
 
-def check_dependencies():
+def check_dependencies(upload_required: bool = True):
     """检查依赖工具"""
     errors = []
 
@@ -589,113 +647,206 @@ def check_dependencies():
     if not os.path.exists(NANOBANANA_PATH):
         errors.append(f"❌ nanobanana 脚本未找到: {NANOBANANA_PATH}")
 
-    # 检查 GEMINI_API_KEY: env var > ~/.claude/env.json > ~/.nanobanana.env
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        # Check in ~/.claude/env.json (unified config)
-        env_json = os.path.expanduser("~/.claude/env.json")
-        if os.path.exists(env_json):
-            try:
-                import json as _json
-                with open(env_json) as f:
-                    env_data = _json.load(f)
-                val = env_data.get("gemini_api_key", "")
-                if val and not val.startswith("your-"):
-                    api_key = val
-            except Exception:
-                pass
-    if not api_key:
-        # Check in ~/.nanobanana.env file (legacy)
-        env_file = os.path.expanduser("~/.nanobanana.env")
-        if os.path.exists(env_file):
-            try:
-                with open(env_file, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith("GEMINI_API_KEY="):
-                            api_key = line.split("=", 1)[1].strip()
-                            if api_key:  # Non-empty value
-                                break
-            except Exception:
-                pass  # If file read fails, treat as not found
-
-        if not api_key:
-            errors.append(
-                "❌ GEMINI_API_KEY 未设置\n"
-                "   推荐在 ~/.claude/env.json 中配置 gemini_api_key\n"
-                "   或设置环境变量: export GEMINI_API_KEY=your_key_here"
-            )
-
-    # 检查 picgo
-    picgo_installed = False
-    try:
-        subprocess.run([PICGO_CMD, "--version"],
-                      capture_output=True,
-                      check=True,
-                      timeout=5)
-        picgo_installed = True
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+    # 只把实际需要的依赖判成硬失败：Minimax-first 只需要 MINIMAX_API_KEY，
+    # Gemini / PicGo / S3 都是可选路径。
+    if not _minimax_api_key():
         errors.append(
-            "❌ PicGo CLI 未安装\n"
-            "   请运行: npm install -g picgo"
+            "❌ MINIMAX_API_KEY 未设置\n"
+            "   推荐在 ~/.claude/env.json 中配置 minimax_api_key\n"
+            "   或设置环境变量: export MINIMAX_API_KEY=your_key_here"
         )
 
-    # 如果PicGo已安装，检查配置
-    if picgo_installed:
+    if upload_required and not S3_CONFIG.get("enabled"):
+        picgo_installed = False
         try:
-            # 直接读取配置文件检查上传器配置
-            config_file = Path("~/.picgo/config.json").expanduser()
+            subprocess.run([PICGO_CMD, "--version"],
+                          capture_output=True,
+                          check=True,
+                          timeout=5)
+            picgo_installed = True
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            errors.append(
+                "❌ PicGo CLI 未安装\n"
+                "   请运行: npm install -g picgo"
+            )
 
-            if not config_file.exists():
-                errors.append(
-                    "⚠️  PicGo 配置文件不存在\n"
-                    "   请运行以下命令配置:\n"
-                    "   1. picgo set uploader (选择图床: github/smms/qiniu等)\n"
-                    "   2. 根据提示配置Token和仓库信息\n"
-                    "   \n"
-                    "   GitHub图床配置要点:\n"
-                    "   - Token权限: 必须包含 'repo' 权限\n"
-                    "   - 仓库格式: username/repo-name\n"
-                    "   - 分支: 通常为 main 或 master\n"
-                    "   \n"
-                    "   配置文档: https://picgo.github.io/PicGo-Core-Doc/zh/guide/config.html"
-                )
-            else:
-                # 读取配置文件
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-
-                current_uploader = config.get("picBed", {}).get("current")
-
-                if not current_uploader:
+        if picgo_installed:
+            try:
+                config_file = Path("~/.picgo/config.json").expanduser()
+                if not config_file.exists():
                     errors.append(
-                        "⚠️  PicGo 未配置上传器\n"
+                        "⚠️  PicGo 配置文件不存在\n"
                         "   请运行: picgo set uploader\n"
                         "   配置文档: https://picgo.github.io/PicGo-Core-Doc/zh/guide/config.html"
                     )
                 else:
-                    # PicGo已配置上传器
-                    print(f"✅ PicGo 当前上传器: {current_uploader}")
+                    with open(config_file, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
 
-                    # GitHub Token 验证已移至延迟验证（首次上传时）
-                    if current_uploader == "github":
-                        print(f"ℹ️  GitHub Token 将在首次上传时验证")
-
-        except json.JSONDecodeError:
-            errors.append(
-                "⚠️  PicGo 配置文件格式错误\n"
-                "   请检查 ~/.picgo/config.json 是否为有效的JSON格式"
-            )
-        except Exception as e:
-            # 配置检查失败，给出警告但不阻止运行
-            print(f"⚠️  无法验证PicGo配置: {str(e)}")
+                    current_uploader = config.get("picBed", {}).get("current")
+                    if not current_uploader:
+                        errors.append(
+                            "⚠️  PicGo 未配置上传器\n"
+                            "   请运行: picgo set uploader\n"
+                            "   配置文档: https://picgo.github.io/PicGo-Core-Doc/zh/guide/config.html"
+                        )
+                    else:
+                        print(f"✅ PicGo 当前上传器: {current_uploader}")
+                        if current_uploader == "github":
+                            print("ℹ️  GitHub Token 将在首次上传时验证")
+            except json.JSONDecodeError:
+                errors.append(
+                    "⚠️  PicGo 配置文件格式错误\n"
+                    "   请检查 ~/.picgo/config.json 是否为有效的JSON格式"
+                )
+            except Exception as e:
+                print(f"⚠️  无法验证PicGo配置: {str(e)}")
 
     return errors
 
 
+def _generate_minimax_image(model: str, prompt: str, output_path: Path) -> None:
+    if not REQUESTS_AVAILABLE:
+        raise RuntimeError("requests not installed")
+    api_key = _minimax_api_key()
+    if not api_key:
+        raise RuntimeError("MINIMAX_API_KEY missing")
+    payload = {
+        "model": _minimax_model_name(model),
+        "prompt": prompt,
+        "response_format": "base64",
+    }
+    response = requests.post(
+        MINIMAX_API_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=TIMEOUTS.get("image_generation", 120),
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Minimax API error {response.status_code}: {(response.text or '')[:200]}")
+
+    data = response.json() if response.text else {}
+    image_base64 = ((data.get("data") or {}).get("image_base64") if isinstance(data, dict) else None)
+    if isinstance(image_base64, list):
+        image_base64 = image_base64[0] if image_base64 else None
+    if image_base64:
+        image = Image.open(BytesIO(base64.b64decode(image_base64)))
+        image.save(output_path)
+        return
+
+    image_urls = ((data.get("data") or {}).get("image_urls") if isinstance(data, dict) else None) or []
+    if image_urls:
+        img_resp = requests.get(image_urls[0], timeout=TIMEOUTS.get("image_generation", 120))
+        img_resp.raise_for_status()
+        image = Image.open(BytesIO(img_resp.content))
+        image.save(output_path)
+        return
+
+
+def _generate_minimax_image_with_options(
+    model: str,
+    prompt: str,
+    output_path: Path,
+    aspect_ratio: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> None:
+    if not REQUESTS_AVAILABLE:
+        raise RuntimeError("requests not installed")
+    api_key = _minimax_api_key()
+    if not api_key:
+        raise RuntimeError("MINIMAX_API_KEY missing")
+    payload = {
+        "model": _minimax_model_name(model),
+        "prompt": prompt,
+        "response_format": "base64",
+    }
+    if aspect_ratio:
+        payload["aspect_ratio"] = aspect_ratio
+    if width and height:
+        payload["width"] = width
+        payload["height"] = height
+    response = requests.post(
+        MINIMAX_API_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=TIMEOUTS.get("image_generation", 120),
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Minimax API error {response.status_code}: {(response.text or '')[:200]}")
+
+    data = response.json() if response.text else {}
+    image_base64 = ((data.get("data") or {}).get("image_base64") if isinstance(data, dict) else None)
+    if isinstance(image_base64, list):
+        image_base64 = image_base64[0] if image_base64 else None
+    if image_base64:
+        image = Image.open(BytesIO(base64.b64decode(image_base64)))
+        image.save(output_path)
+        return
+
+    image_urls = ((data.get("data") or {}).get("image_urls") if isinstance(data, dict) else None) or []
+    if image_urls:
+        img_resp = requests.get(image_urls[0], timeout=TIMEOUTS.get("image_generation", 120))
+        img_resp.raise_for_status()
+        image = Image.open(BytesIO(img_resp.content))
+        image.save(output_path)
+        return
+
+
+def _minimax_prompt(config: ImageConfig, enhance: bool | None = None) -> str:
+    prompt = config.prompt
+    should_enhance = config.enhance if enhance is None else enhance
+    if should_enhance and str(config.prompt).strip():
+        try:
+            prompt = enhance_prompt(prompt)
+        except Exception as e:
+            print(f"   ⚠️  Minimax prompt enhance failed: {e}")
+    return prompt
+
+
+def _enhance_prompt(original_prompt: str) -> str:
+    if not GOOGLE_GENAI_AVAILABLE:
+        return original_prompt
+
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        api_key = str(_load_env_json().get("gemini_api_key", "")).strip()
+    if not api_key:
+        return original_prompt
+
+    client = genai.Client(api_key=api_key)
+    system_instruction = (
+        "You are an expert AI art prompt engineer. "
+        "Rewrite the input into a detailed image generation prompt. "
+        "Avoid text in images. Output only the prompt."
+    )
+    response = client.models.generate_content(
+        model=TEXT_MODEL,
+        contents=original_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            temperature=0.7,
+            max_output_tokens=200,
+        ),
+    )
+    if response.text:
+        return response.text.strip()
+    return original_prompt
+
+
+def enhance_prompt(original_prompt: str) -> str:
+    return _enhance_prompt(original_prompt)
+
+
 def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "gemini-3-pro-image-preview", enhance: bool = None) -> bool:
     """
-    使用 Gemini API 生成图片，支持模型降级和重试
+    使用 Minimax / Gemini 生成图片，支持模型降级和重试
 
     Args:
         config: 图片配置（config.enhance 为默认增强设置）
@@ -714,6 +865,7 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
 
     # Use shared aspect ratio mapping
     size = ASPECT_RATIO_TO_SIZE.get(config.aspect_ratio, "1248x832")
+    width, height = size.split("x")
 
     print(f"\n🎨 生成图片: {config.name}")
     print(f"   提示词: {config.prompt[:60]}...")
@@ -732,6 +884,19 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
     last_error_msg = ""
     for i, current_model in enumerate(model_chain, 1):
         try:
+            if current_model.startswith("minimax"):
+                prompt = _minimax_prompt(config, enhance)
+                _generate_minimax_image_with_options(
+                    current_model,
+                    prompt,
+                    output_path,
+                    aspect_ratio=config.aspect_ratio,
+                    width=int(width),
+                    height=int(height),
+                )
+                config.local_path = str(output_path)
+                return True
+
             cmd = [
                 "python3",
                 NANOBANANA_PATH,
@@ -1158,6 +1323,186 @@ COMPOSITION_ROTATION = (
     "grid-aligned modular composition",
 )
 
+VISUAL_TREATMENT_ROTATION = (
+    "minimal and airy with large whitespace",
+    "slightly denser with more components in frame",
+    "diagrammatic with stronger visual hierarchy",
+    "editorial and narrative with one dominant focal object",
+    "bold contrast with crisp outlines and accent blocks",
+    "soft atmospheric with subtle gradients and shadows",
+)
+
+PALETTE_ROTATION = (
+    "soft blue and teal",
+    "soft blue and mint green",
+    "blue gray and emerald",
+    "warm amber and blue",
+    "purple and cyan accents",
+    "soft coral and slate",
+)
+
+MATERIAL_ROTATION = (
+    "flat color blocks",
+    "semi-transparent layers",
+    "thin line icons with subtle fills",
+    "matte shapes with crisp edges",
+    "soft gradient surfaces",
+    "paper-cut layered forms",
+)
+
+LIGHTING_ROTATION = (
+    "soft daylight",
+    "diffused studio light",
+    "gentle ambient glow",
+    "high-key illumination",
+    "low-contrast natural light",
+    "subtle rim light",
+)
+
+SCALE_ROTATION = (
+    "small-scale compact objects",
+    "medium-scale balanced objects",
+    "large-scale dominant subject",
+    "macro detail emphasis",
+    "wide contextual scale",
+    "layered mixed-scale composition",
+)
+
+VISUAL_STYLE_PRESETS = {
+    "minimalist flat illustration": {
+        "triggers": ("tutorial", "how-to", "workflow", "intro", "overview"),
+        "palette": ("soft blue and teal", "soft coral and slate"),
+        "background": "white background",
+        "treatment": ("minimal and airy with large whitespace", "slightly denser with more components in frame"),
+        "lighting": ("soft daylight", "high-key illumination"),
+        "scale": ("medium-scale balanced objects", "wide contextual scale"),
+    },
+    "isometric technical illustration": {
+        "triggers": ("architecture", "architecture diagram", "system diagram", "pipeline", "flow", "infrastructure"),
+        "palette": ("soft blue and mint green", "blue gray and emerald"),
+        "background": "subtle grid background",
+        "treatment": ("diagrammatic with stronger visual hierarchy", "soft atmospheric with subtle gradients and shadows"),
+        "lighting": ("diffused studio light", "subtle rim light"),
+        "scale": ("wide contextual scale", "large-scale dominant subject"),
+    },
+    "clean data visualization style": {
+        "triggers": ("benchmark", "comparison", "compare", "chart", "metrics", "latency", "throughput", "performance"),
+        "palette": ("blue, gray, and green", "purple and cyan accents"),
+        "background": "white background",
+        "treatment": ("bold contrast with crisp outlines and accent blocks", "diagrammatic with stronger visual hierarchy"),
+        "lighting": ("high-key illumination", "diffused studio light"),
+        "scale": ("small-scale compact objects", "medium-scale balanced objects"),
+    },
+    "conceptual metaphor illustration": {
+        "triggers": ("tradeoff", "decision", "principle", "concept", "idea", "metaphor", "vision"),
+        "palette": ("warm amber and blue", "soft coral and slate"),
+        "background": "soft atmospheric background",
+        "treatment": ("editorial and narrative with one dominant focal object", "soft atmospheric with subtle gradients and shadows"),
+        "lighting": ("gentle ambient glow", "subtle rim light"),
+        "scale": ("large-scale dominant subject", "macro detail emphasis"),
+    },
+    "hand-drawn sketch style": {
+        "triggers": ("experience", "review", "retro", "notes", "casual", "share"),
+        "palette": ("black ink with orange accents", "black ink with teal accents"),
+        "background": "white paper background",
+        "treatment": ("slightly denser with more components in frame", "minimal and airy with large whitespace"),
+        "lighting": ("soft daylight", "low-contrast natural light"),
+        "scale": ("medium-scale balanced objects", "small-scale compact objects"),
+    },
+    "modern clean infographic style": {
+        "triggers": ("guide", "explain", "list", "steps", "summary"),
+        "palette": ("soft blue purple yellow green", "blue gray and emerald"),
+        "background": "soft white background",
+        "treatment": ("bold contrast with crisp outlines and accent blocks", "diagrammatic with stronger visual hierarchy"),
+        "lighting": ("high-key illumination", "soft daylight"),
+        "scale": ("wide contextual scale", "mixed-scale composition"),
+    },
+}
+
+DEFAULT_VISUAL_STYLE = {
+    "preset": "minimalist flat illustration",
+    "palette": "soft blue and teal",
+    "background": "white background",
+    "treatment": "minimal and airy with large whitespace",
+    "lighting": "soft daylight",
+    "scale": "medium-scale balanced objects",
+}
+
+DESIGN_LOGIC_RULES = (
+    {
+        "primary_goal": "explain structure",
+        "triggers": ("architecture", "diagram", "flow", "pipeline", "system", "infrastructure"),
+        "preset": "isometric technical illustration",
+    },
+    {
+        "primary_goal": "show contrast",
+        "triggers": ("benchmark", "comparison", "compare", "chart", "latency", "throughput", "performance"),
+        "preset": "clean data visualization style",
+    },
+    {
+        "primary_goal": "express concept",
+        "triggers": ("tradeoff", "decision", "principle", "concept", "idea", "metaphor", "vision"),
+        "preset": "conceptual metaphor illustration",
+    },
+    {
+        "primary_goal": "guide process",
+        "triggers": ("tutorial", "how-to", "workflow", "steps", "guide", "explain", "intro", "overview"),
+        "preset": "modern clean infographic style",
+    },
+    {
+        "primary_goal": "feel human",
+        "triggers": ("experience", "review", "retro", "notes", "casual", "share"),
+        "preset": "hand-drawn sketch style",
+    },
+)
+
+
+def _pick_design_rule(prompt: str) -> dict[str, str] | None:
+    lowered = prompt.lower()
+    for rule in DESIGN_LOGIC_RULES:
+        if any(trigger in lowered for trigger in rule["triggers"]):
+            return rule
+    return None
+
+
+def build_design_logic(prompt: str) -> dict[str, str]:
+    rule = _pick_design_rule(prompt)
+    preset = rule["preset"] if rule else DEFAULT_VISUAL_STYLE["preset"]
+    return {
+        "primary_goal": rule["primary_goal"] if rule else "stay general",
+        "preset": preset,
+        "palette": "",
+        "background": "",
+        "treatment": "",
+        "lighting": "",
+        "scale": "",
+    }
+
+
+def _style_variants_for_preset(preset: str) -> dict[str, tuple[str, ...] | str]:
+    meta = VISUAL_STYLE_PRESETS.get(preset, {})
+    palette = meta.get("palette", DEFAULT_VISUAL_STYLE["palette"])
+    treatment = meta.get("treatment", DEFAULT_VISUAL_STYLE["treatment"])
+    lighting = meta.get("lighting", DEFAULT_VISUAL_STYLE["lighting"])
+    scale = meta.get("scale", DEFAULT_VISUAL_STYLE["scale"])
+    return {
+        "palette": palette[0] if isinstance(palette, tuple) else palette,
+        "palette_variants": palette if isinstance(palette, tuple) else (palette,),
+        "background": meta.get("background", DEFAULT_VISUAL_STYLE["background"]),
+        "treatment": treatment[0] if isinstance(treatment, tuple) else treatment,
+        "treatment_variants": treatment if isinstance(treatment, tuple) else (treatment,),
+        "lighting": lighting[0] if isinstance(lighting, tuple) else lighting,
+        "lighting_variants": lighting if isinstance(lighting, tuple) else (lighting,),
+        "scale": scale[0] if isinstance(scale, tuple) else scale,
+        "scale_variants": scale if isinstance(scale, tuple) else (scale,),
+    }
+
+
+def select_visual_style_from_prompt(prompt: str) -> dict[str, str]:
+    logic = build_design_logic(prompt)
+    preset = logic["preset"]
+    return {"preset": preset, **_style_variants_for_preset(preset)}
+
 # Detect prompts that already specify camera/composition so we don't
 # inject conflicting directives. We ONLY check for the literal `Camera:`
 # and `Composition:` directive prefix — matching loose adjectives like
@@ -1200,7 +1545,9 @@ def vary_prompt_for_position(
     """
     has_camera = bool(_CAMERA_DIRECTIVE_RE.search(base_prompt))
     has_comp = bool(_COMPOSITION_DIRECTIVE_RE.search(base_prompt))
-    if has_camera and has_comp:
+    has_treatment = "visual treatment:" in base_prompt.lower()
+    style = select_visual_style_from_prompt(base_prompt)
+    if has_camera and has_comp and has_treatment:
         return base_prompt
 
     parts = [base_prompt.rstrip(". \n")]
@@ -1210,6 +1557,25 @@ def vary_prompt_for_position(
     if not has_comp:
         comp = COMPOSITION_ROTATION[image_index % len(COMPOSITION_ROTATION)]
         parts.append(f"Composition: {comp}")
+    if not has_treatment:
+        treatment_variants = style.get("treatment_variants") or VISUAL_TREATMENT_ROTATION
+        treatment = treatment_variants[image_index % len(treatment_variants)]
+        parts.append(f"Visual treatment: {treatment}")
+    palette_variants = style.get("palette_variants") or PALETTE_ROTATION
+    palette = palette_variants[image_index % len(palette_variants)]
+    material = MATERIAL_ROTATION[image_index % len(MATERIAL_ROTATION)]
+    lighting_variants = style.get("lighting_variants") or LIGHTING_ROTATION
+    lighting = lighting_variants[image_index % len(lighting_variants)]
+    scale_variants = style.get("scale_variants") or SCALE_ROTATION
+    scale = scale_variants[image_index % len(scale_variants)]
+    if "palette:" not in base_prompt.lower():
+        parts.append(f"Palette: {palette}")
+    if "material:" not in base_prompt.lower():
+        parts.append(f"Material: {material}")
+    if "lighting:" not in base_prompt.lower():
+        parts.append(f"Lighting: {lighting}")
+    if "scale:" not in base_prompt.lower():
+        parts.append(f"Scale: {scale}")
     return ". ".join(parts) + "."
 
 
@@ -2184,12 +2550,11 @@ def main():
     parser.add_argument("--check", action="store_true", help="检查依赖")
     parser.add_argument("--dry-run", action="store_true",
                        help="预览模式：显示成本和时间估算，不实际生成图片")
-    # 默认模型来自 config.IMAGE_DEFAULTS["model"]（已经处理过 env.json 的
-    # gemini_image_model 字段），与 nanobanana.py 保持一致——单一来源。
+    # 默认模型来自 config.IMAGE_DEFAULTS["model"]（已统一为 Minimax-first）。
     _default_model = IMAGE_DEFAULTS["model"]
 
     parser.add_argument("--model", default=_default_model,
-                       help="使用的 Gemini 模型 (支持任意模型名，如 gemini-2.0-pro、gemini-2.5-flash-image 等)")
+                       help="使用的图片模型 (默认 Minimax-first；也支持 Gemini 模型名)")
     parser.add_argument("--parallel", action="store_true",
                        help="启用并行生成模式（提升速度，但可能触发API限流）")
     parser.add_argument("--max-workers", type=int, default=2,
@@ -2227,12 +2592,14 @@ def main():
     # 检查依赖
     if args.check:
         print("🔍 检查依赖...")
-        errors = check_dependencies()
+        errors = check_dependencies(upload_required=not args.no_upload)
         if errors:
             print("\n".join(errors))
+            _print_cli_payload(False, "dependency check complete", {"errors": errors}, error_code="dependency_check_failed")
             sys.exit(1)
         else:
             print("✅ 所有依赖已就绪")
+            _print_cli_payload(True, "dependency check complete", {"errors": []})
             sys.exit(0)
 
     # --probe 模式：遍历降级链，找到第一个可用的模型后输出并退出
@@ -2262,7 +2629,12 @@ def main():
                 )
                 if result.returncode == 0 and os.path.exists(probe_output):
                     print("✅")
-                    print(f"\nBEST_MODEL:{model_name}")
+                    print(f"BEST_MODEL:{model_name}")
+                    _print_cli_payload(
+                        True,
+                        "probe complete",
+                        {"best_model": model_name, "tested_models": probe_chain},
+                    )
                     # 清理探针文件
                     try:
                         os.remove(probe_output)
@@ -2278,6 +2650,12 @@ def main():
                 print(f"❌ ({str(e)[:80]})")
 
         print("\n❌ 所有模型均不可用")
+        _print_cli_payload(
+            False,
+            "probe complete",
+            {"best_model": None, "tested_models": probe_chain},
+            error_code="probe_failed",
+        )
         sys.exit(1)
 
     configs = []
@@ -2296,6 +2674,12 @@ def main():
             print(f"\n示例:")
             print(f"   ❌ 错误: --process-file ./article.md")
             print(f"   ✅ 正确: --process-file /home/user/docs/article.md")
+            _print_cli_payload(
+                False,
+                "process-file validation failed",
+                {"process_file": args.process_file},
+                error_code="process_file_missing",
+            )
             sys.exit(1)
 
         print(f"🔍 解析文件: {args.process_file}")
@@ -2415,8 +2799,8 @@ def main():
             for config in configs:
                 config.enhance = True
 
-        # AI image generation requires nanobanana + Gemini API
-        errors = check_dependencies()
+    # AI image generation requires nanobanana + image provider API
+        errors = check_dependencies(upload_required=not args.no_upload)
         if errors:
             print("\n".join(errors))
             print("\n请先解决以上问题，或使用 --check 参数检查依赖")

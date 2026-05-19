@@ -1,7 +1,7 @@
 ---
 name: article-craft:images
 version: 1.5.6
-description: "Generate and upload images for technical articles using Gemini API. Use when adding cover images, rhythm images, or screenshots to an article."
+description: "Generate and upload images for technical articles using Minimax first, with Gemini fallback. Use when adding cover images, rhythm images, or screenshots to an article."
 allowed-tools:
   - Read
   - Edit
@@ -12,14 +12,14 @@ allowed-tools:
 
 # Images
 
-Generate and upload images for technical articles using Gemini API, with screenshot support via screenshot_tool.py (Playwright).
+Generate and upload images for technical articles using Minimax first, with Gemini fallback, plus screenshot support via screenshot_tool.py (Playwright).
 
 ## Inputs
 
 - **article.md file path** -- article containing image placeholders in the format:
   ```markdown
   <!-- IMAGE: name - description (ratio) -->
-  <!-- PROMPT: detailed prompt for Gemini image generation -->
+  <!-- PROMPT: detailed prompt for image generation -->
   ```
 - **Standalone mode:** If no file path is provided as argument, use `AskQuestion` to ask the user for the article file path.
 
@@ -33,37 +33,21 @@ realpath article.md
 
 All downstream scripts require absolute paths. Relative paths cause misleading errors.
 
-### 2. Gemini Probe Test
+### 2. Image Provider Probe Test
 
 Run a lightweight single-image probe to verify API availability before batch processing.
 
 ```bash
-# Step 1: Probe with default model (pro -- highest quality)
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/nanobanana.py \
-  --prompt "test" --size 1024x1024 --output /tmp/gemini_probe.jpg
+# Step 1: Probe with the batch CLI
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate_and_upload_images.py --probe
 ```
 
-- **Success** -- proceed to batch processing with the default model.
-- **Fail (503/429/No data received)** -- fall back to flash model:
-
-```bash
-# Step 2: Probe with flash model
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/nanobanana.py \
-  --prompt "test" --size 1024x1024 --output /tmp/gemini_probe.jpg \
-  --model gemini-2.5-flash-image
-```
-
-- **Flash succeeds** -- proceed to batch processing with `--model gemini-2.5-flash-image`.
-- **Flash also fails** -- skip AI image generation, keep placeholders, warn user.
+- **Success** -- read `BEST_MODEL:` or the JSON payload and proceed with that model.
+- **Fail** -- skip AI image generation, keep placeholders, warn user.
 
 **Full model fallback chain:**
 
-```
-env.json:gemini_image_model (default, highest quality)
-  -> gemini-3.1-flash-image-preview (mid-tier fallback)
-    -> gemini-2.5-flash-image (fast, highest availability)
-      -> give up, keep placeholders
-```
+`minimax-image-01` is the default first choice. Gemini models remain available as explicit overrides or fallback.
 
 ### 3. Batch Process Article
 
@@ -108,7 +92,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate_and_upload_images.py \
 
 This script performs the full pipeline:
 1. Parses `<!-- IMAGE: ... -->` and `<!-- PROMPT: ... -->` placeholders from the article
-2. Generates images via Gemini API
+2. Generates images via Minimax first, then Gemini fallback
 3. Uploads to CDN (PicGo or S3)
 4. Replaces placeholders with CDN URLs in the article file (in-place)
 
@@ -126,16 +110,16 @@ grep -n '<!-- IMAGE:' /ABSOLUTE/PATH/article.md
 - No matches -- all images processed successfully.
 - Matches found -- some images failed; list them in the completion summary.
 
-### 5. Screenshots (Independent of Gemini)
+### 5. Screenshots (Independent of Image Provider)
 
-Screenshots use `screenshot_tool.py` (Playwright) and always work regardless of Gemini API status.
+Screenshots use `screenshot_tool.py` (Playwright) and always work regardless of Minimax/Gemini status.
 
 When using `--process-file`, screenshots (`<!-- SCREENSHOT: ... -->`) are handled automatically. For standalone screenshots:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py screenshot "https://example.com" \
   -o /tmp/screenshot.png -w 3
-picgo upload /tmp/screenshot.png
+# 默认走 screenshot_tool 内置 CDN 上传（复用项目统一上传器）
 ```
 
 Screenshot placeholder format:
@@ -177,7 +161,7 @@ Two consecutive HTML comments:
 
 ```markdown
 <!-- IMAGE: name - description (ratio) -->
-<!-- PROMPT: detailed prompt for Gemini image generation -->
+<!-- PROMPT: detailed prompt for image generation -->
 ```
 
 ### Supported Aspect Ratios
@@ -208,7 +192,7 @@ Two consecutive HTML comments:
 
 Graceful degradation:
 
-1. **Gemini probe fails on all models** -- keep `<!-- IMAGE: ... -->` placeholders in the article. Log which images were not generated. Screenshots still execute.
+1. **Minimax + Gemini probe fails on all models** -- keep `<!-- IMAGE: ... -->` placeholders in the article. Log which images were not generated. Screenshots still execute.
 2. **Individual image fails during batch** -- with `--continue-on-error`, skip that image and continue. Failed placeholders remain in the article.
 3. **Upload fails** -- fail-fast to prevent broken image links in the article.
 4. **Network/SSL errors** -- auto-retry 3 times with 2-3 second delays.

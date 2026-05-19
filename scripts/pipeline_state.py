@@ -44,6 +44,10 @@ SCHEMA_VERSION = "1"
 STATE_FILENAME = ".article-craft-state.json"
 
 STAGE_STATUSES = {"pending", "running", "completed", "failed", "skipped"}
+KNOWN_STAGES = {
+    "requirements", "verify", "evidence", "write", "screenshot",
+    "share_card", "images", "verify_claims", "review", "publish",
+}
 
 MODE_STAGES: dict[str, list[str]] = {
     "standard": [
@@ -213,6 +217,74 @@ class PipelineState:
         return self._state
 
 
+def _payload(ok: bool, message: str, details: dict[str, Any], error_code: str | None = None) -> dict[str, Any]:
+    payload = {
+        "ok": ok,
+        "message": message,
+        "details": details,
+    }
+    if error_code is not None:
+        payload["error_code"] = error_code
+    return payload
+
+
+def _print_payload(ok: bool, message: str, details: dict[str, Any], error_code: str | None = None) -> None:
+    print(json.dumps(_payload(ok, message, details, error_code), ensure_ascii=False, indent=2))
+
+
+def _parse_object_json(raw: str | None, field_name: str) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{field_name} must be a JSON object")
+    return parsed
+
+
+def _validate_stage_result(stage: str, result: dict[str, Any] | None) -> None:
+    if result is None:
+        return
+    if not isinstance(result, dict):
+        raise ValueError(f"stage result for {stage} must be an object")
+
+
+def _validate_state_structure(data: dict[str, Any]) -> tuple[bool, str | None, str]:
+    stages = data.get("stages", {})
+    if not isinstance(stages, dict):
+        return False, "invalid_stages", "state.stages must be an object"
+
+    for stage_name, stage_data in stages.items():
+        if stage_name not in KNOWN_STAGES:
+            return False, "unknown_stage", f"unknown stage in state: {stage_name}"
+        if not isinstance(stage_data, dict):
+            return False, "invalid_stage_entry", f"state entry for {stage_name} must be an object"
+        status = stage_data.get("status")
+        if status not in STAGE_STATUSES:
+            return False, "invalid_stage_status", f"invalid stage status for {stage_name}: {status}"
+        result = stage_data.get("result", {})
+        if not isinstance(result, dict):
+            return False, "invalid_stage_result", f"stage result for {stage_name} must be an object"
+
+    return True, None, "state is valid"
+
+
+def _build_stage_summary(ps: PipelineState) -> dict[str, Any]:
+    counts = {status: 0 for status in STAGE_STATUSES}
+    stages = ps.state.get("stages", {})
+    for stage_data in stages.values():
+        status = stage_data.get("status")
+        if status in counts:
+            counts[status] += 1
+    return {
+        "article": str(ps.article_path),
+        "mode": ps.state.get("mode"),
+        "writing_style": ps.state.get("writing_style"),
+        "counts": counts,
+        "total_stages": len(stages),
+        "stages": stages,
+    }
+
+
 def _scan_article(article_path: Path) -> Scan:
     if not article_path.exists():
         return Scan()
@@ -345,7 +417,7 @@ def cmd_start(args) -> int:
     ps = PipelineState(args.article)
     if args.mode or args.writing_style:
         ps.set_meta(args.mode, args.writing_style)
-    meta = json.loads(args.meta) if args.meta else None
+    meta = _parse_object_json(args.meta, "--meta")
     ps.start_stage(args.stage, meta)
     ps.save()
     return 0
@@ -355,7 +427,8 @@ def cmd_complete(args) -> int:
     ps = PipelineState(args.article)
     if args.mode or args.writing_style:
         ps.set_meta(args.mode, args.writing_style)
-    result = json.loads(args.result) if args.result else None
+    result = _parse_object_json(args.result, "--result")
+    _validate_stage_result(args.stage, result)
     ps.complete_stage(args.stage, result)
     ps.save()
     return 0
@@ -363,7 +436,7 @@ def cmd_complete(args) -> int:
 
 def cmd_fail(args) -> int:
     ps = PipelineState(args.article)
-    partial = json.loads(args.partial) if args.partial else None
+    partial = _parse_object_json(args.partial, "--partial")
     ps.fail_stage(args.stage, args.error, partial)
     ps.save()
     return 0
@@ -378,14 +451,14 @@ def cmd_skip(args) -> int:
 
 def cmd_show(args) -> int:
     ps = PipelineState(args.article)
-    print(json.dumps(ps.state, ensure_ascii=False, indent=2))
+    _print_payload(True, "loaded state", ps.state)
     return 0
 
 
 def cmd_missing(args) -> int:
     ps = PipelineState(args.article)
     out = _compute_missing(ps, args.mode or ps.state.get("mode") or "standard")
-    print(json.dumps(out, ensure_ascii=False, indent=2))
+    _print_payload(True, "computed missing stages", out)
     return 0
 
 
@@ -400,6 +473,23 @@ def cmd_artifact(args) -> int:
     ps.set_artifact(args.key, args.value)
     ps.save()
     return 0
+
+
+def cmd_stage_summary(args) -> int:
+    ps = PipelineState(args.article)
+    _print_payload(True, "state summary ready", _build_stage_summary(ps))
+    return 0
+
+
+def cmd_validate_state(args) -> int:
+    ps = PipelineState(args.article)
+    valid, error_code, message = _validate_state_structure(ps.state)
+    summary = _build_stage_summary(ps)
+    if valid:
+        _print_payload(True, message, summary)
+        return 0
+    _print_payload(False, message, summary, error_code=error_code)
+    return 1
 
 
 def cmd_check_publish_ready(args) -> int:
@@ -433,16 +523,18 @@ def cmd_check_publish_ready(args) -> int:
     counts["PROMPT"] = prompt_count
 
     total = sum(counts.values())
-    payload = {
+    details = {
         "ready": total == 0,
         "article": str(article_path),
         "counts": counts,
         "total_unresolved": total,
     }
-    print(json.dumps(payload, ensure_ascii=False))
 
     if total == 0:
+        _print_payload(True, "article is publish-ready", details)
         return 0
+
+    _print_payload(False, "unresolved placeholders block publish", details, error_code="publish_not_ready")
 
     # Human-readable summary on stderr (still emit structured JSON on stdout).
     sys.stderr.write(
@@ -495,6 +587,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("show"); add_article(sp); sp.set_defaults(func=cmd_show)
 
+    sp = sub.add_parser("stage-summary"); add_article(sp); sp.set_defaults(func=cmd_stage_summary)
+
+    sp = sub.add_parser("validate-state"); add_article(sp); sp.set_defaults(func=cmd_validate_state)
+
     sp = sub.add_parser("missing-stages"); add_article(sp)
     sp.add_argument("--mode", help="override mode (defaults to state's mode)")
     sp.set_defaults(func=cmd_missing)
@@ -520,14 +616,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if hasattr(args, "stage") and args.stage and hasattr(args, "cmd"):
-            if args.cmd in ("start", "complete", "fail", "skip") and args.stage not in {
-                "requirements", "verify", "evidence", "write", "screenshot",
-                "share_card", "images", "verify_claims", "review", "publish",
-            }:
+            if args.cmd in ("start", "complete", "fail", "skip") and args.stage not in KNOWN_STAGES:
                 sys.stderr.write(f"error: unknown stage '{args.stage}'\n")
                 return 2
         return args.func(args)
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, json.JSONDecodeError, ValueError) as e:
         sys.stderr.write(f"error: {e}\n")
         return 1
 

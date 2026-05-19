@@ -42,7 +42,7 @@ Optional extras (local/controlled sites only for SELECTOR):
 
 ## Supported Aspect Ratios
 
-Only these exact sizes are accepted by the Gemini API:
+These exact sizes are accepted by the current image providers:
 
 | Ratio | Size | Typical Use |
 |-------|------|-------------|
@@ -77,6 +77,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate_and_upload_images.py \
   --model gemini-2.5-flash-image \
   --resolution 2K --continue-on-error
 ```
+
+Default first choice is `minimax-image-01`. Gemini models remain available as explicit overrides or fallback.
 
 ### Parallel Mode
 
@@ -121,7 +123,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/nanobanana.py \
 | `--prompt` | yes | Image description (Chinese or English) | - |
 | `--size` | no | Image dimensions (see ratio table) | 768x1344 |
 | `--output` | no | Output file path | nanobanana-UUID.png |
-| `--model` | no | Gemini model override | gemini-3-pro-image-preview |
+| `--model` | no | Image model override | minimax-image-01 |
 | `--resolution` | no | Quality (1K/2K/4K) | 1K |
 
 ## ASCII Diagram Replacement
@@ -147,15 +149,15 @@ Clear sans-serif labels.
 - Alt text should describe the architecture (e.g., "Gateway: multi-channel -> Gateway -> Agent")
 - Recommended size: 3:2 (1248x832)
 
-## Screenshots (Independent of Gemini)
+## Screenshots (Independent of Image Provider)
 
-Screenshots use `screenshot_tool.py` (Playwright) and always work regardless of Gemini API:
+Screenshots use `screenshot_tool.py` (Playwright) and always work regardless of Minimax/Gemini availability:
 
 ```bash
 # Manual single screenshot
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py screenshot "https://example.com" \
   -o /tmp/screenshot.png -w 3
-picgo upload /tmp/screenshot.png
+# 默认走 screenshot_tool 内置 CDN 上传（复用项目统一上传器）
 ```
 
 **Automated flow** (`--process-file`):
@@ -201,12 +203,14 @@ On transient failure (network, SSL, rate-limit):
 > 不应雷同(不同镜头、不同构图、不同主体框选)。两件事解耦 — 锁调色板 + 风格,
 > 放开镜头 + 构图。
 
-**全篇必锁 (writer 写 PROMPT 时手动保证一致):**
+**全篇建议统一 (不是死锁):**
 
-1. **视觉风格 preset** — 扁平/等距/线描/渐变,从 S1-S7 选一个,全篇统一
-2. **色彩家族** — 封面确定主色 + 辅色组合,后续图片复用
-3. **氛围关键词** — clean/modern/warm/bold,全篇一致
-4. **背景处理** — 白底/深色/渐变,全篇统一
+1. **视觉风格 preset** — 先按内容类型选一个主风格,再允许相邻图做轻微变化
+2. **色彩家族** — 同一小节内尽量一致,跨小节可切换
+3. **材质表现** — flat / layered / line-art / gradient / paper-cut,按图像职责选择
+4. **氛围关键词** — clean/modern/warm/bold,按图像职责选择
+5. **光线 / 尺度** — soft daylight / studio light, macro / wide / mixed-scale,可在系列内做受控切换
+6. **背景处理** — 白底/深色/渐变,可在系列内做受控切换
 
 **鼓励变化 (脚本自动按位置注入,作者不必手写):**
 
@@ -223,26 +227,29 @@ On transient failure (network, SSL, rate-limit):
 <!-- PROMPT: [风格约束 + 色彩 + 背景], [具体内容] -->
 ```
 
-例:封面用 `minimalist isometric illustration, soft blue and coral palette,
-white background` 锁感觉,后续节奏图也带这段前缀。脚本(`generate_and_upload_images.py`
-里的 `vary_prompt_for_position`) 会在每张图 PROMPT 末尾按位置注入不同的
-`Camera:` 和 `Composition:`,4 张图自然拉开画面差异。
+例:架构图优先 `isometric technical illustration`，对比图优先
+`clean data visualization style`，观点图优先 `conceptual metaphor illustration`。
+脚本(`generate_and_upload_images.py` 里的 `select_visual_style_from_prompt()` /
+`vary_prompt_for_position()`) 会先按内容选 preset，再按位置注入不同的
+`Camera:` / `Composition:` / `Visual treatment:` / `Palette:` / `Material:` / `Lighting:` / `Scale:`，
+同一篇文章自然拉开画面差异。
 
 ### 镜头/构图轮转表 (脚本自动注入,作者了解即可)
 
-| 图片位置 | 自动注入的 Camera | 自动注入的 Composition |
-|---------|------------------|----------------------|
-| 封面 (idx 0) | establishing wide shot | centered subject with breathing room |
-| 节奏图 1 (idx 1) | three-quarter perspective view | rule-of-thirds with off-center focus |
-| 节奏图 2 (idx 2) | top-down overhead view | scattered multi-focal composition |
-| 节奏图 3 (idx 3) | close-up detail focus | hierarchical layered composition |
-| 节奏图 4 (idx 4) | side elevation flat view | asymmetric weight balance |
-| 节奏图 5 (idx 5) | isometric corner perspective | grid-aligned modular composition |
+| 图片位置 | 自动注入的 Camera | 自动注入的 Composition | 自动注入的 Visual treatment |
+|---------|------------------|----------------------|-----------------------------|
+| 封面 (idx 0) | establishing wide shot | centered subject with breathing room | minimal and airy with large whitespace |
+| 节奏图 1 (idx 1) | three-quarter perspective view | rule-of-thirds with off-center focus | slightly denser with more components in frame |
+| 节奏图 2 (idx 2) | top-down overhead view | scattered multi-focal composition | diagrammatic with stronger visual hierarchy |
+| 节奏图 3 (idx 3) | close-up detail focus | hierarchical layered composition | editorial and narrative with one dominant focal object |
+| 节奏图 4 (idx 4) | side elevation flat view | asymmetric weight balance | bold contrast with crisp outlines and accent blocks |
+| 节奏图 5 (idx 5) | isometric corner perspective | grid-aligned modular composition | soft atmospheric with subtle gradients and shadows |
 | (位置 6+ 取模轮转) | | |
 
-**作者覆盖**:如果你在 PROMPT 里**手动写了** Camera/Composition (比如
-`top-down view of...` 或 `centered composition...`),脚本检测到后会跳过
-该轴的注入,你的写法生效。要完全关闭注入用 `--no-vary-prompts` flag。
+**作者覆盖**:如果你在 PROMPT 里**手动写了** Camera/Composition/Visual treatment
+(比如 `top-down view of...`、`centered composition...` 或 `Visual treatment: ...`),
+脚本检测到后会跳过对应轴的注入,你的写法生效。要完全关闭注入用
+`--no-vary-prompts` flag。
 
 **验证 (2026-05-08 实测)**:6 张同基础 PROMPT,只换 Camera + Composition
 指令,Gemini 输出的画面**显著不同**(等距 / 俯视 / 横向阶梯 / 信息密集
@@ -369,6 +376,21 @@ Soft [blue] [purple] [yellow] [green] accents
 | E 资讯 | S1 极简扁平 | S2 等距透视 | 简洁、快速、信息密度 |
 | F 复盘 | S5 数据可视化 | S4 手绘线描 | 反思、对比、before/after |
 | G 观点 | S6 概念场景 | S3 渐变科技 | 有态度、引发思考 |
+
+### 设计逻辑
+
+先判断这张图要解决什么问题，再选视觉语言：
+
+| 目标 | 优先视觉 |
+|------|---------|
+| 解释结构 | S2 / S7 |
+| 展示对比 | S5 |
+| 表达概念 | S6 / S3 |
+| 讲流程 | S7 / S1 |
+| 强调人味 | S4 |
+| 泛用兜底 | S1 |
+
+每张图最终都会再经过位置轮转，补上镜头、构图、配色、材质、光线和尺度变化。
 
 ### Prompt 写作规则
 

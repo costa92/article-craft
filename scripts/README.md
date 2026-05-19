@@ -4,7 +4,7 @@ Scripts are bundled directly in this directory (self-contained):
 
 ```
 article-craft/scripts/
-├── nanobanana.py                    # Single image generation (Gemini API)
+├── nanobanana.py                    # Single image generation (Minimax first, Gemini fallback)
 ├── generate_and_upload_images.py    # Batch image processing + upload
 ├── config.py                        # VerificationCache, MODEL_FALLBACK_CHAIN, constants
 ├── utils.py                         # PlaceholderManager, SmartDirectoryMatcher

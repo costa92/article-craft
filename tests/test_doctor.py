@@ -1,0 +1,204 @@
+import importlib.util
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class DoctorTests(unittest.TestCase):
+    def setUp(self):
+        self.repo_root = Path(__file__).resolve().parents[1]
+        self.scripts_dir = self.repo_root / "scripts"
+        self.env_backup = os.environ.copy()
+        sys.path.insert(0, str(self.scripts_dir))
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self.env_backup)
+        if str(self.scripts_dir) in sys.path:
+            sys.path.remove(str(self.scripts_dir))
+        for name in ["setup_dependencies", "doctor"]:
+            sys.modules.pop(name, None)
+
+    def _load_modules(self, home: Path):
+        os.environ["HOME"] = str(home)
+        setup = load_module("setup_dependencies", self.scripts_dir / "setup_dependencies.py")
+        doctor = load_module("doctor", self.scripts_dir / "doctor.py")
+        return setup, doctor
+
+    def test_doctor_blocks_when_minimax_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude").mkdir(parents=True, exist_ok=True)
+            (home / ".claude" / "env.json").write_text("{}", encoding="utf-8")
+            setup, doctor = self._load_modules(home)
+            pass_result = setup._result("x", "pass", "ok")
+            with mock.patch.dict(os.environ, {"MINIMAX_API_KEY": ""}, clear=False), \
+                 mock.patch.object(setup, "run_all_checks", return_value=[pass_result, setup.check_minimax_api_key()]), \
+                 mock.patch.object(doctor, "run_all_checks", return_value=[pass_result, setup.check_minimax_api_key()]):
+                code = doctor.main(["check", "--json"])
+            self.assertEqual(code, 2)
+
+    def test_doctor_blocks_when_playwright_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text('{"gemini_api_key":"x","s3":{"enabled":true}}', encoding="utf-8")
+            setup, doctor = self._load_modules(home)
+            play_block = setup._result("playwright", "block", "missing playwright")
+            with mock.patch.object(doctor, "run_all_checks", return_value=[setup.check_gemini_api_key(), play_block]):
+                code = doctor.main(["check", "--json"])
+            self.assertEqual(code, 2)
+
+    def test_check_playwright_falls_back_after_timeout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text('{"minimax_api_key":"x","s3":{"enabled":true}}', encoding="utf-8")
+            setup, _doctor = self._load_modules(home)
+            timeout = setup.subprocess.TimeoutExpired(cmd=["python3"], timeout=10)
+            with mock.patch.object(setup.subprocess, "run", side_effect=timeout), \
+                 mock.patch.object(setup, "_probe_playwright_inprocess", return_value="/tmp/chromium"):
+                result = setup.check_playwright()
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["details"]["chromium_executable"], "/tmp/chromium")
+            self.assertTrue(result["details"]["fallback_used"])
+
+    def test_check_playwright_blocks_when_timeout_and_fallback_fail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text('{"minimax_api_key":"x","s3":{"enabled":true}}', encoding="utf-8")
+            setup, _doctor = self._load_modules(home)
+            timeout = setup.subprocess.TimeoutExpired(cmd=["python3"], timeout=10)
+            with mock.patch.object(setup.subprocess, "run", side_effect=timeout), \
+                 mock.patch.object(setup, "_probe_playwright_inprocess", side_effect=OSError("fallback failed")):
+                result = setup.check_playwright()
+            self.assertEqual(result["status"], "block")
+            self.assertIn("TimeoutExpired", result["message"])
+
+    def test_doctor_warns_when_ytdlp_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text('{"gemini_api_key":"x","s3":{"enabled":true}}', encoding="utf-8")
+            setup, doctor = self._load_modules(home)
+            with mock.patch.object(setup, "check_command_exists", side_effect=lambda cmd: False if cmd == "yt-dlp" else True):
+                result = setup.check_ytdlp()
+            self.assertEqual(result["status"], "warn")
+            with mock.patch.object(doctor, "run_all_checks", return_value=[setup._result("a", "pass", "ok"), result]):
+                code = doctor.main(["check", "--json"])
+            self.assertEqual(code, 1)
+
+    def test_doctor_warns_when_notebooklm_cli_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text('{"minimax_api_key":"x","s3":{"enabled":true}}', encoding="utf-8")
+            setup, doctor = self._load_modules(home)
+            with mock.patch.object(setup, "check_command_exists", return_value=False):
+                result = setup.check_notebooklm_cli()
+            self.assertEqual(result["status"], "warn")
+            with mock.patch.object(doctor, "run_all_checks", return_value=[setup._result("a", "pass", "ok"), result]):
+                code = doctor.main(["check", "--json"])
+            self.assertEqual(code, 1)
+
+    def test_doctor_accepts_notebooklm_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text('{"minimax_api_key":"x","s3":{"enabled":true}}', encoding="utf-8")
+            setup, _doctor = self._load_modules(home)
+            with mock.patch.object(setup, "check_command_exists", side_effect=lambda cmd: cmd == "notebooklm"):
+                result = setup.check_notebooklm_cli()
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["details"]["command"], "notebooklm")
+            self.assertEqual(result["details"]["flavor"], "research-cli")
+
+    def test_doctor_accepts_nlm_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text('{"minimax_api_key":"x","s3":{"enabled":true}}', encoding="utf-8")
+            setup, _doctor = self._load_modules(home)
+            with mock.patch.object(setup, "check_command_exists", side_effect=lambda cmd: cmd == "nlm"):
+                result = setup.check_notebooklm_cli()
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["details"]["command"], "nlm")
+            self.assertEqual(result["details"]["flavor"], "research-cli")
+
+    def test_doctor_accepts_notebooklm_mcp_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text('{"minimax_api_key":"x","s3":{"enabled":true}}', encoding="utf-8")
+            setup, _doctor = self._load_modules(home)
+            with mock.patch.object(setup, "check_command_exists", side_effect=lambda cmd: cmd == "notebooklm-mcp"):
+                result = setup.check_notebooklm_cli()
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["details"]["command"], "notebooklm-mcp")
+            self.assertEqual(result["details"]["flavor"], "mcp-compat")
+
+    def test_doctor_warns_when_picgo_missing_but_not_required(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text(
+                '{"gemini_api_key":"x","s3":{"enabled":true},"upload_mode":"s3"}',
+                encoding="utf-8",
+            )
+            setup, doctor = self._load_modules(home)
+            with mock.patch.object(setup.shutil, "which", return_value=None):
+                result = setup.check_picgo()
+            self.assertEqual(result["status"], "warn")
+            self.assertFalse(result["details"]["required"])
+            with mock.patch.object(doctor, "run_all_checks", return_value=[setup._result("a", "pass", "ok"), result]):
+                code = doctor.main(["check", "--json"])
+            self.assertEqual(code, 1)
+
+    def test_doctor_json_payload_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg = home / ".claude"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "env.json").write_text('{"gemini_api_key":"x","s3":{"enabled":true}}', encoding="utf-8")
+            setup, doctor = self._load_modules(home)
+            payload_checks = [
+                setup._result("gemini_api_key", "pass", "ok"),
+                setup._result("yt_dlp", "warn", "missing"),
+            ]
+            with mock.patch.object(doctor, "run_all_checks", return_value=payload_checks), \
+                 mock.patch("builtins.print") as print_mock:
+                code = doctor.main(["check", "--json"])
+            self.assertEqual(code, 1)
+            printed = "".join(call.args[0] for call in print_mock.call_args_list if call.args)
+            payload = json.loads(printed)
+            self.assertEqual(payload["status"], "warn")
+            self.assertEqual(payload["summary"]["pass"], 1)
+            self.assertEqual(payload["summary"]["warn"], 1)
+            self.assertEqual(payload["summary"]["block"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -115,33 +115,28 @@ No .article-craft-state.json found — using content heuristics.
 
 ### Step 0: Preflight Dependency Check
 
-Before running any skill, verify that the tools downstream stages depend on are actually available. Fail fast with a specific error naming the missing piece — do **not** let the user sit through `requirements → verify → write → screenshot` only to have `images` explode because `GEMINI_API_KEY` was never configured.
+Before running any skill, verify that the tools downstream stages depend on are actually available. Fail fast with a specific error naming the missing piece — do **not** let the user sit through `requirements → verify → write → screenshot` only to have `images` explode because `MINIMAX_API_KEY` was never configured.
 
-Run these checks in parallel via Bash:
+Run the unified doctor command:
 
 ```bash
-# 1. Gemini API key — required by images + nanobanana.py
-python3 -c "import json, os; e=json.load(open(os.path.expanduser('~/.claude/env.json'))); assert e.get('gemini_api_key'), 'GEMINI_API_KEY missing'" 2>&1
-
-# 2. Playwright chromium — required by screenshot_tool.py
-python3 -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); p.chromium.executable_path; p.stop()" 2>&1
-
-# 3. PicGo (optional — only fail if the user has configured PicGo as upload mode)
-command -v picgo 2>&1 || echo "picgo not on PATH (only needed if upload_mode=picgo in env.json)"
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py check --json
 ```
 
-**Skip rules**:
-- **draft mode** (`--draft`): skip all three — draft produces a markdown file only, no images or screenshots are needed
-- **quick mode** (`--quick`): skip PicGo check if `upload_mode=s3`
-- **upgrade mode** (`--upgrade`): run only the checks relevant to the stages that will actually run after state detection
+Interpret the result by `status`:
+- `pass` — continue
+- `warn` — show the warnings and continue with degraded functionality
+- `block` — stop the pipeline and show the listed fixes
 
-**On failure**: report the specific missing dependency and point to `ENV.md` / `install.sh` for remediation. Do not continue the pipeline.
+**Skip rule**:
+- **draft mode** (`--draft`): skip preflight entirely — draft produces markdown only, no screenshots or generated images are required
+
+**On block**: report the specific missing dependency and point to the `fix` field from doctor output. Do not continue the pipeline.
 
 Example failure output:
 ```
-❌ Preflight failed: GEMINI_API_KEY missing from ~/.claude/env.json
-   → Fix: add `"gemini_api_key": "..."` to ~/.claude/env.json
-   → See: ENV.md
+❌ Preflight failed: minimax_api_key
+   → Fix: Add "minimax_api_key" to ~/.claude/env.json or export MINIMAX_API_KEY
 ```
 
 ### Step 1: Determine Mode

@@ -30,7 +30,8 @@ bash install.sh
 - 安装 Python 依赖
 - 安装 shot-scraper + Playwright
 - 安装 PicGo CLI（图床上传）
-- 配置 Gemini API Key
+- 配置 Minimax API Key
+- 可选配置 Gemini fallback Key
 - 验证安装结果
 
 ---
@@ -67,13 +68,51 @@ picgo set uploader    # 配置图床（推荐 github + jsDelivr CDN）
 pip3 install yt-dlp
 ```
 
-### Gemini API Key
+### NotebookLM CLI（可选，长文调研/资料整理用）
+
+推荐安装：
+
+```bash
+uv tool install notebooklm-cli
+```
+
+或：
+
+```bash
+pip3 install notebooklm-cli
+```
+
+安装完成后验证：
+
+```bash
+nlm --help
+```
+
+如果你的环境额外提供了 `notebooklm` 包装命令，也可以直接运行 `notebooklm --help`。
+
+如果你需要的是 MCP 服务端兼容层，而不是研究 CLI，本项目也兼容：
+
+```bash
+uv tool install notebooklm-mcp-cli
+notebooklm-mcp --help
+```
+
+### Minimax API Key
 
 编辑 `~/.claude/env.json`：
 
 ```json
 {
-  "gemini_api_key": "YOUR_KEY_HERE"
+  "minimax_api_key": "YOUR_KEY_HERE"
+}
+```
+
+可选再补充 Gemini fallback：
+
+```json
+{
+  "minimax_api_key": "YOUR_MINIMAX_KEY",
+  "gemini_api_key": "YOUR_GEMINI_KEY"
 }
 ```
 
@@ -161,14 +200,16 @@ pip3 install yt-dlp
 | Python 3.10+ | — | 运行时 |
 | shot-scraper | `pip3 install shot-scraper` | 网页截图 |
 | Playwright | `shot-scraper install` | 浏览器引擎 |
-| PicGo CLI | `npm install -g picgo` | 图片 CDN 上传 |
-| GEMINI_API_KEY | `~/.claude/env.json` | 图片生成 |
+| MINIMAX_API_KEY | `~/.claude/env.json` | 图片生成主链路 |
 
 ### 可选
 
 | 依赖 | 安装命令 | 用途 |
 |------|---------|------|
+| PicGo CLI | `npm install -g picgo` | 图片 CDN 上传 |
+| GEMINI_API_KEY | `~/.claude/env.json` | Gemini fallback / `--enhance` |
 | yt-dlp | `pip3 install yt-dlp` | YouTube 视频解析 |
+| NotebookLM CLI | `uv tool install notebooklm-cli` | 长文调研 / 资料整理 |
 | content-reviewer | Claude Code skill | 7 维度文章评分 |
 
 ---

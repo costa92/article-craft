@@ -21,6 +21,9 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 
 ```json
 {
+  "minimax_api_key": "YOUR_MINIMAX_API_KEY",
+  "image_model": "minimax-image-01",
+  "minimax_image_model": "minimax-image-01",
   "gemini_api_key": "YOUR_GEMINI_API_KEY",
   "gemini_image_model": "gemini-3-pro-image-preview",
   "gemini_text_model": "gemini-2.0-flash",
@@ -54,7 +57,13 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `gemini_api_key` | string | Gemini API Key，用于图片生成。从 [Google AI Studio](https://aistudio.google.com/app/apikey) 获取 |
+| `minimax_api_key` | string | Minimax API Key，用于图片生成 |
+
+### 推荐配置
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `gemini_api_key` | string | Gemini API Key，用于 fallback / `--enhance` |
 
 ### 可选配置
 
@@ -62,10 +71,13 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `gemini_image_model` | string | `gemini-3-pro-image-preview` | Gemini 图片生成模型，支持链式降级 |
+| `image_model` | string | `minimax-image-01` | 图片生成默认模型，优先级最高 |
+| `minimax_image_model` | string | `minimax-image-01` | Minimax 图片生成模型 |
+| `gemini_image_model` | string | `gemini-3-pro-image-preview` | Gemini 回退模型 |
 
 可用模型（按优先级）：
-- `gemini-3-pro-image-preview` — 最新最强，优先使用
+- `minimax-image-01` — 默认首选
+- `gemini-3-pro-image-preview` — Gemini 首个回退
 - `gemini-3.1-flash-image-preview` — 快速版本
 - `gemini-2.5-flash-image` — 轻量级兜底
 
@@ -88,6 +100,13 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `share_card_logo` | string | `""`（空） | 分享卡片底部的品牌文字。空时回落到 `.claude-plugin/plugin.json` 的 `name` 字段（默认 `article-craft`）。fork 时无须改源码即可换 logo。 |
+
+#### 知识库目录结构（publish 自动归类）
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `kb_category_root` | string | `02-技术` | publish 自动归类时的技术文章顶层目录名。`scripts/publish_plan.py` 的 auto 模式在此目录下递归找最佳子目录。KB 树命名不同的 fork 改这个字段即可，无须改源码。 |
+| `kb_uncategorized_dir` | string | `未分类` | 没有任何目录匹配时的兜底子目录名，最终路径为 `{kb_category_root}/{kb_uncategorized_dir}`。 |
 
 #### CDN 白名单（verify-claims / lint）
 
@@ -171,9 +190,13 @@ bash install.sh
 
 ## 常见问题
 
+### Q: `minimax_api_key` 缺失
+
+当前图片主链路默认走 Minimax。请在 `~/.claude/env.json` 中配置 `minimax_api_key`，或导出 `MINIMAX_API_KEY` 环境变量。
+
 ### Q: `gemini_api_key` 报错 403
 
-API Key 无效或未设置。前往 [Google AI Studio](https://aistudio.google.com/app/apikey) 创建新 Key。
+Gemini fallback Key 无效或未设置。前往 [Google AI Studio](https://aistudio.google.com/app/apikey) 创建新 Key。
 
 ### Q: `gemini_api_key` 报错 429
 

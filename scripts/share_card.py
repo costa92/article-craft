@@ -413,34 +413,28 @@ def batch_generate(title: str, description: str, tags: list,
 
 
 def upload_all(results: list) -> None:
-    """上传所有卡片到 CDN"""
-    import shutil
+    """上传所有卡片到 CDN，优先复用项目统一上传器。"""
+    try:
+        from generate_and_upload_images import upload_image  # type: ignore
+    except Exception:
+        upload_image = None
 
-    picgo = shutil.which("picgo")
-    if not picgo:
-        print("  ⚠️  picgo not found, skipping upload")
-        return
-
-    import subprocess
     for res in results:
         if not res.get("success"):
             continue
         path = res.get("output_path", "")
         if not path:
             continue
+
         try:
-            result = subprocess.run(
-                ["picgo", "upload", path],
-                capture_output=True, text=True, timeout=30
-            )
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                # 提取 URL
-                for line in output.splitlines():
-                    if line.startswith("http"):
-                        print(f"  🌐 {res['platform']}: {line}")
-                        res["cdn_url"] = line
-                        break
+            if upload_image is None:
+                print("  ⚠️  shared uploader unavailable, skipping upload")
+                break
+
+            cdn_url = upload_image(path)
+            if cdn_url and cdn_url != path:
+                print(f"  🌐 {res['platform']}: {cdn_url}")
+                res["cdn_url"] = cdn_url
         except Exception:
             pass
 

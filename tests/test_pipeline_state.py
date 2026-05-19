@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -130,6 +132,94 @@ class PipelineStateTests(unittest.TestCase):
             scan = pipeline_state._scan_article(article)
             self.assertIsNone(scan.tone)
 
+    def test_complete_rejects_non_object_result_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text("", encoding="utf-8")
+
+            code = pipeline_state.main([
+                "complete",
+                "--article",
+                str(article),
+                "--stage",
+                "write",
+                "--result",
+                "[]",
+            ])
+            self.assertEqual(code, 1)
+
+    def test_validate_state_reports_invalid_stage_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text("---\ntitle: demo\n---\n", encoding="utf-8")
+            state_path = article.parent / pipeline_state.STATE_FILENAME
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": pipeline_state.SCHEMA_VERSION,
+                        "pipeline_version": "test",
+                        "article_path": str(article.resolve()),
+                        "mode": "standard",
+                        "writing_style": "A",
+                        "created_at": 0,
+                        "last_updated_at": 0,
+                        "stages": {
+                            "write": {
+                                "status": "broken",
+                                "started_at": 0,
+                                "completed_at": 0,
+                                "result": {},
+                            }
+                        },
+                        "artifacts": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            repo_root = Path(__file__).resolve().parent.parent
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(repo_root / "scripts" / "pipeline_state.py"),
+                    "validate-state",
+                    "--article",
+                    str(article),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["error_code"], "invalid_stage_status")
+
+    def test_missing_stages_cli_emits_standard_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text("", encoding="utf-8")
+
+            repo_root = Path(__file__).resolve().parent.parent
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(repo_root / "scripts" / "pipeline_state.py"),
+                    "missing-stages",
+                    "--article",
+                    str(article),
+                    "--mode",
+                    "standard",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["message"], "computed missing stages")
+            self.assertIn("missing", payload["details"])
+            self.assertEqual(payload["details"]["source"], "heuristic")
+
 
 class CheckPublishReadyTests(unittest.TestCase):
     """Pre-publish placeholder gate (`pipeline_state.py check-publish-ready`).
@@ -164,7 +254,9 @@ class CheckPublishReadyTests(unittest.TestCase):
             )
             code, stdout, stderr = self._run(article)
             self.assertEqual(code, 0, msg=stderr)
-            self.assertIn('"ready": true', stdout)
+            payload = json.loads(stdout)
+            self.assertTrue(payload["ok"])
+            self.assertTrue(payload["details"]["ready"])
 
     def test_unresolved_image_placeholder_blocks_publish(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -177,7 +269,9 @@ class CheckPublishReadyTests(unittest.TestCase):
             )
             code, stdout, stderr = self._run(article)
             self.assertEqual(code, 1)
-            self.assertIn('"ready": false', stdout)
+            payload = json.loads(stdout)
+            self.assertFalse(payload["ok"])
+            self.assertFalse(payload["details"]["ready"])
             self.assertIn("BLOCK publish", stderr)
             self.assertIn("IMAGE: 1", stderr)
             self.assertIn("PROMPT: 1", stderr)

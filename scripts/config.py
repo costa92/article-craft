@@ -239,6 +239,26 @@ def author_name() -> str:
 
     return "Anonymous"
 
+
+def kb_category_root() -> str:
+    """Resolve the top-level knowledge-base directory for technical articles.
+
+    Precedence: env.json ``kb_category_root`` > the literal ``02-技术``
+    fallback. Lets a fork with a differently-named KB tree override the
+    publish auto-placement root without editing source.
+    """
+    return _user_config.get("kb_category_root", "02-技术")
+
+
+def kb_uncategorized_dir() -> str:
+    """Resolve the fallback subdirectory name for unmatched articles.
+
+    Precedence: env.json ``kb_uncategorized_dir`` > the literal ``未分类``
+    fallback. Used by publish auto-placement when no category matches.
+    """
+    return _user_config.get("kb_uncategorized_dir", "未分类")
+
+
 # Aspect ratio to resolution mapping
 # NOTE: Only these aspect ratios are supported by Gemini API
 ASPECT_RATIO_MAP = {
@@ -303,8 +323,9 @@ RETRY_CONFIG = {
     ]
 }
 
-# Model degradation chain: pro → 3.1-flash → 2.5-flash
+# Model degradation chain: minimax → pro → 3.1-flash → 2.5-flash
 MODEL_FALLBACK_CHAIN = [
+    "minimax-image-01",
     "gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview",
     "gemini-2.5-flash-image",
@@ -341,7 +362,7 @@ SCREENSHOT_MAIN_CONTENT_OVERRIDES: Dict[str, List[str]] = (
 # Image generation defaults (read model from env.json)
 IMAGE_DEFAULTS = {
     "resolution": "2K",  # 1K, 2K, or 4K
-    "model": _user_config.get("gemini_image_model", "gemini-3-pro-image-preview"),
+    "model": _user_config.get("image_model", _user_config.get("gemini_image_model", "minimax-image-01")),
     "cover_aspect_ratio": "16:9",  # 1344x768, crop to 900x383 for WeChat
     "rhythm_aspect_ratio": "3:2",  # 1248x832 for article body images
 }

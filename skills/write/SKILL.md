@@ -889,8 +889,8 @@ the article by hand between draft and upgrade.
 2. **如果有占位符（count > 0）**，立即执行图片生成：
    ```bash
    # 探测可用模型
-   BEST_MODEL=$(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate_and_upload_images.py \
-     --probe 2>&1 | grep "BEST_MODEL:" | cut -d: -f2)
+   PROBE_OUTPUT=$(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate_and_upload_images.py --probe 2>&1)
+   BEST_MODEL=$(printf '%s\n' "$PROBE_OUTPUT" | grep '^BEST_MODEL:' | cut -d: -f2)
 
    # 生成并上传图片
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/generate_and_upload_images.py \

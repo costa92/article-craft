@@ -1,5 +1,5 @@
 ---
-description: Generate and upload images for technical articles using Gemini API
+description: Generate and upload images for technical articles using Minimax first, with Gemini fallback
 argument-hint: [path/to/article.md]
 ---
 

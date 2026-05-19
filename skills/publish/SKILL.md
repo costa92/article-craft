@@ -67,50 +67,70 @@ human-readable summary on stderr listing how many of each placeholder
 kind remain. **Do not override this gate** — re-run image generation or
 manually replace placeholders, then re-invoke publish.
 
-### Step 1: Determine Output Mode
+### Step 1: Preview the Publish Move (`--dry-run`)
+
+Directory matching, collision detection, and Style H sidecar collection are
+all owned by `scripts/publish_plan.py`. It is a **single command**: run it
+with `--dry-run` to preview the plan (no filesystem changes), review the
+result, then run it again **with the same arguments minus `--dry-run`** to
+execute. The KB top-level directory name is **not** hardcoded — the script
+reads `config.kb_category_root()` (env.json `kb_category_root`, default
+`02-技术`), so a fork with a differently-named KB works unchanged.
 
 Two modes, selected by presence of `--output`:
 
 **Mode A — Explicit output** (`--output DIR` passed):
-1. Validate `DIR` exists and is writable. If not, fail with a clear error.
-2. Skip KB detection entirely.
-3. Skip Smart Directory Matching (Step 2).
-4. Move the article to `DIR/<filename>.md` and jump to Step 4.
-
-**Mode B — Auto-detect KB** (no `--output`):
-Check if the current working directory (or a known parent) is an Obsidian knowledge base by looking for the `02-技术/` directory.
 
 ```bash
-# Check from current directory upward
-[ -d "02-技术" ] || [ -d "../02-技术" ] || [ -d "../../02-技术" ]
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/publish_plan.py --dry-run \
+    --article /ABSOLUTE/PATH/article.md \
+    --output-dir /ABSOLUTE/PATH/DIR
 ```
 
-Also check for `.obsidian/` directory or numbered directories (`01-工作/`, `03-创作/`).
+Skips KB detection and directory matching entirely. If `DIR` doesn't exist
+the script exits 1 with `error_code: output_dir_not_found`.
 
-- **KB detected**: proceed to Step 2 (directory matching).
-- **KB not detected**: save to the current working directory. Skip to Step 4.
+**Mode B — Auto-detect KB** (no `--output`):
 
-### Step 2: Smart Directory Matching
+Check if the current working directory (or a known parent) is an Obsidian
+knowledge base by looking for the category-root directory (default `02-技术/`,
+or whatever `kb_category_root` is set to). Also check for `.obsidian/` or
+sibling numbered directories (`01-工作/`, `03-创作/`).
 
-When a knowledge base is detected, determine the best subdirectory under `02-技术/` for the article.
+- **KB detected** — pass its root so the script can match a subdirectory:
+  ```bash
+  python3 ${CLAUDE_PLUGIN_ROOT}/scripts/publish_plan.py --dry-run \
+      --article /ABSOLUTE/PATH/article.md \
+      --kb-root /ABSOLUTE/PATH/KB_ROOT
+  ```
+- **KB not detected** — omit `--kb-root`; the script falls back to the
+  article's own directory as the auto target.
 
-**Option A -- Use SmartDirectoryMatcher** (if available):
+`--dry-run` prints a JSON plan payload on stdout and **creates nothing** on
+disk:
 
-The `SmartDirectoryMatcher` class is located at `${CLAUDE_PLUGIN_ROOT}/scripts/utils.py`. It performs keyword matching, pattern matching, and history-based matching to find the best directory.
+| Field | Meaning |
+|-------|---------|
+| `target_dir` | Proposed destination directory |
+| `target_file` | Proposed file path. For `collision.status: rename` this name carries a placeholder timestamp — the **exact** timestamp is finalized when the real run executes, so report it as "a timestamped name", not verbatim. |
+| `collision.status` | `none` / `identical` (same content) / `rename` (differing content → timestamped) |
+| `sidecars` | Style H sidecars (`_evidence.json`, `_harvest_menu.md`) found next to the article |
+| `auto_meta.strategy` | How the directory was chosen — see Step 2 |
 
-```python
-import os
-import sys
-sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "scripts"))
-from utils import SmartDirectoryMatcher
+### Step 2: Review the Proposed Directory
 
-matcher = SmartDirectoryMatcher(kb_root=PROJECT_ROOT)
-matched_dir = matcher.match_directory(article_title, article_content)
-```
+In auto mode, inspect `auto_meta.strategy` from the plan:
 
-**Option B -- Manual keyword matching** (if SmartDirectoryMatcher is not available):
+- **`matcher`** — `SmartDirectoryMatcher` found a learned/keyword match. Trust it.
+- **`directory_fallback`** — no match; the script picked the deepest existing
+  subdirectory. Treat as a guess.
+- **`fallback`** — nothing matched; the script will use
+  `{kb_category_root}/{kb_uncategorized_dir}` (default `02-技术/未分类`).
 
-Use the directory mapping table below to determine the target directory:
+For `directory_fallback` / `fallback`, do a semantic match yourself using the
+table below, then use an explicit `--output-dir` in Step 3 so the article
+lands in the right place (substitute your configured `kb_category_root` for
+`02-技术`):
 
 | Article Topic | Target Directory | Examples |
 |---------------|-----------------|----------|
@@ -127,59 +147,36 @@ Use the directory mapping table below to determine the target directory:
 | n8n | `02-技术/工作流/n8n/` | Workflow automation |
 | New topic | `02-技术/<new-dir>/` | Auto-create |
 
-Analyze the article title and frontmatter tags to determine the best match. When ambiguous, ask the user.
+When the topic is genuinely ambiguous, ask the user before applying.
 
-### Step 3: Create Directory and Move Article
+### Step 3: Execute the Publish Move
 
-```bash
-# Set the target directory
-ARTICLE_DIR="${PROJECT_ROOT}/02-技术/<matched-subdirectory>"
-
-# Create if not exists
-mkdir -p "${ARTICLE_DIR}"
-
-# Move the article to its final location
-# Use cp if the original should be preserved, mv if it should be relocated
-cp /path/to/article.md "${ARTICLE_DIR}/"
-```
-
-Rules:
-- **Never hardcode paths.** Derive `PROJECT_ROOT` from the user's working directory or explicit input.
-- **Use `mkdir -p`** to create any missing intermediate directories.
-- **Collision handling:** Before copying, check if the target file already exists:
-  - If exists and content is identical → skip (already published)
-  - If exists and content differs → rename new file with timestamp suffix (e.g., `article_20260322.md`) and warn user
-  - Never silently overwrite an existing file
-
-### Step 3.5: Copy Style H sidecars (v1.4.15+)
-
-If the source directory contains `_evidence.json` and/or `_harvest_menu.md`
-next to the article (Style H signal), **copy them** alongside the article into
-`${ARTICLE_DIR}`. This preserves the evidence context so a future
-`/article-craft --upgrade ${ARTICLE_DIR}/article.md` can resume HARVEST
-operations (re-rehost a rotted CDN URL, regenerate menu, etc.).
+Once the target directory is confirmed, run the script **again without
+`--dry-run`** — keep the explicit `--output-dir` you settled on (use it even
+for an accepted auto match, so the executed run targets exactly the directory
+you reviewed and does not re-resolve):
 
 ```bash
-SRC_DIR="$(dirname /path/to/article.md)"
-
-for sidecar in _evidence.json _harvest_menu.md; do
-  if [ -f "${SRC_DIR}/${sidecar}" ]; then
-    # Collision policy matches the article: identical → skip, different → rename with timestamp
-    cp "${SRC_DIR}/${sidecar}" "${ARTICLE_DIR}/${sidecar}"
-    echo "   ✓ copied sidecar: ${sidecar}"
-  fi
-done
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/publish_plan.py \
+    --article /ABSOLUTE/PATH/article.md \
+    --output-dir /ABSOLUTE/PATH/CONFIRMED_DIR
 ```
 
-> **Note**: do **not** copy `.article-craft-state.json`. That file is
-> per-pipeline-run and the orchestrator deletes it on publish success (v1.4.2
-> cleanup rule).  `_evidence.json` and `_harvest_menu.md`, by contrast, are
-> **article-level** artifacts that outlive the pipeline run — they're how the
-> writer originally picked HARVEST placeholders, and a future `--upgrade` needs
-> them to interpret those placeholders.
+The executed run creates the directory (`mkdir -p` semantics), copies the
+article to `target_file`, and copies any Style H sidecars. It returns the plan
+plus a `copied_sidecars` list. Behaviour notes:
 
-**Non-Style-H articles** have no `_evidence.json`; this step is a silent no-op
-and adds zero overhead.
+- **Collision** — when a differing file already exists, the script writes to a
+  timestamped name (e.g. `article_20260322120000.md`); it never silently
+  overwrites. When content is identical it re-copies in place (a harmless
+  no-op). Surface `collision.status` to the user in the summary.
+- **Style H sidecars** — `_evidence.json` / `_harvest_menu.md` next to the
+  article are copied automatically so a future
+  `/article-craft --upgrade` can resume HARVEST operations. Non-Style-H
+  articles have no sidecars and this is a silent no-op.
+- **Never copied**: `.article-craft-state.json` — that file is
+  per-pipeline-run and the orchestrator deletes it on publish success (v1.4.2
+  cleanup rule). The script's `SIDECAR_FILES` list deliberately excludes it.
 
 ### Step 4: WeChat Distribution (optional)
 

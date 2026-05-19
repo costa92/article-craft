@@ -74,6 +74,21 @@ TWITTER_404_PATTERNS = [
 ]
 
 
+def _cli_payload(ok: bool, message: str, result: dict, error_code: str | None = None) -> dict:
+    payload = {
+        "ok": ok,
+        "message": message,
+        "details": {"result": result},
+    }
+    if error_code is not None:
+        payload["error_code"] = error_code
+    return payload
+
+
+def _print_cli_payload(ok: bool, message: str, result: dict, error_code: str | None = None) -> None:
+    print(json.dumps(_cli_payload(ok, message, result, error_code), indent=2, ensure_ascii=False))
+
+
 # ─── 工具函数 ────────────────────────────────────────────────────────────────
 
 def sanitize_filename(url: str) -> str:
@@ -958,7 +973,9 @@ def batch_capture(entries: list, output_dir: str = "", article_keywords: list = 
 
 def upload_to_cdn(image_path: str) -> str:
     """
-    上传截图到 CDN（通过 PicGo）。
+    上传截图到 CDN。
+    优先走 generate_and_upload_images.upload_image()，以复用统一上传策略
+    （S3 / PicGo）。如果共享上传器不可用，再回退到本地 PicGo 兼容解析。
     失败时返回本地路径。
 
     解析策略（与 generate_and_upload_images.py:upload_to_picgo 对齐）：
@@ -968,6 +985,12 @@ def upload_to_cdn(image_path: str) -> str:
     截图被 KB 当成"未上传"。这里改成先逐行扫 http(s)://，再回退 JSON
     （兼容未来格式变化），匹配实际行为。
     """
+    try:
+        from generate_and_upload_images import upload_image  # type: ignore
+        return upload_image(image_path)
+    except Exception:
+        pass
+
     picgo = shutil.which("picgo")
     if not picgo:
         return image_path
@@ -1976,7 +1999,7 @@ def main():
 
     if args.command == "check":
         status = check_url_status(args.url, timeout=args.timeout)
-        print(json.dumps(status, indent=2, ensure_ascii=False))
+        _print_cli_payload(bool(status.get("is_valid")), "url check complete", status)
         return
 
     if args.command == "harvest":
@@ -1986,7 +2009,7 @@ def main():
             min_width=args.min_width,
             use_fallback=not args.no_fallback,
         )
-        out_json = json.dumps(res, indent=2, ensure_ascii=False)
+        out_json = json.dumps(_cli_payload(not bool(res.get("error")), "harvest complete", res), indent=2, ensure_ascii=False)
         if args.output:
             with open(args.output, "w") as f:
                 f.write(out_json)
@@ -2007,7 +2030,7 @@ def main():
         import contextlib
         with contextlib.redirect_stdout(sys.stderr):
             res = rehost_image(args.url, mode=args.mode)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
+        _print_cli_payload(bool(res.get("ok")), "rehost complete", res, error_code=None if res.get("ok") else "rehost_failed")
         sys.exit(0 if res["ok"] else 1)
 
     if args.command == "harvest-menu":
@@ -2025,7 +2048,8 @@ def main():
         with contextlib.redirect_stdout(sys.stderr):
             res = expand_harvest(args.article, args.evidence or None,
                                   dry_run=args.dry_run, strict=args.strict)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
+        _print_cli_payload(bool(res.get("ok")), "expand-harvest complete", res,
+                           error_code=None if res.get("ok") else "expand_harvest_failed")
         sys.exit(0 if res.get("ok") else 1)
 
     if args.command == "screenshot":
@@ -2053,7 +2077,8 @@ def main():
                     print(f"  ✂️  裁剪至 {args.aspect_ratio} 完成")
                     res["file_size_kb"] = os.path.getsize(res["output_path"]) / 1024
 
-        print(json.dumps(res, indent=2, ensure_ascii=False))
+        _print_cli_payload(bool(res.get("success")), "screenshot complete", res,
+                           error_code=None if res.get("success") else "screenshot_failed")
 
         if res["success"] and not args.no_upload:
             cdn_url = upload_to_cdn(res["output_path"])

@@ -29,7 +29,7 @@ cd /.claude/plugins/marketplaces/article-craft
 bash install.sh
 ```
 
-This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and configures your Gemini API key.
+This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and prepares your Minimax-first image setup.
 
 ### Verify Installation
 
@@ -47,7 +47,7 @@ This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and
 | evidence | Style H source evidence collection |
 | write | Generate articles with 7 writing styles |
 | screenshot | Web screenshots (Playwright + URL validation) + share cards |
-| images | Gemini API image generation + CDN upload |
+| images | Minimax-first image generation + CDN upload |
 | verify-claims | Post-write shell command validation |
 | review | Self-check + 7-dimension quality scoring |
 | publish | Knowledge base auto-placement |

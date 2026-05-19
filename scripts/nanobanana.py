@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate or edit images using Google Gemini API.
+Generate or edit images using Minimax first, with Gemini fallback.
 
 This is the canonical implementation for article-craft images skill.
 """
@@ -10,6 +10,8 @@ import argparse
 import uuid
 import time
 import subprocess
+import json
+import base64
 from functools import wraps
 
 # Auto-check dependencies on import
@@ -19,6 +21,7 @@ try:
     from google.genai import types
     from PIL import Image
     from io import BytesIO
+    import requests
 except ImportError as e:
     print(f"❌ 缺少依赖: {e}")
     print("🔧 正在自动安装依赖...\n")
@@ -67,6 +70,7 @@ except ImportError:
         ]
     }
     MODEL_FALLBACK_CHAIN = [
+        "minimax-image-01",
         "gemini-3-pro-image-preview",
         "gemini-3.1-flash-image-preview",
         "gemini-2.5-flash-image",
@@ -81,6 +85,10 @@ class NoImageDataError(Exception):
     """API returned a response but contained no image data."""
     pass
 
+
+def _minimax_model_name(model):
+    return "image-01" if model == "minimax-image-01" else model
+
 # Load env.json for configuration (model name, etc.)
 _env_json_config = {}
 _env_json_path = os.path.expanduser("~/.claude/env.json")
@@ -91,33 +99,31 @@ if os.path.exists(_env_json_path):
     except Exception:
         pass
 
-# Priority: Environment variable > ~/.claude/env.json > ~/.nanobanana.env
-api_key = os.getenv("GEMINI_API_KEY")
+def _gemini_api_key():
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        val = _env_json_config.get("gemini_api_key", "")
+        if val and not val.startswith("your-"):
+            api_key = val
+    if not api_key:
+        dotenv_path = os.path.expanduser("~/.nanobanana.env")
+        if os.path.exists(dotenv_path):
+            load_dotenv(dotenv_path)
+            api_key = os.getenv("GEMINI_API_KEY")
+    return api_key
 
-if not api_key:
-    val = _env_json_config.get("gemini_api_key", "")
-    if val and not val.startswith("your-"):
-        api_key = val
 
-if not api_key:
-    dotenv_path = os.path.expanduser("~/.nanobanana.env")
-    if os.path.exists(dotenv_path):
-        load_dotenv(dotenv_path)
-        api_key = os.getenv("GEMINI_API_KEY")
+def _minimax_api_key():
+    api_key = os.getenv("MINIMAX_API_KEY", "").strip()
+    if api_key:
+        return api_key
+    return str(_env_json_config.get("minimax_api_key", "")).strip()
 
-if not api_key:
-    raise ValueError(
-        "Missing GEMINI_API_KEY. Please configure in one of:\n"
-        "  1. ~/.claude/env.json (recommended): set gemini_api_key field\n"
-        "  2. Environment variable: export GEMINI_API_KEY=your_key_here\n"
-        "  3. ~/.nanobanana.env: GEMINI_API_KEY=your_key_here (legacy)"
-    )
 
-# Prevent google.genai from using a different (possibly exhausted) key
 if "GOOGLE_API_KEY" in os.environ:
     del os.environ["GOOGLE_API_KEY"]
 
-client = genai.Client(api_key=api_key)
+client = None
 
 # Default request timeout (seconds). Overridden by --timeout CLI arg.
 _request_timeout = None
@@ -126,7 +132,12 @@ _timeout_client = None
 
 def _get_client(timeout=None):
     """Return a Gemini client with optional per-request timeout."""
-    global _timeout_client
+    global _timeout_client, client
+    api_key = _gemini_api_key()
+    if not api_key:
+        raise ValueError(
+            "Missing GEMINI_API_KEY. Please configure in ~/.claude/env.json, environment, or ~/.nanobanana.env"
+        )
     effective_timeout = timeout or _request_timeout
     if effective_timeout:
         if _timeout_client is None:
@@ -135,6 +146,8 @@ def _get_client(timeout=None):
                 http_options={"timeout": effective_timeout},
             )
         return _timeout_client
+    if client is None:
+        client = genai.Client(api_key=api_key)
     return client
 
 
@@ -172,8 +185,9 @@ def enhance_prompt(original_prompt):
         "You are an expert AI art prompt engineer. "
         "Your task is to rewrite the input prompt into a detailed, high-quality image generation prompt "
         "suitable for a technical blog article. "
-        "Style requirements: Minimalist, modern, flat design, tech-focused, professional, high resolution, "
-        "clean lines, soft lighting, tech blue and orange color scheme (optional). "
+        "Vary the visual treatment based on the content: choose between minimalist flat, isometric, "
+        "data-viz, line-art, conceptual scene, or bold infographic. Avoid reusing the same palette and framing "
+        "across unrelated prompts. "
         "Avoid text in images. "
         "Output ONLY the enhanced prompt, no explanations."
     )
@@ -232,6 +246,52 @@ def _generate_single_model(model, contents, aspect_ratio, resolution, output_pat
         )
 
 
+@retry_on_error()
+def _generate_single_minimax(model, contents, aspect_ratio, resolution, output_path):
+    api_key = _minimax_api_key()
+    if not api_key:
+        raise ValueError(
+            "Missing MINIMAX_API_KEY. Please configure in ~/.claude/env.json or environment"
+        )
+    prompt = "\n".join(str(item) for item in contents if isinstance(item, str))
+    response = requests.post(
+        "https://api.minimaxi.com/v1/image_generation",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": _minimax_model_name(model),
+            "prompt": prompt,
+            "response_format": "base64",
+        },
+        timeout=_request_timeout,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Minimax API error {response.status_code}: {(response.text or '')[:200]}")
+
+    data = response.json() if response.text else {}
+    image_b64 = ((data.get("data") or {}).get("image_base64") if isinstance(data, dict) else None)
+    if isinstance(image_b64, list):
+        image_b64 = image_b64[0] if image_b64 else None
+    if image_b64:
+        image = Image.open(BytesIO(base64.b64decode(image_b64)))
+        image.save(output_path)
+        print(f"\n\nImage saved to: {output_path}")
+        return
+
+    image_urls = ((data.get("data") or {}).get("image_urls") if isinstance(data, dict) else None) or []
+    if image_urls:
+        img_resp = requests.get(image_urls[0], timeout=_request_timeout)
+        img_resp.raise_for_status()
+        image = Image.open(BytesIO(img_resp.content))
+        image.save(output_path)
+        print(f"\n\nImage saved to: {output_path}")
+        return
+
+    raise NoImageDataError("No image data in Minimax response.")
+
+
 def generate_image(model, contents, aspect_ratio, resolution, output_path, no_fallback=False):
     """
     Generate image with automatic model degradation on persistent 503/overloaded errors.
@@ -240,6 +300,8 @@ def generate_image(model, contents, aspect_ratio, resolution, output_path, no_fa
     Never escalates to a more expensive model.
     """
     if no_fallback:
+        if str(model).startswith("minimax"):
+            return _generate_single_minimax(model, contents, aspect_ratio, resolution, output_path)
         return _generate_single_model(model, contents, aspect_ratio, resolution, output_path)
 
     # Build fallback chain: only include models at same level or cheaper
@@ -252,6 +314,8 @@ def generate_image(model, contents, aspect_ratio, resolution, output_path, no_fa
 
     for i, fallback_model in enumerate(chain):
         try:
+            if str(fallback_model).startswith("minimax"):
+                return _generate_single_minimax(fallback_model, contents, aspect_ratio, resolution, output_path)
             return _generate_single_model(fallback_model, contents, aspect_ratio, resolution, output_path)
         except NoImageDataError:
             # No image in response — try next model (might succeed with different model)
@@ -275,7 +339,7 @@ def run(default_size="1344x768"):
     - plugin standalone: 768x1344 (9:16 portrait)
     """
     parser = argparse.ArgumentParser(
-        description="Generate or edit images using Google Gemini API"
+        description="Generate or edit images using Minimax first, with Gemini fallback"
     )
     parser.add_argument(
         "--prompt", type=str, required=True,
@@ -295,7 +359,7 @@ def run(default_size="1344x768"):
         help=f"Size/aspect ratio (default: {default_size})",
     )
 
-    _default_model = _env_json_config.get("gemini_image_model", "gemini-3-pro-image-preview")
+    _default_model = _env_json_config.get("image_model", _env_json_config.get("minimax_image_model", _env_json_config.get("gemini_image_model", "minimax-image-01")))
     parser.add_argument(
         "--model", type=str, default=_default_model,
         choices=MODEL_FALLBACK_CHAIN,

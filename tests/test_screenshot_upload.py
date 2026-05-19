@@ -52,6 +52,22 @@ def test_picgo_multiline_log_then_bare_url(mod):
             "https://cdn.jsdelivr.net/gh/foo/bar/img.png"
 
 
+def test_upload_to_cdn_prefers_shared_uploader(mod):
+    fake_uploader = mock.Mock(return_value="https://cdn.example.com/shared.png")
+    fake_module = SimpleNamespace(upload_image=fake_uploader)
+    with mock.patch.dict(sys.modules, {"generate_and_upload_images": fake_module}):
+        assert mod.upload_to_cdn("/tmp/img.png") == "https://cdn.example.com/shared.png"
+    fake_uploader.assert_called_once_with("/tmp/img.png")
+
+
+def test_upload_to_cdn_shared_uploader_failure_returns_local_path(mod):
+    fake_uploader = mock.Mock(side_effect=RuntimeError("upload failed"))
+    fake_module = SimpleNamespace(upload_image=fake_uploader)
+    with mock.patch.dict(sys.modules, {"generate_and_upload_images": fake_module}):
+        assert mod.upload_to_cdn("/tmp/img.png") == "/tmp/img.png"
+    fake_uploader.assert_called_once_with("/tmp/img.png")
+
+
 def test_picgo_json_dict_format(mod):
     """Future-proof: if picgo ever switches to JSON dict output."""
     fake = '{"url": "https://cdn.example.com/x.png"}'

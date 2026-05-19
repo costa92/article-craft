@@ -12,5 +12,6 @@ Pass the user's arguments (topic, --quick, --draft, --upgrade, --series, --tone)
 - `--tone={neutral,casual,opinionated}` — Override tone tier (otherwise
   resolved from frontmatter or writing-style default). Invalid values
   abort with an error.
+- `--series SERIES_FILE` — Write the next planned article by reading the series file as the source of truth.
 
 ARGUMENTS: $ARGUMENTS

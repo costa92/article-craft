@@ -150,7 +150,22 @@ status: in_progress
 
 #### Step 2: 调用 orchestrator
 
-只传 `--series SERIES_FILE` 一个参数，orchestrator 自动从 series.md 中读取所有配置：
+优先调用脚本层读取下一篇配置：
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/series_state.py next --series /path/to/series.md
+```
+
+脚本返回统一 JSON payload，包含：
+- `article.title`
+- `article.summary`
+- `article.save_path`
+- `article.series_order`
+- `article.series_total`
+- `article.prev_title`
+- `article.next_title`
+
+orchestrator 只传 `--series SERIES_FILE` 一个参数，自动从 series.md 中读取所有配置：
 
 ```
 /article-craft --series /path/to/series-{slug}.md
@@ -164,7 +179,7 @@ Orchestrator 内部解析 series.md 后自动提取：
 - **save_path**: series.md 同目录下，文件名 `{NN}_{slug}.md`
 - **series context**: 自动生成导航信息（上一篇/下一篇标题和链接）
 
-**不要手动拼接参数**——所有信息都在 series.md 中。
+**不要手动拼接参数**——所有信息都在 series.md 中；脚本输出是下一篇写作上下文的单一真相源。
 
 #### Step 3: 注入系列元素
 
@@ -195,16 +210,42 @@ series_total: 5
 
 #### Step 4: 更新 series.md
 
-文章生成成功后，更新清单文件：
+文章生成成功后，调用脚本更新清单文件：
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/series_state.py mark-published \
+  --series /path/to/series.md \
+  --index 2 \
+  --path /path/to/02_go_data_structures.md
+```
+
+脚本负责：
 - 状态：`💡 planned` → `✅ published`
 - 文件路径：填入实际保存路径
-- 添加发布日期
+- 保存变更
+
+`--index` 是文章列表表格 `#` 列的序号（与 `next` 返回的 `article.index` 一致）。
+若传入的序号在表格中找不到对应行，脚本**不会**静默成功——它会以退出码 1 和
+`error_code: series_row_not_found` 报错，并保持 series.md 原样不动。遇到此错误时，
+先用 `status` 核对正确的序号再重试。
 
 ---
 
 ### 模式 3：查看系列进度 (`/article-craft:series status`)
 
-读取 series.md，输出进度摘要：
+直接调用脚本查看进度：
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/series_state.py status --series /path/to/series.md
+```
+
+输出统一 JSON payload，包含：
+- `progress.done`
+- `progress.total`
+- `next`
+- `articles`
+
+示例结果：
 
 ```
 📚 系列：Go 实战教程
@@ -225,7 +266,7 @@ series_total: 5
 
 ### 模式 4：生成合集导航 (`/article-craft:series collection`)
 
-系列全部完成后，自动生成一篇合集导航文章：
+系列全部完成后，生成一篇合集导航文章：
 
 - 标题：「Go 实战教程：从零到生产的完整指南（合集）」
 - 内容：系列介绍 + 每篇文章的摘要和链接
@@ -311,6 +352,8 @@ For each article:
 | 图片生成 | 包含在 orchestrator 中 | 包含（逐篇生成后自动执行） |
 | review | 包含在 orchestrator 中 | 不包含（后续批量运行） |
 | 适用场景 | 逐篇精细打磨 | 快速批量覆盖 |
+
+> `status / next / mark-published / validate` 都已下沉到 `scripts/series_state.py`，skill 只负责交互和生成策略，不再承担系列状态机实现。
 
 ---
 
@@ -450,6 +493,29 @@ Options:
 
 ---
 
+### 模式 7：校验系列文件 (`/article-craft:series validate`)
+
+在 `next` / `status` / `batch` 之前快速检查 series.md 结构是否完整，避免后续模式因清单解析失败而中途报错。
+
+直接调用脚本：
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/series_state.py validate --series /path/to/series.md
+```
+
+退出码：
+
+| Code | 含义 | 处理 |
+|------|------|------|
+| 0 | 系列文件有效（输出 `article_count`） | 继续后续模式 |
+| 1 | 文件不存在或文章列表表格缺失 | 打印 JSON payload 中的 `error_code` 与 `message`，提示用户修复 series.md 或先运行 `create` |
+
+脚本输出统一 JSON payload。`error_code` 取值：`series_not_found`（文件路径不存在）、`series_table_missing`（缺少 `| # | 标题 | ... |` 文章列表表格）。
+
+> 这是只读校验，不修改 series.md。建议在批量生成（模式 5）前先跑一次。
+
+---
+
 ## Standalone Mode
 
 当独立调用 `/article-craft:series` 时：
@@ -460,6 +526,7 @@ Options:
   - Create a new series — plan a multi-part article collection
   - Write next article — continue an existing series
   - Check status — view series progress
+  - Validate series file — sanity-check series.md structure before generating
   - Generate collection — create a summary article for a completed series
   - Audit coverage — analyze knowledge gap and plan next season
 ```

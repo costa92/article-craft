@@ -545,7 +545,7 @@ author: 月影
 ### 上传到 CDN
 
 ```bash
-# 生成后自动上传（需安装 picgo）
+# 生成后自动上传（复用项目统一上传器）
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/share_card.py -t "标题" -p wechat-cover,twitter --upload
 ```
 

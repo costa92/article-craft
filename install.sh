@@ -232,12 +232,78 @@ install_ytdlp() {
 }
 
 # =============================================================================
-# 配置 GEMINI_API_KEY
+# 检查 NotebookLM CLI（可选）
 # =============================================================================
-config_gemini_key() {
-  separator "配置 Gemini API Key"
+install_notebooklm_cli() {
+  separator "检查 NotebookLM CLI（可选）"
+
+  local notebooklm_cmd=""
+  if command -v notebooklm >/dev/null 2>&1; then
+    notebooklm_cmd="notebooklm"
+  elif command -v nlm >/dev/null 2>&1; then
+    notebooklm_cmd="nlm"
+  elif command -v notebooklm-mcp >/dev/null 2>&1; then
+    notebooklm_cmd="notebooklm-mcp"
+  fi
+  if [ -n "$notebooklm_cmd" ]; then
+    success "NotebookLM CLI 已安装: $notebooklm_cmd"
+    return 0
+  fi
+
+  echo -n "  是否安装 NotebookLM CLI（用于长文调研/资料整理）？[y/N]: "
+  read -r answer
+  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    info "跳过 NotebookLM CLI（需要时可运行: uv tool install notebooklm-cli）"
+    return 0
+  fi
+
+  if command -v uv >/dev/null 2>&1; then
+    info "使用 uv 安装 notebooklm-cli..."
+    if uv tool install notebooklm-cli >/dev/null 2>&1; then
+      success "NotebookLM CLI 安装完成"
+    else
+      warn "uv 安装失败，尝试 pip3..."
+      if pip3 install -q notebooklm-cli 2>/dev/null; then
+        success "NotebookLM CLI 安装完成"
+      else
+        warn "NotebookLM CLI 安装失败，请手动运行: uv tool install notebooklm-cli"
+        return 0
+      fi
+    fi
+  elif command -v pip3 >/dev/null 2>&1; then
+    info "使用 pip3 安装 notebooklm-cli..."
+    if pip3 install -q notebooklm-cli 2>/dev/null; then
+      success "NotebookLM CLI 安装完成"
+    else
+      warn "NotebookLM CLI 安装失败，请手动运行: pip3 install notebooklm-cli"
+      return 0
+    fi
+  else
+    warn "未找到 uv/pip3，无法自动安装 NotebookLM CLI"
+    echo "  手动安装: uv tool install notebooklm-cli"
+    return 0
+  fi
+
+  if command -v notebooklm >/dev/null 2>&1; then
+    success "已验证命令可用: notebooklm"
+  elif command -v nlm >/dev/null 2>&1; then
+    success "已验证命令可用: nlm"
+  elif command -v notebooklm-mcp >/dev/null 2>&1; then
+    success "已验证兼容命令可用: notebooklm-mcp"
+  else
+    warn "安装完成，但当前 shell 尚未识别 NotebookLM CLI 命令"
+    echo "  请重启终端后运行: nlm --help"
+  fi
+}
+
+# =============================================================================
+# 配置 MINIMAX_API_KEY
+# =============================================================================
+config_minimax_key() {
+  separator "配置 Minimax API Key"
 
   local env_file="${HOME}/.claude/env.json"
+  mkdir -p "$(dirname "$env_file")"
   # 优先用项目内的 env.example.json（跟着代码一起更新，结构永远最新），
   # 其次回落到用户家目录历史版本。
   local env_example=""
@@ -250,9 +316,9 @@ config_gemini_key() {
   # 检查是否已有有效 key
   local existing_key=""
   if [ -f "$env_file" ]; then
-    existing_key=$(python3 -c "import json; d=json.load(open('$env_file')); print(d.get('gemini_api_key',''))" 2>/dev/null || echo "")
+    existing_key=$(python3 -c "import json; d=json.load(open('$env_file')); print(d.get('minimax_api_key',''))" 2>/dev/null || echo "")
     if [ -n "$existing_key" ] && [[ ! "$existing_key" =~ ^your- ]]; then
-      success "GEMINI_API_KEY 已配置"
+      success "MINIMAX_API_KEY 已配置"
       return 0
     fi
   fi
@@ -260,20 +326,20 @@ config_gemini_key() {
   # 检查 env.example.json 是否带了真实 key（极少见，但不打破历史行为）
   if [ -n "$env_example" ] && [ -f "$env_example" ]; then
     local example_key=""
-    example_key=$(python3 -c "import json; d=json.load(open('$env_example')); print(d.get('gemini_api_key',''))" 2>/dev/null || echo "")
+    example_key=$(python3 -c "import json; d=json.load(open('$env_example')); print(d.get('minimax_api_key',''))" 2>/dev/null || echo "")
     if [ -n "$example_key" ] && [[ ! "$example_key" =~ ^your- ]]; then
       info "从 $env_example 复制配置到 env.json..."
       mkdir -p "$(dirname "$env_file")"
       cp "$env_example" "$env_file"
-      success "GEMINI_API_KEY 已配置"
+      success "MINIMAX_API_KEY 已配置"
       return 0
     fi
   fi
 
   echo ""
-  echo "  ${YELLOW}需要配置 Gemini API Key 用于图片生成${RESET}"
+  echo "  ${YELLOW}需要配置 Minimax API Key 用于图片生成主链路${RESET}"
   echo ""
-  echo "  1. 访问 https://aistudio.google.com/app/apikey 免费获取"
+  echo "  1. 从 Minimax 控制台获取 API Key"
   echo "  2. 输入你的 API Key"
   echo ""
   echo -n "  API Key (输入后回车): "
@@ -282,7 +348,7 @@ config_gemini_key() {
   if [ -z "$api_key" ]; then
     warn "跳过 API Key 配置"
     echo "  稍后可编辑 $env_file 手动添加:"
-    echo '    {"gemini_api_key": "YOUR_KEY_HERE"}'
+    echo '    {"minimax_api_key": "YOUR_KEY_HERE"}'
     return 0
   fi
 
@@ -297,7 +363,7 @@ import json, sys
 with open('$env_file', 'r') as f:
     d = json.load(f)
 
-d['gemini_api_key'] = '$api_key'
+d['minimax_api_key'] = '$api_key'
 
 with open('$env_file', 'w') as f:
     json.dump(d, f, indent=2, ensure_ascii=False)
@@ -306,14 +372,73 @@ PYEOF
     # 创建新文件
     cat > "$env_file" << EOF
 {
-  "gemini_api_key": "$api_key",
+  "minimax_api_key": "$api_key",
+  "image_model": "minimax-image-01",
+  "minimax_image_model": "minimax-image-01",
   "gemini_image_model": "gemini-3-pro-image-preview"
 }
 EOF
   fi
 
-  # 确保目录存在
+  success "MINIMAX_API_KEY 已保存到 $env_file"
+}
+
+# =============================================================================
+# 配置 GEMINI_API_KEY（可选）
+# =============================================================================
+config_gemini_key() {
+  separator "配置 Gemini API Key（可选，用于 fallback / --enhance）"
+
+  local env_file="${HOME}/.claude/env.json"
+  local existing_key=""
+  if [ -f "$env_file" ]; then
+    existing_key=$(python3 -c "import json; d=json.load(open('$env_file')); print(d.get('gemini_api_key',''))" 2>/dev/null || echo "")
+    if [ -n "$existing_key" ] && [[ ! "$existing_key" =~ ^your- ]]; then
+      success "GEMINI_API_KEY 已配置"
+      return 0
+    fi
+  fi
+
+  echo -n "  是否配置 Gemini fallback Key（用于 fallback / --enhance）？[y/N]: "
+  read -r answer
+  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    info "跳过 Gemini API Key（主链路仍可使用 Minimax）"
+    return 0
+  fi
+
+  echo ""
+  echo "  1. 访问 https://aistudio.google.com/app/apikey 获取 Gemini API Key"
+  echo "  2. 输入你的 API Key"
+  echo ""
+  echo -n "  Gemini API Key (输入后回车): "
+  read -r api_key
+
+  if [ -z "$api_key" ]; then
+    warn "未输入 Gemini API Key，跳过"
+    return 0
+  fi
+
+  api_key=$(echo "$api_key" | tr -d '[:space:]')
   mkdir -p "$(dirname "$env_file")"
+  if [ -f "$env_file" ]; then
+    python3 << PYEOF
+import json
+
+with open('$env_file', 'r') as f:
+    d = json.load(f)
+
+d['gemini_api_key'] = '$api_key'
+
+with open('$env_file', 'w') as f:
+    json.dump(d, f, indent=2, ensure_ascii=False)
+PYEOF
+  else
+    cat > "$env_file" << EOF
+{
+  "gemini_api_key": "$api_key"
+}
+EOF
+  fi
 
   success "GEMINI_API_KEY 已保存到 $env_file"
 }
@@ -354,6 +479,25 @@ verify() {
   else
     echo "  env.json          MISSING"
     ok=$((ok + 1))
+  fi
+
+  # API keys
+  local minimax_key=""
+  local gemini_key=""
+  if [ -f "${HOME}/.claude/env.json" ]; then
+    minimax_key=$(python3 -c "import json; d=json.load(open('${HOME}/.claude/env.json')); print(d.get('minimax_api_key',''))" 2>/dev/null || echo "")
+    gemini_key=$(python3 -c "import json; d=json.load(open('${HOME}/.claude/env.json')); print(d.get('gemini_api_key',''))" 2>/dev/null || echo "")
+  fi
+  if [ -n "$minimax_key" ] && [[ ! "$minimax_key" =~ ^your- ]]; then
+    echo "  minimax_api_key   OK"
+  else
+    echo "  minimax_api_key   MISSING"
+    ok=$((ok + 1))
+  fi
+  if [ -n "$gemini_key" ] && [[ ! "$gemini_key" =~ ^your- ]]; then
+    echo "  gemini_api_key    OK (optional)"
+  else
+    echo "  gemini_api_key    SKIPPED (optional)"
   fi
 
   echo ""
@@ -425,13 +569,19 @@ main() {
   # 5. yt-dlp（可选）
   install_ytdlp || true
 
-  # 6. GEMINI API Key
+  # 6. NotebookLM CLI（可选）
+  install_notebooklm_cli || true
+
+  # 7. MINIMAX API Key
+  config_minimax_key || true
+
+  # 8. GEMINI API Key（可选）
   config_gemini_key || true
 
-  # 7. 验证
+  # 9. 验证
   verify
 
-  # 8. 使用说明
+  # 10. 使用说明
   usage
 }
 

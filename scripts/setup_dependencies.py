@@ -1,261 +1,450 @@
 #!/usr/bin/env python3
 """
-Auto-detect and install missing dependencies for article-craft skill
-Includes Python packages and Node.js tools (picgo)
+Auto-detect and optionally install missing dependencies for article-craft.
+
+This module now exposes reusable healthcheck functions consumed by
+`scripts/doctor.py`, while preserving the original standalone CLI behavior.
 """
-import subprocess
-import sys
+
+from __future__ import annotations
+
+import json
 import os
 import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
 
-def check_command_exists(cmd):
-    """Check if a command exists in PATH"""
-    return shutil.which(cmd) is not None
 
-def check_python_dependencies():
-    """Check if required Python packages are installed, install if missing"""
+SCRIPT_DIR = Path(__file__).resolve().parent
+REQUIREMENTS_FILE = SCRIPT_DIR / "requirements.txt"
 
-    required_packages = {
-        'google.genai': 'google-genai>=0.1.0',
-        'PIL': 'Pillow>=10.0.0',
-        'dotenv': 'python-dotenv>=1.0.0',
-        'markdown': 'markdown>=3.5.0',
-        'premailer': 'premailer>=3.10.0',
-        'pygments': 'Pygments>=2.17.0',
-        'playwright': 'playwright>=1.40.0',
-        'requests': 'requests>=2.31.0',
+
+def _result(
+    name: str,
+    status: str,
+    message: str,
+    fix: str = "",
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "status": status,
+        "message": message,
+        "fix": fix,
+        "details": details or {},
     }
 
-    missing_packages = []
 
-    print("🔍 Checking Python dependencies...")
+def check_command_exists(cmd: str) -> bool:
+    """Check if a command exists in PATH."""
+    return shutil.which(cmd) is not None
 
-    # Check each required package
+
+def _load_env_json() -> dict[str, Any]:
+    env_json = Path("~/.claude/env.json").expanduser()
+    if not env_json.exists():
+        return {}
+    try:
+        return json.loads(env_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _requires_picgo() -> bool:
+    env = _load_env_json()
+    s3_enabled = bool((env.get("s3") or {}).get("enabled", False))
+    upload_mode = str(env.get("upload_mode", "")).strip().lower()
+    if upload_mode:
+        return upload_mode == "picgo"
+    return not s3_enabled
+
+
+def check_python_dependencies() -> dict[str, Any]:
+    required_packages = {
+        "google.genai": "google-genai>=0.1.0",
+        "PIL": "Pillow>=10.0.0",
+        "dotenv": "python-dotenv>=1.0.0",
+        "yaml": "PyYAML>=6.0",
+        "tqdm": "tqdm>=4.65.0",
+        "tenacity": "tenacity>=8.2.0",
+        "playwright": "playwright>=1.40.0",
+        "requests": "requests>=2.31.0",
+    }
+
+    missing_packages: list[str] = []
+
     for import_name, pip_name in required_packages.items():
         try:
-            if import_name == 'google.genai':
-                from google import genai
-            elif import_name == 'PIL':
-                import PIL
-            elif import_name == 'dotenv':
-                import dotenv
-            print(f"  ✅ {pip_name.split('>=')[0]} is installed")
+            if import_name == "google.genai":
+                from google import genai  # noqa: F401
+            elif import_name == "PIL":
+                import PIL  # noqa: F401
+            elif import_name == "dotenv":
+                import dotenv  # noqa: F401
+            elif import_name == "yaml":
+                import yaml  # noqa: F401
+            elif import_name == "tqdm":
+                import tqdm  # noqa: F401
+            elif import_name == "tenacity":
+                import tenacity  # noqa: F401
+            elif import_name == "playwright":
+                import playwright  # noqa: F401
+            elif import_name == "requests":
+                import requests  # noqa: F401
         except ImportError:
-            print(f"  ❌ {pip_name.split('>=')[0]} is missing")
             missing_packages.append(pip_name)
 
-    # Install missing packages
     if missing_packages:
-        print(f"\n📦 Installing {len(missing_packages)} missing Python package(s)...")
+        return _result(
+            "python_dependencies",
+            "block",
+            f"Missing Python packages: {', '.join(missing_packages)}",
+            f"Run: pip install -r {REQUIREMENTS_FILE}",
+            {"missing": missing_packages},
+        )
 
-        # Get the skill directory
-        skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        requirements_file = os.path.join(skill_dir, 'requirements.txt')
+    return _result(
+        "python_dependencies",
+        "pass",
+        "All required Python packages are installed",
+    )
 
+
+def check_playwright() -> dict[str, Any]:
+    def _pass(executable: str, fallback_used: bool = False) -> dict[str, Any]:
+        return _result(
+            "playwright",
+            "pass",
+            "Playwright and Chromium are available",
+            details={
+                "chromium_executable": executable,
+                "fallback_used": fallback_used,
+            },
+        )
+
+    def _block(message: str, returncode: int | None = None) -> dict[str, Any]:
+        details: dict[str, Any] = {}
+        if returncode is not None:
+            details["returncode"] = returncode
+        return _result(
+            "playwright",
+            "block",
+            message,
+            "Run: pip install playwright && playwright install chromium",
+            details,
+        )
+
+    try:
+        executable = _probe_playwright_subprocess()
+        return _pass(executable)
+    except subprocess.TimeoutExpired:
         try:
-            subprocess.check_call([
-                sys.executable, '-m', 'pip', 'install', '-q',
-                '-r', requirements_file
-            ])
-            print("✅ All Python dependencies installed successfully!\n")
-            return True
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Failed to install Python dependencies: {e}")
-            print(f"Please manually run: pip install -r {requirements_file}")
-            return False
-    else:
-        print("✅ All Python dependencies are already installed!\n")
-        return True
-
-def check_and_install_picgo():
-    """Check if picgo is installed, auto-install if npm is available"""
-
-    print("🔍 Checking PicGo CLI...")
-
-    # Check if picgo is already installed
-    if check_command_exists('picgo'):
+            executable = _probe_playwright_inprocess()
+            return _pass(executable, fallback_used=True)
+        except Exception:
+            return _block("Playwright check failed: TimeoutExpired")
+    except OSError as e:
         try:
-            result = subprocess.run(
-                ['picgo', '--version'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                version = result.stdout.strip()
-                print(f"  ✅ PicGo CLI is installed (version {version})\n")
-                return True
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            pass
+            executable = _probe_playwright_inprocess()
+            return _pass(executable, fallback_used=True)
+        except Exception:
+            return _block(f"Playwright check failed: {type(e).__name__}")
+    except subprocess.CalledProcessError as e:
+        stderr = str(e.stderr or "").strip() or "Playwright/Chromium unavailable"
+        return _block(stderr, e.returncode)
 
-    print("  ❌ PicGo CLI is not installed")
 
-    # Check if npm is available
-    if not check_command_exists('npm'):
-        print("\n⚠️  npm is not available - cannot auto-install picgo")
-        print("📝 Manual installation instructions:")
-        print("   1. Install Node.js and npm from https://nodejs.org/")
-        print("   2. Run: npm install -g picgo")
-        print("   3. Configure picgo: picgo set uploader\n")
-        return False
+def _probe_playwright_subprocess() -> str:
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from playwright.sync_api import sync_playwright; "
+                    "p=sync_playwright().start(); "
+                    "print(p.chromium.executable_path); "
+                    "p.stop()"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise e
+    return (result.stdout or "").strip()
 
-    # Check if node is available
-    if not check_command_exists('node'):
-        print("\n⚠️  Node.js is not available - cannot auto-install picgo")
-        print("📝 Please install Node.js from https://nodejs.org/\n")
-        return False
 
-    # Auto-install picgo
-    print("\n📦 npm is available - auto-installing PicGo CLI...")
-    print("   (This may take 10-30 seconds)")
+def _probe_playwright_inprocess() -> str:
+    from playwright.sync_api import sync_playwright
+
+    p = sync_playwright().start()
+    try:
+        return p.chromium.executable_path
+    finally:
+        p.stop()
+
+
+def check_picgo() -> dict[str, Any]:
+    required = _requires_picgo()
+    picgo = shutil.which("picgo")
+    if not picgo:
+        status = "block" if required else "warn"
+        reason = (
+            "PicGo CLI missing and current config expects PicGo uploads"
+            if required
+            else "PicGo CLI missing; non-PicGo upload path may still work"
+        )
+        return _result(
+            "picgo",
+            status,
+            reason,
+            "Install with: npm install -g picgo",
+            {"required": required},
+        )
 
     try:
         result = subprocess.run(
-            ['npm', 'install', '-g', 'picgo'],
+            ["picgo", "--version"],
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        status = "block" if required else "warn"
+        return _result(
+            "picgo",
+            status,
+            f"PicGo exists but version check failed: {type(e).__name__}",
+            "Reinstall or fix PATH for picgo",
+            {"required": required},
         )
 
-        if result.returncode == 0:
-            print("✅ PicGo CLI installed successfully!")
+    if result.returncode != 0:
+        status = "block" if required else "warn"
+        stderr = (result.stderr or "").strip() or "PicGo version check failed"
+        return _result(
+            "picgo",
+            status,
+            stderr,
+            "Reinstall with: npm install -g picgo",
+            {"required": required, "returncode": result.returncode},
+        )
 
-            # Verify installation by directly running picgo command
-            # Note: Don't rely on check_command_exists() as PATH may not be refreshed
-            try:
-                version_result = subprocess.run(
-                    ['picgo', '--version'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if version_result.returncode == 0:
-                    version = version_result.stdout.strip()
-                    print(f"✅ Verified: PicGo CLI version {version}")
-                    print("\n📝 Next step: Configure picgo with your image hosting service")
-                    print("   Run: picgo set uploader")
-                    print("   Supported: GitHub, Aliyun OSS, Tencent COS, Qiniu, SM.MS, etc.\n")
-                    return True
-                else:
-                    print("⚠️  Installation completed but verification failed")
-                    print("   You may need to restart your terminal or reload your shell\n")
-                    return False
-            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-                # If direct command fails, try to get npm bin path
-                try:
-                    npm_bin_result = subprocess.run(
-                        ['npm', 'bin', '-g'],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    if npm_bin_result.returncode == 0:
-                        npm_bin = npm_bin_result.stdout.strip()
-                        picgo_path = os.path.join(npm_bin, 'picgo')
-                        print(f"ℹ️  PicGo installed at: {picgo_path}")
-                        print("   You may need to restart your terminal or add to PATH\n")
-                        return True
-                except:
-                    pass
+    return _result(
+        "picgo",
+        "pass",
+        "PicGo CLI is available",
+        details={"required": required, "version": (result.stdout or "").strip()},
+    )
 
-                print("⚠️  Installation completed but picgo command not found in PATH")
-                print("   You may need to restart your terminal or reload your shell\n")
-                return False
-        else:
-            print(f"❌ Failed to install PicGo CLI")
-            if result.stderr:
-                print(f"   Error: {result.stderr[:200]}")
-            print("\n📝 Manual installation:")
-            print("   Run: npm install -g picgo\n")
-            return False
 
-    except subprocess.TimeoutExpired:
-        print("❌ Installation timeout (120s)")
-        print("📝 Please try manually: npm install -g picgo\n")
-        return False
-    except Exception as e:
-        print(f"❌ Installation failed: {str(e)}")
-        print("📝 Please try manually: npm install -g picgo\n")
-        return False
+def check_gemini_api_key() -> dict[str, Any]:
+    env_val = os.getenv("GEMINI_API_KEY", "").strip()
+    if env_val:
+        return _result(
+            "gemini_api_key",
+            "pass",
+            "GEMINI_API_KEY is set in environment",
+        )
 
-def check_gemini_api_key():
-    """Check if GEMINI_API_KEY is configured"""
+    env_json = _load_env_json()
+    val = str(env_json.get("gemini_api_key", "")).strip()
+    if val and not val.startswith("your-"):
+        return _result(
+            "gemini_api_key",
+            "pass",
+            "gemini_api_key is configured in ~/.claude/env.json",
+        )
 
-    print("🔍 Checking Gemini API Key...")
-
-    # Check environment variable
-    if os.getenv("GEMINI_API_KEY"):
-        print("  ✅ GEMINI_API_KEY is set in environment\n")
-        return True
-
-    # Check ~/.claude/env.json (unified config)
-    env_json = os.path.expanduser("~/.claude/env.json")
-    if os.path.exists(env_json):
+    legacy = Path("~/.nanobanana.env").expanduser()
+    if legacy.exists():
         try:
-            import json
-            with open(env_json) as f:
-                data = json.load(f)
-            val = data.get("gemini_api_key", "")
-            if val and not str(val).startswith("your-"):
-                print(f"  ✅ GEMINI_API_KEY is configured in {env_json}\n")
-                return True
-        except Exception:
+            content = legacy.read_text(encoding="utf-8")
+            if "GEMINI_API_KEY=" in content:
+                maybe = content.split("GEMINI_API_KEY=", 1)[1].splitlines()[0].strip()
+                if maybe:
+                    return _result(
+                        "gemini_api_key",
+                        "pass",
+                        "GEMINI_API_KEY is configured in legacy ~/.nanobanana.env",
+                    )
+        except OSError:
             pass
 
-    # Check legacy .env file
-    env_file = os.path.expanduser("~/.nanobanana.env")
-    if os.path.exists(env_file):
-        with open(env_file, 'r') as f:
-            content = f.read()
-            if 'GEMINI_API_KEY=' in content and not content.split('GEMINI_API_KEY=')[1].split('\n')[0].strip() == '':
-                print(f"  ✅ GEMINI_API_KEY is configured in {env_file} (legacy)\n")
-                return True
+    return _result(
+        "gemini_api_key",
+        "warn",
+        "GEMINI_API_KEY missing; Gemini fallback and --enhance unavailable",
+        'Add "gemini_api_key" to ~/.claude/env.json or export GEMINI_API_KEY',
+    )
 
-    print(f"  ❌ GEMINI_API_KEY is not configured")
-    print(f"\n📝 Setup instructions:")
-    print(f"   1. Get your API key from: https://aistudio.google.com/app/apikey")
-    print(f"   2. Edit ~/.claude/env.json and set gemini_api_key (recommended)")
-    print(f"      Template: cp ~/.claude/env.example.json ~/.claude/env.json")
-    print(f"   3. Or: export GEMINI_API_KEY=your_api_key_here\n")
-    return False
 
-def main():
-    """Main dependency check and installation"""
+def check_minimax_api_key() -> dict[str, Any]:
+    env_val = os.getenv("MINIMAX_API_KEY", "").strip()
+    if env_val:
+        return _result(
+            "minimax_api_key",
+            "pass",
+            "MINIMAX_API_KEY is set in environment",
+        )
 
+    env_json = _load_env_json()
+    val = str(env_json.get("minimax_api_key", "")).strip()
+    if val:
+        return _result(
+            "minimax_api_key",
+            "pass",
+            "minimax_api_key is configured in ~/.claude/env.json",
+        )
+
+    return _result(
+        "minimax_api_key",
+        "block",
+        "MINIMAX_API_KEY missing",
+        'Add "minimax_api_key" to ~/.claude/env.json or export MINIMAX_API_KEY',
+    )
+
+
+def check_ytdlp() -> dict[str, Any]:
+    if check_command_exists("yt-dlp"):
+        return _result("yt_dlp", "pass", "yt-dlp is available")
+    return _result(
+        "yt_dlp",
+        "warn",
+        "yt-dlp not found; YouTube ingestion will degrade",
+        "Install with: pip install yt-dlp or brew install yt-dlp",
+    )
+
+
+def check_notebooklm_cli() -> dict[str, Any]:
+    for cmd in ("notebooklm", "nlm", "notebooklm-mcp"):
+        if check_command_exists(cmd):
+            flavor = "mcp-compat" if cmd == "notebooklm-mcp" else "research-cli"
+            return _result(
+                "notebooklm_cli",
+                "pass",
+                f"NotebookLM CLI is available ({cmd})",
+                details={"command": cmd, "flavor": flavor},
+            )
+    return _result(
+        "notebooklm_cli",
+        "warn",
+        "NotebookLM CLI not found; long-form research ingestion will degrade",
+        (
+            "Install with: uv tool install notebooklm-cli "
+            "(or: pip install notebooklm-cli); command is usually `nlm`. "
+            "If you only need MCP compatibility, install `notebooklm-mcp-cli`."
+        ),
+    )
+
+
+def check_gh() -> dict[str, Any]:
+    if check_command_exists("gh"):
+        return _result("gh", "pass", "GitHub CLI is available")
+    return _result(
+        "gh",
+        "warn",
+        "gh CLI not found; some source verification paths will degrade",
+        "Install from: https://cli.github.com/",
+    )
+
+
+def check_docker() -> dict[str, Any]:
+    if check_command_exists("docker"):
+        return _result("docker", "pass", "Docker is available")
+    return _result(
+        "docker",
+        "warn",
+        "Docker not found; container-based verification fallback unavailable",
+        "Install Docker Desktop or Docker Engine",
+    )
+
+
+def run_all_checks() -> list[dict[str, Any]]:
+    return [
+        check_python_dependencies(),
+        check_gemini_api_key(),
+        check_minimax_api_key(),
+        check_playwright(),
+        check_picgo(),
+        check_ytdlp(),
+        check_notebooklm_cli(),
+        check_gh(),
+        check_docker(),
+    ]
+
+
+def _render_check(result: dict[str, Any]) -> str:
+    icon = {"pass": "✅", "warn": "⚠️ ", "block": "❌"}.get(result["status"], "•")
+    lines = [f"{icon} {result['name']}: {result['message']}"]
+    if result.get("fix"):
+        lines.append(f"   Fix: {result['fix']}")
+    return "\n".join(lines)
+
+
+def render_human_report(results: list[dict[str, Any]]) -> int:
     print("=" * 70)
     print("🚀 article-craft Dependency Check")
     print("=" * 70)
     print()
 
-    all_ok = True
+    worst = 0
+    for result in results:
+        print(_render_check(result))
+        print()
+        if result["status"] == "warn":
+            worst = max(worst, 1)
+        elif result["status"] == "block":
+            worst = max(worst, 2)
 
-    # 1. Check Python dependencies
-    if not check_python_dependencies():
-        all_ok = False
-
-    # 2. Check and install PicGo
-    if not check_and_install_picgo():
-        all_ok = False
-
-    # 3. Check Gemini API Key
-    if not check_gemini_api_key():
-        all_ok = False
-
-    # Summary
     print("=" * 70)
-    if all_ok:
+    if worst == 0:
         print("✅ All dependencies are ready!")
         print("=" * 70)
         print("\n🎉 You can now use article-craft skill")
         print("   Example: /article-craft 写一篇关于Python的技术文章\n")
-        return True
-    else:
-        print("⚠️  Some dependencies are missing or not configured")
+    elif worst == 1:
+        print("⚠️  Some optional dependencies are missing")
         print("=" * 70)
-        print("\n📝 Please follow the instructions above to complete setup")
-        print("   Run this script again after setup: python3 setup_dependencies.py\n")
+        print("\nThe main pipeline can still run with degraded functionality.\n")
+    else:
+        print("❌ Required dependencies are missing")
+        print("=" * 70)
+        print("\nPlease fix the blocking items above before running the full pipeline.\n")
+    return worst
+
+
+def install_missing_python_dependencies() -> bool:
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "-q", "-r", str(REQUIREMENTS_FILE)]
+        )
+        return True
+    except subprocess.CalledProcessError:
         return False
 
-if __name__ == '__main__':
-    success = main()
-    sys.exit(0 if success else 1)
+
+def main() -> int:
+    results = run_all_checks()
+    status = render_human_report(results)
+
+    python_result = next((r for r in results if r["name"] == "python_dependencies"), None)
+    if python_result and python_result["status"] == "block":
+        missing = python_result.get("details", {}).get("missing", [])
+        if missing:
+            print("📦 Attempting automatic Python dependency install...")
+            if install_missing_python_dependencies():
+                print("✅ Python dependencies installed. Re-run this command to verify everything.\n")
+            else:
+                print(f"❌ Auto-install failed. Run manually: pip install -r {REQUIREMENTS_FILE}\n")
+
+    return status
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

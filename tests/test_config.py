@@ -106,7 +106,8 @@ class ConfigTests(unittest.TestCase):
             mod = load_config_module(Path(tmp))
 
             self.assertEqual(mod.MODEL_FALLBACK_CHAIN[-1], "gemini-2.5-flash-image")
-            self.assertEqual(mod.IMAGE_DEFAULTS["model"], "gemini-3-pro-image-preview")
+            self.assertEqual(mod.MODEL_FALLBACK_CHAIN[0], "minimax-image-01")
+            self.assertEqual(mod.IMAGE_DEFAULTS["model"], "minimax-image-01")
 
     def test_text_model_default_and_override(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -14,6 +14,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.generate_and_upload_images import (
     CAMERA_ROTATION,
     COMPOSITION_ROTATION,
+    PALETTE_ROTATION,
+    MATERIAL_ROTATION,
+    LIGHTING_ROTATION,
+    SCALE_ROTATION,
+    VISUAL_TREATMENT_ROTATION,
+    build_design_logic,
+    select_visual_style_from_prompt,
     vary_prompt_for_position,
 )
 
@@ -73,8 +80,10 @@ class AuthorOverrideTests(TestCase):
     def test_skip_both_when_author_specified_both_directives(self):
         base = "Camera: top-down overhead view. Composition: centered subject. Three layers."
         result = vary_prompt_for_position(base, 2, 4)
-        # When both directives are author-specified, the prompt is returned as-is
-        self.assertEqual(result, base)
+        # Camera/Composition are preserved; missing treatment still gets injected.
+        self.assertEqual(result.count("Camera:"), 1)
+        self.assertEqual(result.count("Composition:"), 1)
+        self.assertIn("Visual treatment:", result)
 
     def test_partial_override_still_injects_missing_axis(self):
         # Author specified Camera: directive but not Composition: — composition still injected.
@@ -127,6 +136,26 @@ class StructuralTests(TestCase):
         self.assertEqual(len(COMPOSITION_ROTATION), 6)
         self.assertEqual(len(set(COMPOSITION_ROTATION)), 6)
 
+    def test_visual_treatment_rotation_has_six_unique_entries(self):
+        self.assertEqual(len(VISUAL_TREATMENT_ROTATION), 6)
+        self.assertEqual(len(set(VISUAL_TREATMENT_ROTATION)), 6)
+
+    def test_palette_rotation_has_six_unique_entries(self):
+        self.assertEqual(len(PALETTE_ROTATION), 6)
+        self.assertEqual(len(set(PALETTE_ROTATION)), 6)
+
+    def test_material_rotation_has_six_unique_entries(self):
+        self.assertEqual(len(MATERIAL_ROTATION), 6)
+        self.assertEqual(len(set(MATERIAL_ROTATION)), 6)
+
+    def test_lighting_rotation_has_six_unique_entries(self):
+        self.assertEqual(len(LIGHTING_ROTATION), 6)
+        self.assertEqual(len(set(LIGHTING_ROTATION)), 6)
+
+    def test_scale_rotation_has_six_unique_entries(self):
+        self.assertEqual(len(SCALE_ROTATION), 6)
+        self.assertEqual(len(set(SCALE_ROTATION)), 6)
+
     def test_appended_directives_end_with_period(self):
         # Augmented prompt should be a clean sentence string
         result = vary_prompt_for_position("Base prompt", 0, 4)
@@ -137,6 +166,73 @@ class StructuralTests(TestCase):
         # Augmented part is appended after stripping trailing period
         self.assertNotIn("..", result)
         self.assertNotIn("., ", result.rstrip("."))
+
+
+class VisualTreatmentTests(TestCase):
+    def test_injects_visual_treatment_by_index(self):
+        result0 = vary_prompt_for_position("Base prompt.", 0, 4)
+        result1 = vary_prompt_for_position("Base prompt.", 1, 4)
+        self.assertIn("Visual treatment:", result0)
+        self.assertIn("Visual treatment:", result1)
+        self.assertNotEqual(result0, result1)
+
+    def test_author_can_override_visual_treatment(self):
+        base = "Base prompt. Visual treatment: split-screen comparison."
+        result = vary_prompt_for_position(base, 2, 4)
+        self.assertEqual(result.count("Visual treatment:"), 1)
+
+
+class VisualStyleSelectionTests(TestCase):
+    def test_architecture_prompts_pick_isometric(self):
+        style = select_visual_style_from_prompt("A system architecture diagram with api gateway and database")
+        self.assertEqual(style["preset"], "isometric technical illustration")
+
+    def test_benchmark_prompts_pick_data_viz(self):
+        style = select_visual_style_from_prompt("A comparison chart of latency and throughput")
+        self.assertEqual(style["preset"], "clean data visualization style")
+
+    def test_conceptual_prompts_pick_concept_scene(self):
+        style = select_visual_style_from_prompt("A metaphor about tradeoffs and decision making")
+        self.assertEqual(style["preset"], "conceptual metaphor illustration")
+
+    def test_unknown_prompts_fall_back_to_default(self):
+        style = select_visual_style_from_prompt("A generic image of a notebook")
+        self.assertEqual(style["preset"], "minimalist flat illustration")
+
+
+class DesignLogicTests(TestCase):
+    def test_architecture_logic_prioritizes_structure(self):
+        logic = build_design_logic("architecture diagram api gateway database")
+        self.assertEqual(logic["primary_goal"], "explain structure")
+        self.assertEqual(logic["preset"], "isometric technical illustration")
+
+    def test_comparison_logic_prioritizes_contrast(self):
+        logic = build_design_logic("benchmark comparison chart latency throughput")
+        self.assertEqual(logic["primary_goal"], "show contrast")
+        self.assertEqual(logic["preset"], "clean data visualization style")
+
+    def test_concept_logic_prioritizes_metaphor(self):
+        logic = build_design_logic("tradeoff principle metaphor decision")
+        self.assertEqual(logic["primary_goal"], "express concept")
+        self.assertEqual(logic["preset"], "conceptual metaphor illustration")
+
+
+class PaletteMaterialTests(TestCase):
+    def test_palette_and_material_follow_position(self):
+        result0 = vary_prompt_for_position("A chart comparison.", 0, 4)
+        result1 = vary_prompt_for_position("A chart comparison.", 1, 4)
+        self.assertIn("Palette:", result0)
+        self.assertIn("Material:", result0)
+        self.assertNotEqual(result0, result1)
+
+
+class LightingScaleTests(TestCase):
+    def test_lighting_and_scale_follow_position(self):
+        result0 = vary_prompt_for_position("A chart comparison.", 0, 4)
+        result1 = vary_prompt_for_position("A chart comparison.", 1, 4)
+        self.assertIn("Lighting:", result0)
+        self.assertIn("Scale:", result0)
+        self.assertNotEqual(result0, result1)
 
 
 if __name__ == "__main__":
