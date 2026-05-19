@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.2] - 2026-05-19 — fix /article-craft:doctor command name
+
+### Fix — doctor command moved to `commands/doctor.md`
+
+v1.6.1 shipped the command at `commands/article-craft/doctor.md`, which a
+plugin install registers as the nested `/article-craft:article-craft:doctor`
+(`/article-craft:doctor` returned "Unknown command"). Moved the file to the
+top level of `commands/` so it resolves as the intended `/article-craft:doctor`.
+
 ## [1.6.1] - 2026-05-19 — /article-craft:doctor command
 
 ### New — `/article-craft:doctor` slash command
