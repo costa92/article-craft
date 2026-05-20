@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.6.4] - 2026-05-20 — post-v1.6.3 doc sweep
+
+### Fix — rule-count drift across docs (11 / 12 / 17 disagreement)
+
+`scripts/review_selfcheck.py` implements **17** active rules
+(`check_rule_1` through `check_rule_17`, dispatched at line 1076) — but
+the canonical reference said "11 rules" in its preamble, `CLAUDE.md`
+said "11", and `README.md` said "12". Synced all three to 17.
+
+`references/self-check-rules.md` preamble updated to be honest about
+the doc gap: full reference entries exist for rules 1–11, 16, 17, plus
+the 7b degradation-aware variant; prose entries for rules 12–15 are
+doc-debt and the preamble now points readers at the `check_rule_N`
+docstrings in `scripts/review_selfcheck.py` until those entries land.
+
+### Docs — `scripts/README.md` expanded
+
+Was listing 6 of 17 `.py` files. Updated to include all 17, organized
+by purpose (healthcheck, image generation, screenshot, publish, series,
+lint/review, release tooling). Adds a "run the healthcheck" example
+using `doctor.py`.
+
+228 tests pass — markdown only, no Python changed.
+
 ## [1.6.3] - 2026-05-20 — flatten command directory + sync docs
 
 ### Fix — every sub-command now resolves as `/article-craft:<name>` (single prefix)

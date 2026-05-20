@@ -1,9 +1,17 @@
 # Self-Check Rules (canonical source)
 
-> Single source for all 11 rules. The `write`, `lint`, and `review` skills
-> reference rules by number from this file. SKILL.md files do NOT re-state
-> rule bodies or re-type grep patterns — they read this file and run the
-> patterns from it.
+> Single source for the rule definitions. The `write`, `lint`, and `review`
+> skills reference rules by number from this file. SKILL.md files do NOT
+> re-state rule bodies or re-type grep patterns — they read this file and
+> run the patterns from it.
+>
+> **Active rule count: 17.** `scripts/review_selfcheck.py` implements
+> `check_rule_1` through `check_rule_17` (see the dispatcher table at the
+> bottom of that file). Reference entries below currently cover rules
+> 1–11, 16, 17, plus the 7b degradation-aware variant — full prose entries
+> for rules 12–15 are a doc-debt item; until those entries land, consult
+> the docstrings on each `check_rule_N` function in
+> `scripts/review_selfcheck.py` for behavior.
 
 ## Who enforces what
 

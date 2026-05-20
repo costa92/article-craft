@@ -44,7 +44,7 @@ When making changes: SKILL.md files reference scripts by `${CLAUDE_PLUGIN_ROOT}/
 - `scripts/share_card.py` — optional social-platform card generator (9 platforms, 7 color presets). Reads article frontmatter.
 - `scripts/config.py` — loads `~/.claude/env.json`, defines `VerificationCache`, `MODEL_FALLBACK_CHAIN`. All configuration (Gemini API key, S3, timeouts) lives in `~/.claude/env.json` — see `ENV.md`.
 - `scripts/utils.py` — `PlaceholderManager` (in-place article mutation) and `SmartDirectoryMatcher` (knowledge base auto-placement for publish skill).
-- `scripts/review_selfcheck.py` — the 11-rule self-check invoked by the review skill. Do not run it standalone from the orchestrator; the review skill calls it internally.
+- `scripts/review_selfcheck.py` — the 17-rule self-check invoked by the review skill (`check_rule_1` … `check_rule_17`, dispatched from the list at the bottom of the file). Do not run it standalone from the orchestrator; the review skill calls it internally.
 - `scripts/write_verify_cache.py` — writer counterpart to the verify cache; the verify skill calls it (single-URL or `--batch` JSONL) to populate `~/.cache/article-craft/verify-cache.json`.
 - `scripts/bump_version.py` — bumps `plugin.json`, `marketplace.json`, and every `skills/*/SKILL.md` frontmatter in lockstep. Accepts `major` / `minor` / `patch` or an explicit `X.Y.Z`. Use `--no-tag` to let the GitHub workflow handle tag creation on push (recommended default).
 - `lib/article-core.js` — tiny Node shim exposing `loadConfig()`, `resolveScriptPath()`, `findSkills()` for any JS-side consumers. Also respects `CLAUDE_PLUGIN_ROOT`.
@@ -76,7 +76,7 @@ Skills pass state through three mechanisms:
 
 Since v1.4.2 there is also a **persistent state file** at `.article-craft-state.json` (next to `article.md`), written by the orchestrator at each stage boundary via `scripts/pipeline_state.py`. `--upgrade` mode reads this first and falls back to text heuristics only when the file is absent (backward compat for articles predating v1.4.2). The article content is still ground truth — if state says `images: completed` but the body still has `<!-- IMAGE: -->` placeholders, the stage is flagged `stale` and re-runs.
 
-The **review skill** owns its own retry loop: Phase 1 self-check (11 rules, embedded) → Phase 2 7-dim scoring; if total score < 55/70 it auto-revises up to 3 rounds, then asks the user via AskUserQuestion. The loop also breaks early if a round produces a **non-improving score** (oscillation guard). The orchestrator does **not** wrap this in a second loop — it just trusts review's PASS/ABORT result.
+The **review skill** owns its own retry loop: Phase 1 self-check (17 rules, embedded — see `scripts/review_selfcheck.py`) → Phase 2 7-dim scoring; if total score < 55/70 it auto-revises up to 3 rounds, then asks the user via AskUserQuestion. The loop also breaks early if a round produces a **non-improving score** (oscillation guard). The orchestrator does **not** wrap this in a second loop — it just trusts review's PASS/ABORT result.
 
 ## Common commands
 
