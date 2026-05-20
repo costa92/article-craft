@@ -274,7 +274,7 @@ must cite from this dict, not from search snippets.
 - Triggered by: post-hoc audit of the v1.6.13 e2e test article on
   2026-05-20.
 
-**B21. Unify `PERSONAL_VOICE_REGEX` and `check_rule_5`'s inline regex** *(discovered in v1.6.14 work)*
+**B21. Unify `PERSONAL_VOICE_REGEX` and `check_rule_5`'s inline regex** *(discovered in v1.6.14 work)* — ✅ **done v1.6.16**
 The agent doing B14/B15/B16 noticed that `PERSONAL_VOICE_REGEX` at
 `scripts/review_selfcheck.py:~888` is a near-duplicate of the inline
 regex in `check_rule_5`. They've drifted — different verb lists, both

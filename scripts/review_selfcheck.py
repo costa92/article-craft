@@ -106,6 +106,30 @@ STYLE_CODE_BLOCK_THRESHOLD = {
 DEFAULT_CODE_BLOCK_THRESHOLD = 2
 
 
+# Canonical personal-anchor regex (B21, v1.6.16+).
+# Used by both check_rule_5 (anti-AI structure) and Rule 17 sub-check A
+# (Register Naturalness — first-person density per tone tier). Prior to
+# v1.6.16 these were two separate inline regexes that had drifted —
+# check_rule_5 had a ~30-verb list while PERSONAL_VOICE_REGEX had ~10
+# plus `猜` and `生产环境.*?本人`. Unified here as the union of both
+# so the two rules see the same "is this a personal-voice anchor"
+# decision.
+#
+# Note: broadening Rule 17's matcher means the existing first_person
+# thresholds (2 / 3 / 6 per 800 chars for neutral / casual / opinionated)
+# will be hit by more articles. That is the intended direction —
+# v1.4.18 tone thresholds were tuned against the OLD narrow regex and
+# may need re-calibration once v1.6.16 has run on a few articles
+# (see B11 in the backlog for the scheduled re-tune).
+PERSONAL_ANCHOR_REGEX = re.compile(
+    r"我(?:在|曾|的|会|用|选|踩|测|最后|发现|看|做|跑|试|觉得|以为|之前|后来|当时|"
+    r"读|查|翻|改|写|删|跑通|没跑通|发觉|意识到|意外|没料到|接|搞|想|担心|赌|碰|自己|猜)"
+    r"|踩坑|踩过|实测|本机实测|实测下来|我的(?:经验|理解|做法)"
+    r"|生产环境.*?(?:我|本人)"
+    r"|从.{0,6}经验看|我们最后|这次我"
+)
+
+
 # ─── Data Classes ────────────────────────────────────────────────
 
 @dataclass
@@ -451,13 +475,9 @@ def check_rule_5(content: str, lines: List[str]) -> CheckResult:
     # than `.{0,2}` wildcards — broad wildcards match neutral statements like
     # "我是开发者" and create false positives. Tokens cover natural Chinese
     # tech-blog verbs and the explicit `我自己` self-reference.
-    personal_markers = re.findall(
-        r'我(?:在|曾|的|会|用|选|踩|测|最后|发现|看|做|跑|试|觉得|以为|之前|后来|当时|'
-        r'读|查|翻|改|写|删|跑通|没跑通|发觉|意识到|意外|没料到|接|搞|想|担心|赌|碰|自己)'
-        r'|踩坑|踩过|实测|本机实测|实测下来|我的(?:经验|理解|做法)|生产环境中.*我'
-        r'|从.{0,6}经验看|我们最后|这次我',
-        body
-    )
+    # v1.6.16 (B21): switched from inline regex to canonical
+    # PERSONAL_ANCHOR_REGEX shared with Rule 17 sub-check A.
+    personal_markers = PERSONAL_ANCHOR_REGEX.findall(body)
     if tone == "neutral" and len(personal_markers) < 2:
         violations.append(Violation(
             line=0, text=f"个人视角标记仅 {len(personal_markers)} 处",
@@ -930,11 +950,12 @@ def check_rule_16(content: str, lines: List[str]) -> CheckResult:
     )
 
 
-PERSONAL_VOICE_REGEX = re.compile(
-    r"我(?:在|曾|的|会|用|选|踩|测|觉得|发现|猜|赌|最后)"
-    r"|踩坑|实测|我的(?:经验|理解|做法)"
-    r"|生产环境.*?(?:我|本人)"
-)
+# B21 (v1.6.16+): PERSONAL_VOICE_REGEX is now an alias for the canonical
+# PERSONAL_ANCHOR_REGEX defined at the top of this module. Kept as an alias
+# so any external `from review_selfcheck import PERSONAL_VOICE_REGEX` still
+# resolves. Rule 17 sub-check A reads it via this name; check_rule_5 reads
+# the canonical name directly.
+PERSONAL_VOICE_REGEX = PERSONAL_ANCHOR_REGEX
 
 
 def _maybe_log_tone_calibration(

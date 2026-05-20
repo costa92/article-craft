@@ -1,5 +1,75 @@
 # Changelog
 
+## [1.6.16] - 2026-05-20 — unify personal-anchor regex (B21)
+
+### Why
+
+`scripts/review_selfcheck.py` had two separate personal-anchor regexes
+that had drifted in scope:
+
+- `check_rule_5` inline (after v1.6.14 B15 broadening): ~30 verbs +
+  `我自己` + extras (`踩过`, `本机实测`, `从经验看`, `我们最后`,
+  `这次我`).
+- `PERSONAL_VOICE_REGEX` at line 933 (used by Rule 17 sub-check A —
+  first-person density per tone tier): only ~10 verbs, plus 2 that
+  check_rule_5 didn't have (`猜`, `生产环境.*?本人`).
+
+Result: a sentence like `我接 agent 项目` counted as personal voice in
+Rule 5 but not in Rule 17 — same intent, two contradicting answers
+from two rules in the same file. The agent that fixed B15 flagged
+this drift; B21 closes it.
+
+### What changed
+
+New module-level constant `PERSONAL_ANCHOR_REGEX` at the top of
+`scripts/review_selfcheck.py` (right after the other regex
+constants). The union of both old regexes:
+
+- All ~30 verbs from check_rule_5 (post-v1.6.14)
+- `猜` and the broader `生产环境.*?(?:我|本人)` from Rule 17's old
+  regex
+- All non-`我` anchors from check_rule_5 (`踩坑`, `踩过`, `实测`,
+  `本机实测`, `实测下来`, `我的(?:经验|理解|做法)`,
+  `从.{0,6}经验看`, `我们最后`, `这次我`)
+
+`check_rule_5` now calls `PERSONAL_ANCHOR_REGEX.findall(body)` —
+inline regex removed. `PERSONAL_VOICE_REGEX = PERSONAL_ANCHOR_REGEX`
+kept as an alias for backward-compat (Rule 17's existing call site +
+any external imports continue to resolve).
+
+### Behaviour note: Rule 17 sub-check A will fire less often
+
+Broadening Rule 17's matcher means more articles meet the
+first-person density threshold (2 / 3 / 6 per 800 chars for neutral /
+casual / opinionated). That's intended — the old narrow regex was
+causing false-positive Rule 17 warnings on articles that did use
+first-person anchors that simply weren't in the verb list.
+
+The tone-calibration thresholds were tuned in v1.4.18 against the
+narrower regex; they may need re-calibration. The backlog already
+tracks this as **B11** (v2 tone-threshold recalibration from
+collected data — requires 20+ articles of `tone-calibration.jsonl`
+to land). No threshold change in this release.
+
+### Tests
+
+No new tests added — the new constant is exercised by the existing
+21 tests in `tests/test_rule_5_personal_anchor.py` +
+`tests/test_tone_resolution.py`. All pass (371 total in full suite,
+same as v1.6.15).
+
+Regex parity verified:
+
+- 10/10 broadening cases match (`我接 / 我跑通 / 本机实测 / 我猜 /
+  从过去经验看 / 生产环境本人 / 我们最后 / 这次我 / 踩过`)
+- 0/4 false-positive cases still don't match (`我是开发者 / 我国 /
+  他在做实验 / 我们刚开始`)
+- `PERSONAL_VOICE_REGEX is PERSONAL_ANCHOR_REGEX` → True (alias)
+
+### Closes
+
+- B21 from `docs/research/2026-05-20-feature-candidates.md`
+
 ## [1.6.15] - 2026-05-20 — verify must WebFetch official sources (B22)
 
 ### Why this exists
