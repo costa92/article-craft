@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.6.5] - 2026-05-20 — doctor extended checks (B5)
+
+### New — `env_json` check
+
+`scripts/setup_dependencies.py` previously parsed `~/.claude/env.json`
+through `_load_env_json()` which swallows `JSONDecodeError` and returns
+`{}`. A single typo in env.json silently degraded every downstream
+check (API keys, S3, PicGo override) without any user-visible signal.
+The new `env_json` check surfaces this explicitly:
+
+- **PASS** — file absent (optional) or parses cleanly
+- **WARN** — file present but empty
+- **BLOCK** — file present but invalid JSON (with line/col + fix hint)
+
+### New — `plugin_root` check
+
+Verifies `CLAUDE_PLUGIN_ROOT` (when set) points to an existing directory.
+A typo or stale checkout silently broke scripts that join paths onto it.
+
+- **PASS** — env var resolves to a real dir
+- **WARN** — env var not set (script-relative fallback works for direct
+  shell runs; Claude Code sets it automatically)
+- **BLOCK** — env var points to a non-existent path
+
+### New — `--network` flag for network reachability
+
+`doctor.py check --network` adds an optional Minimax / Gemini host
+reachability probe (HEAD with 3 s timeout each). Only probes hosts
+whose API key is actually configured. Default `check` stays fast
+(~1 s) — the network flag is opt-in to avoid blocking the orchestrator
+preflight on a slow corporate proxy.
+
+Default `doctor check` now runs **11** checks (was 9); with `--network`
+it runs 12.
+
+### Tests
+
+10 new tests added (`tests/test_doctor.py`: env_json valid/invalid/
+empty/missing, plugin_root unset/missing/valid, network excluded-by-
+default / runs-with-flag / warns-no-keys / warns-unreachable). 239
+total tests pass (was 228).
+
 ## [1.6.4] - 2026-05-20 — post-v1.6.3 doc sweep
 
 ### Fix — rule-count drift across docs (11 / 12 / 17 disagreement)

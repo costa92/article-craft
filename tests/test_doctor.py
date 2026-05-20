@@ -200,5 +200,129 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["block"], 0)
 
 
+    # --- B5: env_json / plugin_root / network_reachability checks ---
+
+    def test_check_env_json_passes_when_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            setup, _doctor = self._load_modules(home)
+            result = setup.check_env_json()
+            self.assertEqual(result["status"], "pass")
+            self.assertIn("not present", result["message"])
+
+    def test_check_env_json_passes_when_valid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude").mkdir(parents=True, exist_ok=True)
+            (home / ".claude" / "env.json").write_text('{"gemini_api_key": "x"}', encoding="utf-8")
+            setup, _doctor = self._load_modules(home)
+            result = setup.check_env_json()
+            self.assertEqual(result["status"], "pass")
+
+    def test_check_env_json_blocks_on_invalid_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude").mkdir(parents=True, exist_ok=True)
+            (home / ".claude" / "env.json").write_text("{not valid json,}", encoding="utf-8")
+            setup, doctor = self._load_modules(home)
+            result = setup.check_env_json()
+            self.assertEqual(result["status"], "block")
+            self.assertIn("invalid JSON", result["message"])
+            # And the doctor as a whole should exit 2 if env_json blocks.
+            with mock.patch.object(doctor, "run_all_checks", return_value=[result]):
+                code = doctor.main(["check", "--json"])
+            self.assertEqual(code, 2)
+
+    def test_check_env_json_warns_on_empty_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude").mkdir(parents=True, exist_ok=True)
+            (home / ".claude" / "env.json").write_text("", encoding="utf-8")
+            setup, _doctor = self._load_modules(home)
+            result = setup.check_env_json()
+            self.assertEqual(result["status"], "warn")
+            self.assertIn("empty", result["message"])
+
+    def test_check_plugin_root_warns_when_unset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            setup, _doctor = self._load_modules(Path(tmp))
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("CLAUDE_PLUGIN_ROOT", None)
+                result = setup.check_plugin_root()
+            self.assertEqual(result["status"], "warn")
+
+    def test_check_plugin_root_blocks_on_nonexistent_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            setup, _doctor = self._load_modules(Path(tmp))
+            bogus = str(Path(tmp) / "does_not_exist_anywhere")
+            with mock.patch.dict(os.environ, {"CLAUDE_PLUGIN_ROOT": bogus}, clear=False):
+                result = setup.check_plugin_root()
+            self.assertEqual(result["status"], "block")
+
+    def test_check_plugin_root_passes_when_valid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            setup, _doctor = self._load_modules(Path(tmp))
+            with mock.patch.dict(os.environ, {"CLAUDE_PLUGIN_ROOT": tmp}, clear=False):
+                result = setup.check_plugin_root()
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["details"]["path"], tmp)
+
+    def test_network_check_excluded_by_default(self):
+        """Default `doctor check` must NOT probe the network."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude").mkdir(parents=True, exist_ok=True)
+            (home / ".claude" / "env.json").write_text(
+                '{"gemini_api_key": "x", "minimax_api_key": "y"}', encoding="utf-8"
+            )
+            setup, doctor = self._load_modules(home)
+            with mock.patch.object(setup, "_probe_url") as probe_mock:
+                doctor.main(["check", "--json"])
+            probe_mock.assert_not_called()
+
+    def test_network_check_runs_with_flag(self):
+        """`--network` enables the probe; mock the probe to avoid real HTTP."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude").mkdir(parents=True, exist_ok=True)
+            (home / ".claude" / "env.json").write_text(
+                '{"gemini_api_key": "x", "minimax_api_key": "y"}', encoding="utf-8"
+            )
+            setup, doctor = self._load_modules(home)
+            with mock.patch.object(setup, "_probe_url", return_value=(True, "HTTP 200")) as probe_mock:
+                doctor.main(["check", "--json", "--network"])
+            # Two keys configured → two probes
+            self.assertEqual(probe_mock.call_count, 2)
+
+    def test_network_check_warns_when_no_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude").mkdir(parents=True, exist_ok=True)
+            (home / ".claude" / "env.json").write_text("{}", encoding="utf-8")
+            setup, _doctor = self._load_modules(home)
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("GEMINI_API_KEY", None)
+                os.environ.pop("MINIMAX_API_KEY", None)
+                with mock.patch.object(setup, "_probe_url") as probe_mock:
+                    result = setup.check_network_reachability()
+            self.assertEqual(result["status"], "warn")
+            self.assertIn("nothing to probe", result["message"])
+            probe_mock.assert_not_called()
+
+    def test_network_check_warns_when_endpoint_unreachable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude").mkdir(parents=True, exist_ok=True)
+            (home / ".claude" / "env.json").write_text(
+                '{"minimax_api_key": "x"}', encoding="utf-8"
+            )
+            setup, _doctor = self._load_modules(home)
+            with mock.patch.object(setup, "_probe_url", return_value=(False, "DNS failed")):
+                result = setup.check_network_reachability()
+            self.assertEqual(result["status"], "warn")
+            self.assertIn("unreachable", result["message"])
+            self.assertIn("minimax", result["details"]["failures"])
+
+
 if __name__ == "__main__":
     unittest.main()

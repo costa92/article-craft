@@ -365,8 +365,185 @@ def check_docker() -> dict[str, Any]:
     )
 
 
-def run_all_checks() -> list[dict[str, Any]]:
-    return [
+def check_env_json() -> dict[str, Any]:
+    """Verify ~/.claude/env.json (if present) is valid JSON.
+
+    The original ``_load_env_json`` swallows ``JSONDecodeError`` and returns
+    an empty dict, which means a typo in env.json silently degrades every
+    downstream check (no API keys, no S3, no PicGo override) without any
+    user-visible signal. This explicit check surfaces it.
+    """
+    env_json = Path("~/.claude/env.json").expanduser()
+    if not env_json.exists():
+        return _result(
+            "env_json",
+            "pass",
+            "~/.claude/env.json not present (optional file)",
+        )
+    try:
+        size = env_json.stat().st_size
+        if size == 0:
+            return _result(
+                "env_json",
+                "warn",
+                "~/.claude/env.json is empty",
+                "Populate from env.example.json or delete the file",
+            )
+        json.loads(env_json.read_text(encoding="utf-8"))
+        return _result(
+            "env_json",
+            "pass",
+            "~/.claude/env.json parses as valid JSON",
+        )
+    except json.JSONDecodeError as exc:
+        return _result(
+            "env_json",
+            "block",
+            f"~/.claude/env.json has invalid JSON (line {exc.lineno}, col {exc.colno}): {exc.msg}",
+            "Fix the JSON syntax error; otherwise every downstream check silently uses empty config",
+        )
+    except OSError as exc:
+        return _result(
+            "env_json",
+            "warn",
+            f"~/.claude/env.json could not be read: {exc}",
+            "Check file permissions",
+        )
+
+
+def check_plugin_root() -> dict[str, Any]:
+    """Verify CLAUDE_PLUGIN_ROOT env var (when set) resolves to a real dir.
+
+    Claude Code sets this automatically when the plugin is invoked; manual
+    shell runs may not. Missing is fine (script-relative fallback works);
+    set-but-broken (typo in path, stale checkout) silently fails downstream
+    callers that join paths onto it.
+    """
+    root_env = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if not root_env:
+        return _result(
+            "plugin_root",
+            "warn",
+            "CLAUDE_PLUGIN_ROOT not set; scripts will use script-relative fallbacks",
+            "Claude Code sets this automatically — only matters for direct shell runs",
+        )
+    root_path = Path(root_env).expanduser()
+    if not root_path.exists():
+        return _result(
+            "plugin_root",
+            "block",
+            f"CLAUDE_PLUGIN_ROOT points to non-existent path: {root_path}",
+            "Unset CLAUDE_PLUGIN_ROOT or correct it",
+        )
+    if not root_path.is_dir():
+        return _result(
+            "plugin_root",
+            "block",
+            f"CLAUDE_PLUGIN_ROOT is not a directory: {root_path}",
+            "Unset CLAUDE_PLUGIN_ROOT or correct it",
+        )
+    return _result(
+        "plugin_root",
+        "pass",
+        f"CLAUDE_PLUGIN_ROOT → {root_path}",
+        details={"path": str(root_path)},
+    )
+
+
+# Hosts probed by check_network_reachability(). Single source so tests
+# can patch a deterministic list.
+_NETWORK_PROBE_TARGETS = {
+    "minimax": "https://api.minimaxi.com/",
+    "gemini": "https://generativelanguage.googleapis.com/",
+}
+_NETWORK_PROBE_TIMEOUT_SEC = 3.0
+
+
+def _probe_url(url: str, timeout: float = _NETWORK_PROBE_TIMEOUT_SEC) -> tuple[bool, str]:
+    """HEAD-probe a URL. Returns ``(reachable, detail)``.
+
+    "Reachable" means we got any HTTP response — including 4xx/5xx —
+    because that proves DNS resolved and the host accepted a connection.
+    Only transport errors (connect timeout, DNS failure) count as
+    unreachable.
+    """
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(url, method="HEAD")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return True, f"HTTP {resp.status}"
+    except urllib.error.HTTPError as exc:
+        return True, f"HTTP {exc.code}"
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        return False, f"{type(reason).__name__}: {reason}"
+    except TimeoutError as exc:
+        return False, f"TimeoutError: {exc}"
+    except OSError as exc:
+        return False, f"OSError: {exc}"
+
+
+def check_network_reachability() -> dict[str, Any]:
+    """Probe Minimax / Gemini hosts. Only enabled with doctor's --network flag.
+
+    Conditional on the matching API key being configured — if no Minimax
+    key is set we don't probe Minimax (irrelevant noise).
+    """
+    env = _load_env_json()
+    has_minimax = bool(env.get("minimax_api_key")) or bool(os.environ.get("MINIMAX_API_KEY"))
+    has_gemini = bool(env.get("gemini_api_key")) or bool(os.environ.get("GEMINI_API_KEY"))
+
+    targets: list[tuple[str, str]] = []
+    if has_minimax:
+        targets.append(("minimax", _NETWORK_PROBE_TARGETS["minimax"]))
+    if has_gemini:
+        targets.append(("gemini", _NETWORK_PROBE_TARGETS["gemini"]))
+
+    if not targets:
+        return _result(
+            "network_reachability",
+            "warn",
+            "no API keys configured — nothing to probe",
+            "Set minimax_api_key / gemini_api_key first",
+            details={"probed": 0},
+        )
+
+    successes: dict[str, str] = {}
+    failures: dict[str, str] = {}
+    for name, url in targets:
+        ok, detail = _probe_url(url)
+        if ok:
+            successes[name] = detail
+        else:
+            failures[name] = detail
+
+    details = {"probed": len(targets), "successes": successes, "failures": failures}
+
+    if failures:
+        return _result(
+            "network_reachability",
+            "warn",
+            (
+                f"{len(failures)}/{len(targets)} endpoint(s) unreachable: "
+                + ", ".join(f"{k}={v}" for k, v in failures.items())
+            ),
+            "Check network connection / firewall / corporate proxy settings",
+            details=details,
+        )
+    return _result(
+        "network_reachability",
+        "pass",
+        f"all {len(targets)} endpoint(s) reachable",
+        details=details,
+    )
+
+
+def run_all_checks(include_network: bool = False) -> list[dict[str, Any]]:
+    checks = [
+        check_plugin_root(),
+        check_env_json(),
         check_python_dependencies(),
         check_gemini_api_key(),
         check_minimax_api_key(),
@@ -377,6 +554,9 @@ def run_all_checks() -> list[dict[str, Any]]:
         check_gh(),
         check_docker(),
     ]
+    if include_network:
+        checks.append(check_network_reachability())
+    return checks
 
 
 def _render_check(result: dict[str, Any]) -> str:

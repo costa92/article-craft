@@ -52,7 +52,7 @@ def _render_human(payload: dict) -> None:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    results = run_all_checks()
+    results = run_all_checks(include_network=getattr(args, "network", False))
     status = overall_status(results)
     payload = {
         "ok": status == "pass",
@@ -75,6 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     check = sub.add_parser("check", help="run dependency healthchecks")
     check.add_argument("--json", action="store_true", help="emit JSON output")
+    check.add_argument(
+        "--network",
+        action="store_true",
+        help="also probe Minimax / Gemini network reachability (adds up to ~6s)",
+    )
     check.set_defaults(func=cmd_check)
     return parser
 
