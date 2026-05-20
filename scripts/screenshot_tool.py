@@ -574,11 +574,111 @@ def crop_to_max_height(image_path: str, max_height: int) -> bool:
 
 # ─── 核心截图函数 ─────────────────────────────────────────────────────────────
 
+# --- Cookie loading (B1: unlocks login-walled platforms) -------------------
+#
+# We deliberately consume Playwright-format JSON (the same shape
+# `BrowserContext.cookies()` returns) so any extractor that emits this
+# format works — Playwright's own `cookies()` dump, the gstack
+# `setup-browser-cookies` skill, EditThisCookie exports, or a hand-written
+# file. We don't try to parse Netscape cookies.txt or proprietary
+# browser-DB formats: keep one contract, one parser.
+
+
+def _resolve_cookies_path(explicit: str | None, disabled: bool) -> str | None:
+    """Resolve the cookies file path. Returns None when cookies are off.
+
+    Precedence:
+      1. ``--no-cookies`` CLI flag → None (force off).
+      2. ``explicit`` (CLI ``--cookies PATH``) wins if non-empty.
+      3. env.json ``browser_cookies_path`` via ``config.browser_cookies_path()``.
+      4. Default ``~/.cache/article-craft/cookies.json`` — only used when
+         that file actually exists (so default install behavior is unchanged).
+    """
+    if disabled:
+        return None
+    if explicit:
+        return os.path.expanduser(explicit)
+
+    try:
+        import config as _config
+        configured = _config.browser_cookies_path()
+    except Exception:
+        configured = ""
+
+    if configured:
+        return os.path.expanduser(configured)
+
+    default = os.path.join(
+        os.path.expanduser("~/.cache/article-craft"), "cookies.json"
+    )
+    return default if os.path.exists(default) else None
+
+
+def _load_cookies(path: str) -> tuple[list[dict], str | None]:
+    """Read a Playwright-format cookies JSON file.
+
+    Accepts either a top-level JSON list (the form Playwright emits) or a
+    ``{"cookies": [...]}`` wrapper (the shape some browser-extension
+    exporters use). Returns ``(cookies, error_message)`` where
+    ``error_message`` is ``None`` on success.
+
+    Invalid entries (missing required fields) are skipped silently rather
+    than failing the whole load — a single bad cookie shouldn't block the
+    rest.
+    """
+    if not os.path.exists(path):
+        return [], f"cookies file not found: {path}"
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except json.JSONDecodeError as exc:
+        return [], f"cookies file is invalid JSON ({exc.lineno}:{exc.colno}): {exc.msg}"
+    except OSError as exc:
+        return [], f"cookies file unreadable: {exc}"
+
+    if isinstance(data, dict) and "cookies" in data:
+        raw = data["cookies"]
+    elif isinstance(data, list):
+        raw = data
+    else:
+        return [], "cookies file must be a JSON list or {cookies: [...]}"
+
+    valid = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        # Playwright requires at minimum name + value + (url OR (domain + path))
+        if not entry.get("name") or "value" not in entry:
+            continue
+        if not (entry.get("url") or entry.get("domain")):
+            continue
+        valid.append(entry)
+    return valid, None
+
+
+def _apply_cookies(context, cookies: list[dict]) -> int:
+    """Push cookies into the Playwright context.
+
+    Playwright auto-filters by domain at request time, so loading everything
+    is safe — only cookies matching the navigated host will actually be sent.
+    Returns the count successfully added (0 on no-op).
+    """
+    if not cookies:
+        return 0
+    try:
+        context.add_cookies(cookies)
+        return len(cookies)
+    except Exception as exc:
+        print(f"  ⚠️  failed to apply cookies: {exc}")
+        return 0
+
+
 def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                        wait: int = 0, width: int = DEFAULT_VIEWPORT_WIDTH,
                        height: int = DEFAULT_VIEWPORT_HEIGHT,
                        article_keywords: list = None,
-                       max_height: int = 900) -> dict:
+                       max_height: int = 900,
+                       cookies_path: str | None = None) -> dict:
     """
     完整的智能截图流程。
 
@@ -655,6 +755,21 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                 locale="zh-CN",
             )
+
+            # Cookie injection (B1) — load before any page navigation so
+            # the first request already carries auth headers. Playwright
+            # scopes cookies by domain at send time, so loading all is safe.
+            if cookies_path:
+                cookies, cookies_err = _load_cookies(cookies_path)
+                if cookies_err:
+                    print(f"  ⚠️  cookies: {cookies_err}")
+                    result["warnings"].append(f"cookies skipped: {cookies_err}")
+                elif cookies:
+                    applied = _apply_cookies(context, cookies)
+                    if applied:
+                        print(f"  🍪 loaded {applied} cookies from {cookies_path}")
+                        result["cookies_loaded"] = applied
+
             page = context.new_page()
 
             # 拦截无效资源加速加载
@@ -918,7 +1033,8 @@ def capture_screenshot(url: str, output_path: str = "", selector: str = "",
 
 
 def batch_capture(entries: list, output_dir: str = "", article_keywords: list = None,
-                  aspect_ratio: float = None, max_height: int = 0) -> list:
+                  aspect_ratio: float = None, max_height: int = 0,
+                  cookies_path: str | None = None) -> list:
     """
     批量截图。
 
@@ -956,6 +1072,7 @@ def batch_capture(entries: list, output_dir: str = "", article_keywords: list = 
             # entry-level keywords/anchor override batch-level
             article_keywords=entry.get("keywords") or article_keywords,
             max_height=max_height,
+            cookies_path=cookies_path,
         )
 
         # 截图成功后应用 aspect_ratio 裁剪（max_height 已在 capture_screenshot 内部应用过了）
@@ -1936,6 +2053,12 @@ def main():
     sc.add_argument("--fold", action="store_true",
                      help="只截首屏（max-height = 视口高度，默认 800px）。"
                           "等价于 --max-height 800。")
+    sc.add_argument("--cookies", default="", metavar="PATH",
+                     help="Playwright 格式 cookies JSON 路径。未传时按 env.json "
+                          "browser_cookies_path → ~/.cache/article-craft/cookies.json "
+                          "顺序回落。配合 setup-browser-cookies skill 或浏览器扩展导出。")
+    sc.add_argument("--no-cookies", action="store_true",
+                     help="禁用 cookie 注入（即使配置了路径也跳过）。")
 
     # batch 子命令
     ba = sub.add_parser("batch", help="批量截图（从 JSON 文件读取）")
@@ -1950,6 +2073,10 @@ def main():
                      help="截图最大高度（默认 900 ≈ 一屏）。0 = 不裁剪。")
     ba.add_argument("--fold", action="store_true",
                      help="只截首屏（max-height = 视口高度）。")
+    ba.add_argument("--cookies", default="", metavar="PATH",
+                     help="Playwright 格式 cookies JSON 路径。同 screenshot 子命令。")
+    ba.add_argument("--no-cookies", action="store_true",
+                     help="禁用 cookie 注入。")
 
     # check 子命令
     ck = sub.add_parser("check", help="只验证 URL 可用性，不截图")
@@ -2058,6 +2185,8 @@ def main():
         if args.fold:
             effective_max_height = DEFAULT_VIEWPORT_HEIGHT
 
+        cookies_path = _resolve_cookies_path(args.cookies, args.no_cookies)
+
         res = capture_screenshot(
             url=args.url,
             output_path=args.output,
@@ -2066,6 +2195,7 @@ def main():
             width=args.width,
             article_keywords=args.keywords,
             max_height=effective_max_height,
+            cookies_path=cookies_path,
         )
 
         # 截图成功后应用 aspect_ratio 裁剪（max_height 已在 capture_screenshot 内部应用过了）
@@ -2108,10 +2238,13 @@ def main():
         effective_max_height = args.max_height
         if args.fold:
             effective_max_height = DEFAULT_VIEWPORT_HEIGHT
+        cookies_path = _resolve_cookies_path(args.cookies, args.no_cookies)
+
         results = batch_capture(
             entries, args.output_dir, args.keywords,
             aspect_ratio=target_ratio,
             max_height=effective_max_height,
+            cookies_path=cookies_path,
         )
 
         # 汇总报告

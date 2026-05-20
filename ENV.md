@@ -108,6 +108,24 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 | `kb_category_root` | string | `02-技术` | publish 自动归类时的技术文章顶层目录名。`scripts/publish_plan.py` 的 auto 模式在此目录下递归找最佳子目录。KB 树命名不同的 fork 改这个字段即可，无须改源码。 |
 | `kb_uncategorized_dir` | string | `未分类` | 没有任何目录匹配时的兜底子目录名，最终路径为 `{kb_category_root}/{kb_uncategorized_dir}`。 |
 
+#### 截图 cookie 注入（B1，v1.6.6+）
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `browser_cookies_path` | string | `""`（未配置） | Playwright 格式 cookies JSON 路径，`screenshot_tool.py` 在 `new_context` 之后注入，解锁登录墙后的页面（HN-HTTPS / Reddit / 知乎 / 微博 / 小红书 等）。空时回落到 `~/.cache/article-craft/cookies.json`（若存在），仍无则跳过 cookie 注入。 |
+
+**格式**：顶层 JSON 数组（Playwright `BrowserContext.cookies()` 输出格式），或 `{"cookies": [...]}` 包装。每条至少需要 `name`、`value`、且 `url` 或 `domain` 至少有一个。示例：
+
+```json
+[
+  {"name": "session", "value": "abc123", "domain": ".example.com", "path": "/", "secure": true, "sameSite": "Lax"}
+]
+```
+
+**导出来源**：gstack `setup-browser-cookies` skill、Playwright 自身的 `context.cookies()` dump、浏览器扩展（如 EditThisCookie）的 JSON 导出，或手写。Playwright 按域名自动过滤，加载全部 cookies 安全无副作用。
+
+**CLI 覆盖**：`screenshot_tool.py screenshot --cookies PATH`（高优先级）或 `--no-cookies`（禁用）。
+
 #### CDN 白名单（verify-claims / lint）
 
 | 字段 | 类型 | 默认值 | 说明 |

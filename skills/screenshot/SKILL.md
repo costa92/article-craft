@@ -1,6 +1,6 @@
 ---
 name: article-craft:screenshot
-version: 1.6.5
+version: 1.6.6
 description: "Take web page screenshots with intelligent validation + generate social share cards. Uses Playwright for real browser rendering, validates URLs before capture, detects 404/empty pages, optimizes image size. Supports WeChat, Xiaohongshu, Twitter/X, LinkedIn, and more."
 allowed-tools:
   - Read
@@ -464,7 +464,7 @@ User override 命中即短路，所以也可以**覆盖**内置默认（比如�
 | API 文档 | 截取关键端点即可，不用截完整文档 |
 | 终端输出 | 用代码块 + 语法高亮，不用截图 |
 | 动态图表 | 截取静态图或用 Mermaid 代替 |
-| 需要登录的页面 | 跳过，或使用 Cookie 导入（`setup-browser-cookies` skill） |
+| 需要登录的页面 | **Cookie 注入**（v1.6.6+）：在 `~/.claude/env.json` 配 `browser_cookies_path` 指向 Playwright 格式 cookies JSON，`screenshot_tool` 自动加载。来源：`setup-browser-cookies` skill、浏览器扩展导出（EditThisCookie 等）、Playwright `context.cookies()` dump。CLI 也支持 `--cookies PATH` / `--no-cookies`。详见 ENV.md「截图 cookie 注入」。 |
 | 视频页面 | 截视频封面即可，不用截整个播放器 |
 
 ---

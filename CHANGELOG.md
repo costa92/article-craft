@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.6.6] - 2026-05-20 — cookie injection for headless screenshots (B1)
+
+### New — Playwright cookie loading in `screenshot_tool`
+
+Closes the v1.5.6 "Out of scope" item: login-walled platforms (HN-HTTPS,
+Reddit, 知乎, 微博, 小红书 …) whose selectors landed in v1.5.5 now work
+end-to-end from headless runs once a cookies file is configured.
+
+The integration is deliberately format-agnostic — we consume
+**Playwright-format cookies JSON** (the shape `BrowserContext.cookies()`
+emits), so any extractor that produces it works: gstack
+`setup-browser-cookies` skill, Playwright's own dump, browser extensions
+like EditThisCookie, or hand-written.
+
+**Configuration** (priority order):
+
+1. CLI `--cookies PATH` (highest) or `--no-cookies` (disable)
+2. env.json `browser_cookies_path`
+3. Default `~/.cache/article-craft/cookies.json` (only if file exists —
+   no behavior change for unconfigured installs)
+
+**Format**: top-level JSON list, or `{"cookies": [...]}` wrapper. Each
+entry needs `name` + `value` + (`url` or `domain`). Malformed entries
+are skipped individually rather than failing the whole load.
+
+**Safety**: Playwright filters cookies by domain at send time, so
+loading the full jar for any screenshot is safe — only matching cookies
+are sent. A bad cookies file logs a warning and screenshot continues
+without cookies (not a fatal error).
+
+### New — `--cookies` / `--no-cookies` CLI flags
+
+Both `screenshot_tool.py screenshot` and `screenshot_tool.py batch`
+accept the flags. ENV.md has a new "截图 cookie 注入" section with
+format example and provenance notes. `skills/screenshot/SKILL.md` —
+the "需要登录的页面" row in the avoidance table flipped from "跳过" to
+the actual integration path.
+
+### Tests
+
+14 new tests (`tests/test_screenshot_cookies.py`) cover the three
+helpers: `_resolve_cookies_path` (5 cases — disabled / explicit /
+config / default-present / default-missing), `_load_cookies` (6 cases
+— missing / invalid JSON / list / wrapped / wrong-shape / partial
+skip), `_apply_cookies` (3 cases — empty / success / playwright error
+swallowed). 253 total tests pass (was 239).
+
+### Closes
+
+- B1 from `docs/research/2026-05-20-feature-candidates.md`
+- v1.5.6 CHANGELOG "Out of scope" deferral
+
 ## [1.6.5] - 2026-05-20 — doctor extended checks (B5)
 
 ### New — `env_json` check

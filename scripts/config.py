@@ -259,6 +259,21 @@ def kb_uncategorized_dir() -> str:
     return _user_config.get("kb_uncategorized_dir", "未分类")
 
 
+def browser_cookies_path() -> str:
+    """Resolve the configured cookies-JSON path for Playwright screenshots.
+
+    Empty string means "not configured" — the caller (`screenshot_tool.py`)
+    then falls back to ``~/.cache/article-craft/cookies.json`` if that file
+    exists, or skips cookie loading entirely. Used to unlock login-walled
+    platforms (HN-HTTPS, Reddit, 知乎, 微博, 小红书) from headless runs.
+
+    Precedence: env.json ``browser_cookies_path`` > empty (unconfigured).
+    File format: Playwright-compatible JSON — top-level list of cookie
+    objects, or ``{"cookies": [...]}``.
+    """
+    return _user_config.get("browser_cookies_path", "")
+
+
 # Aspect ratio to resolution mapping
 # NOTE: Only these aspect ratios are supported by Gemini API
 ASPECT_RATIO_MAP = {
