@@ -1,6 +1,6 @@
 ---
 name: article-craft:images
-version: 1.6.7
+version: 1.6.8
 description: "Generate and upload images for technical articles using Minimax first, with Gemini fallback. Use when adding cover images, rhythm images, or screenshots to an article."
 allowed-tools:
   - Read

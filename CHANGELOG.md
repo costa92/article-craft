@@ -1,5 +1,69 @@
 # Changelog
 
+## [1.6.8] - 2026-05-20 — shared PicGo parser + Uploader protocol (B2)
+
+### Refactor — canonical PicGo output parser in `scripts/uploaders.py`
+
+Closes the v1.5.2-pattern fragility: previously
+`screenshot_tool.upload_to_cdn` and
+`generate_and_upload_images.upload_to_picgo` each had their own
+duplicated line-scan + JSON-fallback heuristic for extracting a URL from
+PicGo CLI output. v1.5.2 fixed one parser (the multi-line
+`[PicGo INFO]` log case that silently broke screenshot uploads); the
+other was a parallel implementation with subtly different defensiveness
+that would have needed its own fix on the next regression.
+
+Now both call sites delegate to a single
+`scripts/uploaders.parse_picgo_output(stdout)`:
+
+- Strategy 1: line scan for `http://` or `https://` (the real-world
+  PicGo output shape — multi-line log + final URL line)
+- Strategy 2: JSON fallback (`{"url": ...}` or `[{"url": ...}]`) for
+  forward-compat with potential PicGo format changes
+- Returns `None` if neither finds a URL — callers decide whether to
+  raise (image-gen, fail-fast) or fall back to local path (screenshot,
+  lenient)
+
+Inline `line.startswith("http://")` parsing removed from both
+`screenshot_tool.py` and `generate_and_upload_images.py`. Both files
+now `from uploaders import parse_picgo_output`.
+
+### New — `Uploader` Protocol (future extension point)
+
+`uploaders.Uploader` is a `@runtime_checkable` Protocol with a single
+`upload(local_path: str) -> str` method. Current uploader functions
+(`upload_to_picgo`, `upload_to_s3`, `upload_to_cdn`) are intentionally
+**not** refactored to instances yet — their callers have very different
+error contracts (image-gen raises, screenshot returns local path) and
+forcing them into one shape would force converting the retry-wrapped
+PicGo flow and the lenient screenshot fallback, expanding scope beyond
+what B2 demands. The protocol exists so future Qiniu / imgbb / SMMS
+backends slot in cleanly via a `get_uploader()` factory rather than
+adding more branches to `upload_image`.
+
+### Tests
+
+16 new tests (`tests/test_uploaders.py`):
+
+- Parser behavior: real-world multi-line log, bare URL, http vs https,
+  URL anywhere in lines
+- JSON fallbacks: dict / list shapes, line-URL beats JSON when both
+  present
+- Failure modes: empty string, no URL anywhere, invalid JSON, dict
+  without `url`, empty list, non-dict list head, non-string `url` value
+- Uploader Protocol: `isinstance()` accepts correct shape, rejects wrong
+
+All existing upload tests (`tests/test_screenshot_upload.py`,
+`tests/test_share_card_upload.py`, `tests/test_images_cli.py`) pass
+unchanged — the refactor preserves the public contracts.
+
+**269 total tests pass** (was 253).
+
+### Closes
+
+- B2 from `docs/research/2026-05-20-feature-candidates.md`
+- Pattern A1 (silent stub / stdout-pollution) from the same doc
+
 ## [1.6.7] - 2026-05-20 — share-card standalone skill (B4)
 
 ### New — `/article-craft:share-card` standalone skill

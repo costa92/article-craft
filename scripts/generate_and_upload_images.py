@@ -1181,33 +1181,15 @@ def upload_to_picgo(image_path: str) -> str:
             )
 
             if result.returncode == 0:
-                # 解析输出获取 URL
-                # PicGo 输出格式通常包含 URL
-                output = result.stdout
+                # Single source of truth — see scripts/uploaders.py.
+                from uploaders import parse_picgo_output
+                cdn_url = parse_picgo_output(result.stdout)
+                if cdn_url:
+                    print(f"   ✅ 上传成功: {cdn_url}")
+                    return cdn_url
 
-                # 尝试从输出中提取 URL
-                for line in output.split('\n'):
-                    if line.startswith('http://') or line.startswith('https://'):
-                        cdn_url = line.strip()
-                        print(f"   ✅ 上传成功: {cdn_url}")
-                        return cdn_url
-
-                # 如果没有直接找到 URL，尝试解析 JSON
-                try:
-                    data = json.loads(output)
-                    if isinstance(data, dict) and 'url' in data:
-                        cdn_url = data['url']
-                        print(f"   ✅ 上传成功: {cdn_url}")
-                        return cdn_url
-                    elif isinstance(data, list) and len(data) > 0 and 'url' in data[0]:
-                        cdn_url = data[0]['url']
-                        print(f"   ✅ 上传成功: {cdn_url}")
-                        return cdn_url
-                except json.JSONDecodeError:
-                    pass
-
-                # 无法解析 URL - 立即失败
-                error_msg = f"PicGo 上传返回成功但无法解析 URL。输出: {output[:200]}"
+                # 无法解析 URL - 立即失败（fail-fast contract for image-gen pipeline）
+                error_msg = f"PicGo 上传返回成功但无法解析 URL。输出: {result.stdout[:200]}"
                 print(f"   ❌ {error_msg}")
                 raise RuntimeError(error_msg)
             else:

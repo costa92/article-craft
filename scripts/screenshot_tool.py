@@ -1122,26 +1122,11 @@ def upload_to_cdn(image_path: str) -> str:
         if result.returncode != 0:
             return image_path
 
-        output = result.stdout
-
-        # 1) 优先逐行扫 http(s):// 开头的行（picgo 默认输出形式）。
-        for line in output.splitlines():
-            line = line.strip()
-            if line.startswith("http://") or line.startswith("https://"):
-                return line
-
-        # 2) 兼容兜底：可能未来版本输出 JSON。
-        try:
-            data = json.loads(output.strip())
-            if isinstance(data, list) and len(data) > 0:
-                return data[0].get("url", image_path)
-            if isinstance(data, dict):
-                return data.get("url", image_path)
-        except json.JSONDecodeError:
-            pass
-
-        # 解析不到 URL → 返回本地路径（调用方据此判断"未上传"）。
-        return image_path
+        # Single source of truth for picgo URL extraction — see
+        # scripts/uploaders.py for the parser and its v1.5.2 history.
+        from uploaders import parse_picgo_output
+        url = parse_picgo_output(result.stdout)
+        return url if url else image_path
     except Exception:
         return image_path
 

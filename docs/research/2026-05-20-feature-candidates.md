@@ -94,7 +94,7 @@ platform gap that v1.5.6 explicitly deferred.
 | # | Title | Effort | Risk | Status |
 |---|-------|--------|------|--------|
 | **B1** | Cookie-gated platform support for screenshots | S–M | Cookie storage security | ✅ **done v1.6.6** |
-| **B2** | Image upload backend abstraction + standardized JSON contract | M | Minor — well-covered tests | — |
+| **B2** | Image upload backend abstraction + standardized JSON contract | M | Minor — well-covered tests | ✅ **done v1.6.8** |
 | **B3** | Real screenshot end-to-end snapshot tests | M–L | CI dep on Playwright (already required) | — |
 | **B4** | `share_card` standalone skill + command | S | Zero | ✅ **done v1.6.7** |
 | **B5** | `doctor.py` extended checks (network probe + env.json validity) | S | Low | ✅ **done v1.6.5** |
