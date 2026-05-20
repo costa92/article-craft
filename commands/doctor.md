@@ -28,9 +28,8 @@ Present the summary to the user. If any check is `WARN` or `BLOCK`, surface
 the remediation hint from the script output so the user knows how to fix it.
 
 This command has no matching skill — it is a thin wrapper around
-`scripts/doctor.py`. It deliberately lives at `commands/doctor.md` (the
-top level of `commands/`, **not** under `commands/article-craft/`) so it
-resolves as `/article-craft:doctor`. A file under `commands/article-craft/`
-would register as the nested `/article-craft:article-craft:doctor` instead.
+`scripts/doctor.py`. Like every other article-craft command (since v1.6.3),
+it lives at the top level of `commands/` so it resolves as the single-prefix
+`/article-craft:doctor`.
 
 ARGUMENTS: $ARGUMENTS

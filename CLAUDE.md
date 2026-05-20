@@ -98,11 +98,14 @@ shot-scraper install     # or: playwright install chromium
 /article-craft --draft <topic>
 /article-craft --upgrade /abs/path/article.md
 
-# Standalone skills (Claude Code slash commands — one per skill except orchestrator)
-/article-craft:requirements /article-craft:verify /article-craft:write
-/article-craft:screenshot  /article-craft:images  /article-craft:review
-/article-craft:publish     /article-craft:lint    /article-craft:series
-/article-craft:youtube
+# Standalone skills (one per skill except orchestrator). Since v1.6.3 every
+# command file lives at commands/<name>.md top-level so it resolves as the
+# single-prefix /article-craft:<name> (was the doubled /article-craft:article-craft:<name>
+# while files sat under commands/article-craft/).
+/article-craft:requirements /article-craft:verify       /article-craft:evidence
+/article-craft:write        /article-craft:screenshot   /article-craft:images
+/article-craft:verify-claims /article-craft:review      /article-craft:publish
+/article-craft:lint         /article-craft:series       /article-craft:youtube
 
 # Shortcut for the orchestrator's --upgrade mode (no matching skill directory)
 /article-craft:upgrade /abs/path/article.md
@@ -131,8 +134,8 @@ python3 scripts/share_card.py -f /abs/path/article.md \
 - **Cache paths**: anything writing to a cross-process persistent cache (verify cache, screenshot cache, review-selfcheck cache) must resolve its path through `config.cache_dir()`. This is the only path that honors `ARTICLE_CRAFT_CACHE_DIR`. Session-scratch directories should use `tempfile.gettempdir()` rather than hardcoding `/tmp/`.
 - **Model lists**: the canonical Gemini image fallback chain is `config.MODEL_FALLBACK_CHAIN`; the prompt-expansion text model is `config.TEXT_MODEL`. Don't duplicate these lists in callers — `import` them. Standalone scripts that need to run outside the plugin layout may keep a `try/except ImportError` fallback that mirrors the constants.
 - **Brand strings**: card logos, public-facing names, and similar branded text must go through `config.share_card_logo()` (or a similar helper) so a fork can override via env.json without editing source. Never hardcode personal domains, usernames, or URLs in skill markdown — use placeholders or read from `config.VERIFY_CDN_WHITELIST`.
-- **New skills**: create `skills/<name>/SKILL.md` with frontmatter, then add a standalone command at `commands/article-craft/<name>.md`, then wire it into `skills/orchestrator/SKILL.md` if it belongs in the main pipeline. Every skill (except `orchestrator`) should have a matching sub-command file — this 1:1 mapping is the invariant downstream users rely on.
-- **Command-level shortcuts**: if you want a dedicated slash entry point for an *orchestrator mode* (not a real skill), add a `commands/article-craft/<name>.md` that reads `skills/orchestrator/SKILL.md` and follows the relevant mode section — do **not** create an empty `skills/<name>/` directory. `commands/article-craft/upgrade.md` is the reference example: it's a shortcut for `--upgrade`, with no matching skill.
+- **New skills**: create `skills/<name>/SKILL.md` with frontmatter, then add a standalone command at `commands/<name>.md` (top level — **not** under `commands/article-craft/`), then wire it into `skills/orchestrator/SKILL.md` if it belongs in the main pipeline. Every skill (except `orchestrator`) should have a matching sub-command file — this 1:1 mapping is the invariant downstream users rely on. The top-level placement is what makes the command resolve as `/article-craft:<name>` (single prefix) rather than the doubled `/article-craft:article-craft:<name>` a `commands/article-craft/<name>.md` location would produce.
+- **Command-level shortcuts**: if you want a dedicated slash entry point for an *orchestrator mode* (not a real skill), add a `commands/<name>.md` that reads `skills/orchestrator/SKILL.md` and follows the relevant mode section — do **not** create an empty `skills/<name>/` directory. `commands/upgrade.md` is the reference example: it's a shortcut for `--upgrade`, with no matching skill. Same rule applies to script wrappers — `commands/doctor.md` wraps `scripts/doctor.py` without a backing skill.
 - **Reference docs**: writing rules live in `references/` (`writing-styles.md`, `self-check-rules.md`, `verification-checklist.md`, `knowledge-base-rules.md`, `gemini-models.md`). SKILL.md files should read these rather than inlining the rules.
 - **Plugin hooks**: `hooks/hooks.json` registers a single `SessionStart` hook (matcher: `startup|resume|clear|compact|error`) that runs `hooks/run-hook.sh session-start` asynchronously. If you add hooks, keep the `${CLAUDE_PLUGIN_ROOT}` prefix and the async flag so session startup isn't blocked.
 

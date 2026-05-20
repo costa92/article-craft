@@ -126,27 +126,36 @@ notebooklm-mcp --help
 ├── .claude-plugin/             # 插件元数据
 │   ├── plugin.json             # 插件配置
 │   └── marketplace.json
-├── skills/                     # 11 个 Skill 模块
+├── skills/                     # 13 个 Skill 模块（orchestrator + 12 子技能）
 │   ├── orchestrator/          # 主编排器
 │   ├── write/                 # 文章生成
 │   ├── images/                 # 图片生成
 │   ├── screenshot/            # 网页截图
 │   ├── requirements/           # 需求采集
-│   ├── verify/                # 预写验证
+│   ├── verify/                # 预写验证（源信任分级）
+│   ├── verify-claims/         # 写后命令校验
+│   ├── evidence/              # Style H 证据采集
 │   ├── review/                # 质量评分
 │   ├── publish/               # 发布入库
 │   ├── lint/                 # 风格检查
 │   ├── series/               # 系列管理
 │   └── youtube/              # 视频转文章
-├── commands/                   # CLI 命令封装
+├── commands/                   # Slash 命令入口（顶层 flat 布局）
 ├── scripts/                    # Python 自动化脚本
+│   ├── doctor.py                       # 运行时健康检查（v1.6.0）
 │   ├── nanobanana.py                  # 单张图片生成
 │   ├── generate_and_upload_images.py  # 批量图片处理
+│   ├── screenshot_tool.py              # Playwright 截图 + CDN 上传
+│   ├── share_card.py                  # 社交分享卡片
+│   ├── publish_plan.py                # 发布规划 + 碰撞检测（v1.6.0）
+│   ├── series_state.py                # 系列状态机（v1.6.0）
+│   ├── pipeline_state.py             # 流水线状态
+│   ├── review_selfcheck.py           # 自检规则
+│   ├── verify_claims.py               # 命令存在性校验
+│   ├── lint_article.py                 # 文章 lint
 │   ├── config.py                      # 配置常量
 │   ├── utils.py                       # 工具函数
 │   ├── setup_dependencies.py          # 依赖检测
-│   ├── pipeline_state.py             # 流水线状态
-│   ├── review_selfcheck.py           # 自检规则
 │   └── requirements.txt              # Python 依赖列表
 ├── lib/                       # Node.js 共享库
 │   └── article-core.js
@@ -171,13 +180,21 @@ notebooklm-mcp --help
 # 完整流水线
 /article-craft 写一篇关于 Go 并发编程的技术文章
 
-# 单独使用
-/article-write       # 生成文章
-/article-images      # 生成图片
-/article-review      # 审核评分
-/article-lint        # 风格检查
-/article-screenshot  # 网页截图
-/article-youtube     # YouTube 转文章
+# 单独使用（任一子命令都可独立调用）
+/article-craft:requirements   # 需求采集
+/article-craft:verify         # 源信任分级 + 链接验证
+/article-craft:evidence       # Style H 证据采集
+/article-craft:write          # 生成文章
+/article-craft:screenshot     # 网页截图 + 分享卡片
+/article-craft:images         # 生成图片
+/article-craft:verify-claims  # 写后命令校验
+/article-craft:review         # 审核评分
+/article-craft:publish        # 入知识库
+/article-craft:lint           # 风格检查
+/article-craft:series         # 系列管理
+/article-craft:youtube        # YouTube 转文章
+/article-craft:doctor         # 运行时健康检查（v1.6.0+）
+/article-craft:upgrade        # 升级 draft/quick 文章到标准
 ```
 
 ### 四种工作流模式
@@ -187,7 +204,7 @@ notebooklm-mcp --help
 | standard | `/article-craft` | 完整流水线（默认） |
 | quick | `/article-craft --quick` | 跳过图片生成 |
 | draft | `/article-craft --draft` | 仅生成初稿 |
-| series | `/article-series` | 多篇系列文章 |
+| series | `/article-craft --series FILE` | 多篇系列文章（或独立用 `/article-craft:series`） |
 
 ---
 

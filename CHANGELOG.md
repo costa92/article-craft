@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.6.3] - 2026-05-20 — flatten command directory + sync docs
+
+### Fix — every sub-command now resolves as `/article-craft:<name>` (single prefix)
+
+v1.6.2 fixed only the `doctor` command. The 13 other sub-commands
+(`write`, `publish`, `series`, `review`, `lint`, `images`, `screenshot`,
+`requirements`, `verify`, `verify-claims`, `evidence`, `youtube`,
+`upgrade`) still sat under `commands/article-craft/` and resolved as the
+nested `/article-craft:article-craft:<name>` for marketplace installs —
+which contradicted every doc, README, and CLAUDE.md mention of the
+intended single-prefix form.
+
+Moved all 13 to the top level of `commands/`. The repo convention now
+matches what users (and the docs) have always expected: one command file
+per skill at `commands/<name>.md`, resolving as `/article-craft:<name>`.
+`commands/doctor.md` (the v1.6.2 fix) and the new placement are now
+consistent.
+
+### Docs — synced to match reality
+
+- `INSTALL.md` skill count corrected (11 → 13), tree updated to include
+  `evidence/` and `verify-claims/`, scripts tree updated to include the
+  v1.6.0 additions (`doctor.py`, `publish_plan.py`, `series_state.py`,
+  `share_card.py`, etc.). The "单独使用" example block — which previously
+  listed nonexistent commands like `/article-write` — now shows the real
+  14 commands.
+- `README.md` "Standalone Commands" block expanded from 8 to 14 entries
+  (was missing `requirements`, `verify`, `evidence`, `series`, `publish`,
+  `doctor`, `upgrade`). The "series" Workflow Modes row fixed
+  (`/article-series` → `/article-craft:series`).
+- `CLAUDE.md` "New skills" convention rewritten: new commands go at
+  `commands/<name>.md` top-level (not `commands/article-craft/<name>.md`)
+  with the why-it-matters explanation inline.
+- `commands/doctor.md` self-explanation simplified (it no longer needs
+  to call out its location as a special case — every command does this
+  now).
+
+228 tests pass — no Python code changed, this release is markdown only.
+
 ## [1.6.2] - 2026-05-19 — fix /article-craft:doctor command name
 
 ### Fix — doctor command moved to `commands/doctor.md`

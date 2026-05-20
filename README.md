@@ -62,7 +62,7 @@ This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and
 | standard | `/article-craft` | Full pipeline |
 | quick | `/article-craft --quick` | Skip both verification stages, review, and publish |
 | draft | `/article-craft --draft` | Content only, with Style H evidence collection if needed |
-| series | `/article-series` | Multi-article series |
+| series | `/article-craft --series FILE` | Multi-article series (or standalone `/article-craft:series`) |
 
 ## Standard Pipeline
 
@@ -176,15 +176,25 @@ In practice, `skills/` decides **what should happen next**, while `scripts/` is 
 
 ## Standalone Commands
 
+Every skill is independently invokable. All commands resolve as
+`/article-craft:<name>` (single prefix — every command file lives at
+`commands/<name>.md` top-level since v1.6.3).
+
 ```bash
-/article-craft:write        # Generate article
-/article-craft:evidence     # Collect Style H evidence
-/article-craft:images        # Generate images
-/article-craft:verify-claims # Validate shell commands in article body
-/article-craft:review        # Quality gate
-/article-craft:lint          # Style check
-/article-craft:screenshot    # Web screenshots + share cards
-/article-craft:youtube      # Video to article
+/article-craft:requirements   # Smart inference + minimal questions
+/article-craft:verify         # Pre-write source vetting (T0–T5 trust tiers)
+/article-craft:evidence       # Collect Style H evidence
+/article-craft:write          # Generate article
+/article-craft:screenshot     # Web screenshots + share cards
+/article-craft:images         # Generate images (Minimax → Gemini fallback)
+/article-craft:verify-claims  # Validate shell commands in article body
+/article-craft:review         # Quality gate (11 rules + 7-dim scoring)
+/article-craft:publish        # KB auto-placement + sidecar copy
+/article-craft:lint           # Style check + auto-fix
+/article-craft:series         # Multi-part series management
+/article-craft:youtube        # YouTube video → article
+/article-craft:doctor         # Runtime healthcheck (v1.6.0+)
+/article-craft:upgrade /path  # Upgrade a draft/quick article to standard
 ```
 
 ## Updating
