@@ -241,7 +241,7 @@ correctly; the gate just needed to use that scoping.
 - ✅ **done v1.6.14** — new `scripts/ascii_gate.py` reuses rule_14's
   scoping logic; SKILL.md Step 6 + Step 4a updated to call it.
 
-**B22. `verify` skill must WebFetch official sources, not just HEAD-check URLs** *(discovered when auditing the v1.6.13 Gemini-3.5 test article)*
+**B22. `verify` skill must WebFetch official sources, not just HEAD-check URLs** *(discovered when auditing the v1.6.13 Gemini-3.5 test article)* — ✅ **done v1.6.15**
 The current `skills/verify/SKILL.md` Step 1 (Feature Discovery) is
 written for "tool/project articles" and the orchestrator skipped it
 for a Style E (news/release) article. Step 2 (Batch Link Verification)

@@ -1,5 +1,72 @@
 # Changelog
 
+## [1.6.15] - 2026-05-20 — verify must WebFetch official sources (B22)
+
+### Why this exists
+
+The v1.6.13 e2e test article (Gemini 3.5 Flash) shipped two facts —
+`"289 tokens/sec"` and specific `$1.50/$9` pricing — that, when
+audited post-write via WebFetch against Google's official blog,
+TechCrunch, and llm-stats, **didn't appear in any T0 source**. Both
+came from WebSearch *snippets* used as the de-facto fact source. The
+pipeline's verify stage was only running URL HEAD checks (200/404),
+not extracting verbatim content. Pure tool-usage gap: snippets are
+summaries, not ground truth.
+
+### What changed
+
+**`skills/verify/SKILL.md`** — new mandatory **Step 1.5: Official Source
+Fact Extraction**. Procedure:
+
+1. From requirements' `_trusted_sources`, pick every entry with
+   `tier ∈ {T0, T1}`.
+2. For each, call `WebFetch(url, prompt=fact_extract_prompt)` —
+   *not* WebSearch.
+3. Save the structured output as a markdown sidecar at
+   `<article_dir>/_extracted_facts.md`, one `## T<tier> — <url>`
+   section per source, verbatim bullets.
+
+Includes a topic-aware fact-extraction prompt template that asks
+WebFetch to: extract verbatim figures, name benchmarks with their
+scores, list availability channels, list pricing if disclosed, and
+**explicitly mark "NOT present" when a commonly-cited figure is
+missing from the source body** — absence is itself a finding.
+
+**`skills/write/SKILL.md`** — new mandatory **Fact source contract**
+section in Inputs. Specifies:
+
+1. When `_extracted_facts.md` exists, that's the **primary fact
+   source** for all figures, quotes, prices, benchmarks. WebSearch
+   snippets and prior-knowledge memory are explicitly demoted.
+2. Headline figures absent from the sidecar must be **omitted or
+   hedged** (e.g. `"按 llm-stats 收集到的数据为 ..."`), never
+   restated as authoritative.
+3. "NOT present" markers in the sidecar are signal — don't claim
+   official disclosure of figures that the source body doesn't
+   actually include.
+4. When the sidecar is missing (draft/quick mode bypasses verify),
+   write must add a description-frontmatter note flagging
+   unverified-fact status. Intentional friction.
+
+### Cost / cache
+
+WebFetch is harness-cached 15 min per URL — repeated runs within the
+window cost nothing. Across runs, the sidecar file itself is the
+persistent cache; delete it to force re-extraction.
+
+### Closes
+
+- B22 from `docs/research/2026-05-20-feature-candidates.md`
+- The "289 tokens/sec" fact integrity gap surfaced by the v1.6.13
+  Gemini-3.5 e2e test article on 2026-05-20.
+
+### Tests
+
+No new automated tests — this is a prompt-engineering change in two
+SKILL.md files; the contract is enforced at runtime by Claude reading
+the SKILL.md. Layout smoke test passes (10/10), full suite passes
+(369/371, 2 pre-existing env failures unchanged).
+
 ## [1.6.14] - 2026-05-20 — three review/lint precision fixes (B14 + B15 + B16)
 
 All three discovered while running the v1.6.13 orchestrator pipeline

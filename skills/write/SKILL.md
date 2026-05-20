@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.6.14
+version: 1.6.15
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -32,6 +32,39 @@ When invoked by the orchestrator, the requirements skill passes structured conte
 - **save_path** — target file path (if determined)
 
 Use all provided fields directly. Do not re-ask the user.
+
+### Fact source contract (v1.6.15+, MANDATORY)
+
+When `<article_dir>/_extracted_facts.md` exists (produced by the
+verify skill's Step 1.5), **that file is the primary fact source**.
+Specifically:
+
+1. **Cite figures, quotes, prices, and benchmark scores ONLY from
+   `_extracted_facts.md`**. Do not pull these from WebSearch
+   snippets, requirements skill summaries, or your own memory.
+2. **If a "headline" figure (e.g., `"289 tokens/sec"`) is not in
+   `_extracted_facts.md`, either omit it or hedge explicitly**
+   (`"按 X 来源收集到的数据为 ..."`). Don't restate snippet-only
+   facts as if they were authoritative.
+3. The sidecar's "NOT present" markers (`Pricing: NOT listed in
+   official blog`) are also signal — they tell you not to claim
+   that figure is officially-disclosed.
+4. WebSearch results may still inform narrative shape and section
+   selection, but **specific quantitative claims must trace to a
+   bullet in `_extracted_facts.md`**.
+
+If `_extracted_facts.md` is missing (verify was skipped, or it's a
+draft/quick mode run that bypasses verify), fall back to WebSearch
+snippets with appropriate hedging — and **note in the article's
+description frontmatter that facts were not vetted against official
+sources**. This is intentional friction so unverified facts get
+flagged at write time, not after publish.
+
+The historical motivation: a v1.6.13 e2e test article shipped two
+facts (`"289 tokens/sec"`, specific pricing) that didn't appear in
+**any** T0 source when audited post-write. The cause: write was
+citing from WebSearch snippets, and verify only did URL HEAD
+checks. The sidecar contract closes that gap.
 
 ### B. Standalone mode (user invokes directly)
 

@@ -1,6 +1,6 @@
 ---
 name: article-craft:verify
-version: 1.6.14
+version: 1.6.15
 description: "Batch verify links, commands, and tool features with source trust tiers. Uses T0-T5 trust classification to focus verification effort."
 allowed-tools:
   - Read
@@ -94,6 +94,84 @@ curl -s "https://TOOL-WEBSITE.com/blog" | \
 ```
 
 After discovery, compile a feature checklist: known features vs. newly discovered features. New features must be included in the article outline.
+
+### Step 1.5: Official Source Fact Extraction (MANDATORY for any T0/T1 source)
+
+> **Why this step exists (v1.6.15+)**: prior versions of this skill only validated URL status codes (200/404) and relied on WebSearch *snippets* as the de-facto fact source for the write stage. WebSearch snippets are **summaries**, not ground truth. The v1.6.13 e2e test on a Gemini 3.5 article shipped facts (`"289 tokens/sec"`, specific pricing) that **didn't exist in any T0/T1 source** when audited post-write — they came from search-result summaries. This step closes that gap: every T0/T1 source gets WebFetched, facts extracted verbatim, and stored in a sidecar file the write skill **must** cite from.
+
+Applies to **all article types** (not just tool/project articles).
+Required when requirements detected ≥1 T0 or T1 source. Skipped only
+when zero T0/T1 sources exist (rare — usually means topic is pure
+concept like "microservices architecture").
+
+**Procedure**:
+
+1. From requirements' `_trusted_sources` list, pick every entry where
+   `tier ∈ {T0, T1}`.
+2. For each, call `WebFetch(url, prompt=fact_extract_prompt)` with a
+   topic-aware prompt template. **Do not use WebSearch alone**;
+   snippets are insufficient.
+3. Save the structured response as a bulleted markdown sidecar at
+   `<article_dir>/_extracted_facts.md`. Per-source headed:
+
+```markdown
+# Extracted Facts (Gemini 3.5 Flash)
+
+Generated: 2026-05-20 14:32 UTC. Sources WebFetched, not WebSearched.
+All quotes are verbatim from the source page body, not search-result snippets.
+
+## T0 — https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-5/
+
+- Released: May 19, 2026
+- Speed: "4 times faster than other frontier models" (no specific tokens/sec figure in official body)
+- Benchmarks (Flash vs 3.1 Pro):
+  - Terminal-Bench 2.1: 76.2%
+  - GDPval-AA: 1656 Elo
+  - MCP Atlas: 83.6%
+  - CharXiv Reasoning (multimodal): 84.2%
+- Availability: Gemini app + AI Mode in Google Search; Google Antigravity; Gemini API (AI Studio + Android Studio); Gemini Enterprise Agent Platform; Gemini Enterprise
+- Pricing: NOT listed in official blog
+
+## T1 — https://github.blog/changelog/2026-05-19-gemini-3-5-flash-is-generally-available-for-github-copilot/
+
+- GitHub Copilot integration date: same-day GA, May 19, 2026
+- ... (verbatim from page) ...
+```
+
+**Fact-extraction prompt template** (pass to WebFetch):
+
+```
+Extract the following from this page, verbatim where possible. Do not paraphrase:
+1. Release/launch date if applicable
+2. Specific numeric figures (throughput, latency, scores, percentages, prices)
+3. Names and values of any benchmarks mentioned
+4. Availability channels / integration points
+5. Pricing if disclosed (input/output rates per million tokens, monthly fees, etc.)
+6. Notable quotes attributed to named people
+7. Anything explicitly marked "new" or differentiating this release from prior
+
+For each fact, indicate whether it appears in the source's main body
+or only in metadata/snippets. If a commonly-cited figure (e.g., "289
+tokens/sec") is NOT in this page, say so explicitly — the absence is
+the verification result.
+```
+
+**Why "NOT present" is also a valid output**: a fact missing from a T0
+source is itself a finding — it means the figure came from a 3rd party
+that may or may not be authoritative. Write skill must hedge or omit
+such facts.
+
+**Caching**: WebFetch responses are inherently cached by the harness
+(15 min/URL). For repeated runs within the cache window, this step is
+near-zero cost. Cross-run, the sidecar file is the persistent cache —
+delete `_extracted_facts.md` to force re-extraction.
+
+**Output sidecar contract**:
+- Path: `<article_dir>/_extracted_facts.md`
+- Format: markdown with one `## T<tier> — <url>` section per source
+- Bullets verbatim from page, no LLM paraphrasing
+- Write skill reads this file as its **primary fact source**;
+  WebSearch snippets are advisory only.
 
 ### Step 2: Batch Link Verification (one bash call)
 
