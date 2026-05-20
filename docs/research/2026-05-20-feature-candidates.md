@@ -172,7 +172,7 @@ endpoints; check `CLAUDE_PLUGIN_ROOT` env resolution; verify
 | **B7** | Multi-provider image abstraction | M | Enables English-language output (D2) — 📋 spec drafted `docs/superpowers/specs/2026-05-20-multi-provider-image-abstraction.md` (4 phases) |
 | **B8** | Verify-claims expanded scope (flag validation) | M | Start with 5–10 high-frequency tools |
 | **B9** | Tests for `evidence.py` / `bump_version.py` / `utils.py` | S | Three biggest no-test scripts — ✅ **done v1.6.11** |
-| **B10** | Per-section tone override syntax | M | Tone spec v2 candidate |
+| **B10** | Per-section tone override syntax | M | Tone spec v2 candidate — ✅ **done v1.6.13** (lint-side; Rule 17 region-aware metrics still v2) |
 | **B12** | Write reference entries for self-check rules 12–15 | S | Discovered in the v1.6.4 doc sweep; canonical reference has the gap flagged — ✅ **done v1.6.10** |
 | **B13** | Auto-prune `MODEL_FALLBACK_CHAIN` by available API keys | S | Discovered while documenting the Minimax default on 2026-05-20; cuts a wasted attempt for single-key users — ✅ **done v1.6.9** |
 

@@ -9,7 +9,8 @@ import time
 import atexit
 import tempfile
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+import re
+from typing import Dict, Any, Optional, List, Tuple
 
 
 class VerificationCache:
@@ -462,6 +463,84 @@ STYLE_TO_TONE_DEFAULT = {
     "G": "opinionated",   # 观点输出 / 思考
     "H": "opinionated",   # AI 资讯爆料 / 自媒体爆款
 }
+
+
+# Per-section tone override markers (B10, v1.6.13+):
+#   <!-- tone:casual -->     opens a region using a different tone
+#   <!-- /tone -->           closes the current region
+# Within a region, lint rewrites apply the region's tone instead of the
+# article-level tone. Unknown tone names are ignored (region not opened).
+# Markers are preserved verbatim in output for reproducibility.
+_TONE_OPEN_RE = re.compile(r"<!--\s*tone:([a-zA-Z_-]+)\s*-->")
+_TONE_CLOSE_RE = re.compile(r"<!--\s*/tone\s*-->")
+
+
+def parse_tone_regions(
+    text: str, default_tone: str
+) -> List[Tuple[int, int, str]]:
+    """Parse ``<!-- tone:X --> ... <!-- /tone -->`` regions in *text*.
+
+    Returns a list of ``(start_line, end_line_exclusive, tone)`` tuples
+    covering **every** line in the input, with no gaps and no overlaps.
+    Lines outside any region get ``default_tone``; lines inside a region
+    get the region's declared tone.
+
+    Region semantics (v1 — flat, no nesting):
+
+    - ``<!-- tone:X -->`` opens region X. If a region is already open
+      (from a previous ``<!-- tone:Y -->`` without intervening ``/tone``),
+      that previous region implicitly closes at the new opener.
+    - ``<!-- /tone -->`` closes the current open region. Stray closers
+      with no matching opener are ignored (treated as plain text).
+    - Unknown tone names (not in ``TONE_REGISTER_LEVELS``) are skipped —
+      the opener is treated as plain text, region not opened.
+    - Unclosed regions extend to EOF.
+    - The marker lines themselves get the **surrounding** tone (markers
+      have no prose to rewrite — the contents are HTML comments).
+
+    Used by ``scripts/lint_article.auto_fix_text`` to apply per-region
+    tone rewrites instead of one tone for the whole article.
+    """
+    if default_tone not in TONE_REGISTER_LEVELS:
+        default_tone = "neutral"
+
+    lines = text.splitlines()
+    if not lines:
+        return []
+
+    # Build (line_index, tone) for every line.
+    per_line: List[str] = [default_tone] * len(lines)
+    current_tone: Optional[str] = None  # None = no region open
+
+    for i, line in enumerate(lines):
+        # The marker line itself uses the surrounding tone (the tone
+        # that was in effect on the previous line) — set BEFORE we
+        # process the marker, so the marker line stays in the "outside"
+        # context.
+        per_line[i] = current_tone if current_tone is not None else default_tone
+
+        # Now process any markers on this line. Process opens first
+        # (so a line containing both close+open ends up in the new
+        # open's region for subsequent lines).
+        close_match = _TONE_CLOSE_RE.search(line)
+        open_match = _TONE_OPEN_RE.search(line)
+
+        if close_match:
+            current_tone = None
+        if open_match:
+            requested = open_match.group(1).lower()
+            if requested in TONE_REGISTER_LEVELS:
+                current_tone = requested
+            # else: invalid tone name — silently ignore (region not opened)
+
+    # Compact contiguous same-tone runs into spans.
+    spans: List[Tuple[int, int, str]] = []
+    start = 0
+    for i in range(1, len(lines) + 1):
+        if i == len(lines) or per_line[i] != per_line[start]:
+            spans.append((start, i, per_line[start]))
+            start = i
+    return spans
 
 
 def resolve_tone(

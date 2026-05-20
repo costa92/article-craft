@@ -1,5 +1,79 @@
 # Changelog
 
+## [1.6.13] - 2026-05-20 — per-section tone override syntax (B10, v1)
+
+### New — `<!-- tone:X -->...<!-- /tone -->` regions in articles
+
+Authors can now override the article-level tone for a span of prose:
+
+```markdown
+默认 neutral 行文。
+
+<!-- tone:casual -->
+这一段切换到 casual,lint 会按 casual 词表重写
+（比如「在某种意义上」→「其实」）。
+<!-- /tone -->
+
+回到默认 neutral。
+```
+
+Closes the v2 candidate listed in
+`docs/superpowers/specs/2026-05-07-tone-system-design.md:474`.
+
+### Parser — `config.parse_tone_regions(text, default_tone)`
+
+Returns `[(start_line, end_line_exclusive, tone), ...]` covering every
+line with no gaps. Semantics (v1, flat — no nesting):
+
+- `<!-- tone:X -->` opens region X. Closes any previously-open region
+  implicitly (so missing `/tone` doesn't leak the region forever).
+- `<!-- /tone -->` closes the current region.
+- Stray closers (no prior opener) are no-ops.
+- Unknown tone names (not in `TONE_REGISTER_LEVELS`) are ignored —
+  the marker is treated as plain text and no region is opened.
+- Unclosed regions extend to EOF.
+- Marker lines themselves use the **surrounding** tone (the markers
+  are HTML comments, no prose to rewrite).
+
+### Lint integration
+
+`scripts/lint_article.auto_fix_text` now pre-builds rewrite tables for
+all three tones (neutral / casual / opinionated), parses regions via
+`parse_tone_regions`, and applies the matching tone's rewrites per
+line. Behavior unchanged for articles without any tone markers
+(every line resolves to the article-level tone). Region markers are
+preserved verbatim in output (same convention as `<!-- lint:disable -->`).
+
+### Known v1 limitation
+
+`scripts/review_selfcheck.py` Rule 17 (Register Naturalness) still
+uses article-level tone for **all** its density-based sub-checks
+(first-person markers, strong-opinion sentences, summary phrases,
+sentence-length variance). A `<!-- tone:opinionated -->` region inside
+a neutral article will get its rewrites applied by lint, but Rule 17
+won't yet treat the region's metrics differently. Region-aware Rule 17
+metrics depend on whether they should be per-region thresholds or
+weighted-average aggregations — punted to v2 pending calibration data.
+
+### Tests
+
+16 new tests (`tests/test_tone_regions.py`) cover:
+
+- Parser: no markers, empty text, single region splits, multiple
+  regions, implicit close via new opener, unclosed regions, unknown
+  tone names ignored, stray closers harmless, default fallback to
+  neutral, whitespace tolerance
+- Lint integration: default tone outside region, region tone inside
+  region (wins over article tone), marker preservation, unclosed
+  region doesn't crash, invalid region name falls back to article tone
+
+**347 total tests pass** (was 331).
+
+### Closes
+
+- B10 from `docs/research/2026-05-20-feature-candidates.md`
+- Tone spec v2 candidate #1
+
 ## [1.6.12] - 2026-05-20 — plugin-layout smoke test in CI (B6)
 
 ### New — `tests/test_plugin_layout.py` (10 tests) + GitHub Actions workflow

@@ -30,6 +30,7 @@ from scripts.config import (
     TONE_REGISTER_LEVELS,
     TONE_LEXICAL_REWRITES,
     get_rewrites_for_tone,
+    parse_tone_regions,
     resolve_tone,
 )
 
@@ -480,15 +481,27 @@ def auto_fix_text(
     effective_min = "info" if apply_info else min_severity
     threshold_rank = SEVERITY_RANK[effective_min]
 
-    # Honour test hook, otherwise use the real rewrite table.
-    raw_rewrites = test_rewrites_hook(resolved) if test_rewrites_hook is not None else get_rewrites_for_tone(resolved)
+    def _build_rewrites_for(t: str) -> list:
+        raw = test_rewrites_hook(t) if test_rewrites_hook is not None else get_rewrites_for_tone(t)
+        # 4-tuple entries: (pattern, repl, severity, rule_id) — keep rule_id for disable check.
+        return [
+            (pattern, repl, rule_id)
+            for (pattern, repl, sev, rule_id) in raw
+            if SEVERITY_RANK[sev] >= threshold_rank
+        ]
 
-    # 4-tuple entries: (pattern, repl, severity, rule_id) — keep rule_id for disable check.
-    rewrites: list = [
-        (pattern, repl, rule_id)
-        for (pattern, repl, sev, rule_id) in raw_rewrites
-        if SEVERITY_RANK[sev] >= threshold_rank
-    ]
+    # B10: per-section tone via <!-- tone:X --> ... <!-- /tone --> regions.
+    # Build a rewrite table for every tier upfront, then resolve per-line.
+    # When no override markers appear, every line resolves to ``resolved``
+    # and behavior is identical to the pre-B10 single-tone flow.
+    rewrites_by_tone: dict[str, list] = {t: _build_rewrites_for(t) for t in TONE_REGISTER_LEVELS}
+    rewrites = rewrites_by_tone[resolved]  # kept for legacy callers / fallback
+
+    tone_spans = parse_tone_regions(text, resolved)
+    line_tone: dict[int, str] = {}
+    for start, end, t in tone_spans:
+        for i in range(start, end):
+            line_tone[i] = t
 
     # Build per-line disabled-rule sets from inline lint:disable/enable markers.
     line_disabled = _build_line_disabled_sets(text)
@@ -540,7 +553,9 @@ def auto_fix_text(
                 continue
 
         disabled = line_disabled[idx] if idx < len(line_disabled) else frozenset()
-        fixed, changes = _fix_line(line, rewrites, disabled)
+        # Use per-line tone resolution (falls back to article tone outside regions).
+        effective_rewrites = rewrites_by_tone.get(line_tone.get(idx, resolved), rewrites)
+        fixed, changes = _fix_line(line, effective_rewrites, disabled)
         for change in changes:
             stats[change] += 1
         out.append(fixed)
