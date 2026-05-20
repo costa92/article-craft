@@ -82,6 +82,29 @@ ROADMAP_FILLER_PATTERNS = [
     r'下面我们',
 ]
 
+# Style → per-section code-block threshold for Rule 6.
+# Source of truth: `skills/write/SKILL.md` "风格特定的章节结构" table.
+#   A 教程 (tutorial) → 3 blocks per section
+#   B 分享 (share) → 1 block
+#   C 深度 (deep) → 5+ blocks
+#   D 评测 (review) → 2 blocks
+#   E 资讯 (news) → 1 block
+#   F 复盘 (retrospective) → 2 blocks
+#   G 观点 (opinion) → 1 block
+#   H 爆料 (leak) → defaults to 2 (not in style table)
+# Default for missing / unknown style: 2 (the pre-v1.6.14 hardcoded value).
+STYLE_CODE_BLOCK_THRESHOLD = {
+    "A": 3,
+    "B": 1,
+    "C": 5,
+    "D": 2,
+    "E": 1,
+    "F": 2,
+    "G": 1,
+    "H": 2,
+}
+DEFAULT_CODE_BLOCK_THRESHOLD = 2
+
 
 # ─── Data Classes ────────────────────────────────────────────────
 
@@ -423,9 +446,16 @@ def check_rule_5(content: str, lines: List[str]) -> CheckResult:
         if has_anchor:
             concrete_anchor_hits += 1
 
-    # Check personal perspective count
+    # Check personal perspective count.
+    # Pattern intentionally lists explicit follow-on tokens after `我` rather
+    # than `.{0,2}` wildcards — broad wildcards match neutral statements like
+    # "我是开发者" and create false positives. Tokens cover natural Chinese
+    # tech-blog verbs and the explicit `我自己` self-reference.
     personal_markers = re.findall(
-        r'我(?:在|曾|的|会|用|选|踩|测|最后|发现)|踩坑|实测|我的经验|生产环境中.*我',
+        r'我(?:在|曾|的|会|用|选|踩|测|最后|发现|看|做|跑|试|觉得|以为|之前|后来|当时|'
+        r'读|查|翻|改|写|删|跑通|没跑通|发觉|意识到|意外|没料到|接|搞|想|担心|赌|碰|自己)'
+        r'|踩坑|踩过|实测|本机实测|实测下来|我的(?:经验|理解|做法)|生产环境中.*我'
+        r'|从.{0,6}经验看|我们最后|这次我',
         body
     )
     if tone == "neutral" and len(personal_markers) < 2:
@@ -506,10 +536,22 @@ def check_rule_5(content: str, lines: List[str]) -> CheckResult:
 
 
 def check_rule_6(content: str, lines: List[str]) -> CheckResult:
-    """Chapter Depth: each section needs ≥2 code blocks (intro/motivation chapters need ≥1)."""
+    """Chapter Depth: each section needs ≥N code blocks where N is style-specific.
+
+    The threshold N comes from the writing_style table in skills/write/SKILL.md.
+    Intro/motivation chapters (background/motivation/challenges) accept N-1
+    (min 1) since they naturally have fewer code blocks.
+    """
     body = get_body(content)
     sections = get_sections(body)
     violations = []
+
+    # Style-aware threshold: read writing_style from frontmatter.
+    frontmatter = parse_frontmatter(content)
+    style_raw = frontmatter.get("writing_style", "") or ""
+    # Style fields may be "A", "A 教程", "a", etc. — take the first letter and uppercase.
+    style_key = style_raw.strip()[:1].upper() if style_raw else ""
+    base_threshold = STYLE_CODE_BLOCK_THRESHOLD.get(style_key, DEFAULT_CODE_BLOCK_THRESHOLD)
 
     # Keywords indicating intro/motivation chapters that naturally have fewer code blocks
     intro_keywords = re.compile(r'为什么|挑战|争议|背景|动机|现实|痛点|局限|需要|缺什么|之后')
@@ -527,8 +569,11 @@ def check_rule_6(content: str, lines: List[str]) -> CheckResult:
         code_blocks = re.findall(r'```', section_content)
         code_count = len(code_blocks) // 2
 
-        # Intro/motivation chapters: threshold = 1; other chapters: threshold = 2
-        threshold = 1 if intro_keywords.search(heading) else 2
+        # Intro/motivation chapters allow one fewer code block (min 1).
+        if intro_keywords.search(heading):
+            threshold = max(1, base_threshold - 1)
+        else:
+            threshold = base_threshold
 
         if code_count < threshold and len(section_content) > 200:
             violations.append(Violation(
@@ -539,7 +584,7 @@ def check_rule_6(content: str, lines: List[str]) -> CheckResult:
     return CheckResult(
         rule_id=6, rule_name="章节深度",
         passed=len(violations) == 0, violations=violations,
-        details=f"{len(violations)} 个浅层章节"
+        details=f"{len(violations)} 个浅层章节 (style={style_key or '?'}, threshold={base_threshold})"
     )
 
 

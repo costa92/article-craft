@@ -1,5 +1,91 @@
 # Changelog
 
+## [1.6.14] - 2026-05-20 — three review/lint precision fixes (B14 + B15 + B16)
+
+All three discovered while running the v1.6.13 orchestrator pipeline
+end-to-end on a real article (Gemini 3.5 Flash 发布解读). Each one
+forced the author through an unnecessary edit cycle for a false
+positive. Three small precision fixes; one release.
+
+### B14 — `check_rule_6` is now writing-style-aware
+
+Generic "≥2 code blocks per section" conflicted with the canonical
+style table in `skills/write/SKILL.md` which defines:
+- A 教程 → 3 code blocks
+- B 分享 / E 资讯 / G 观点 → **1 code block**
+- C 深度 → 5+
+- D 评测 / F 复盘 / H 爆料 → 2 (matches old default)
+
+Style B/E/G articles previously got 4 false-positive shallow-section
+flags by design. Fixed by adding `STYLE_CODE_BLOCK_THRESHOLD` dict at
+the top of `scripts/review_selfcheck.py`, reading `writing_style` from
+frontmatter, and applying the per-style threshold. Default (style
+missing/unknown) remains 2 — fully backwards compatible. The `details`
+string now surfaces `style=X, threshold=N` for easy debugging.
+
+### B15 — `check_rule_5` personal-anchor regex covers natural verbs
+
+The old regex matched 10 verbs after `我` (`我(?:在|曾|的|会|用|选|踩|测|最后|发现)`).
+Natural Chinese tech writing uses many more — `我接 / 我做 / 我跑 / 我自己 /
+我之前 / 我后来 / 我跑通 / 我意识到` etc. Authors had to restructure
+sentences purely to satisfy the regex.
+
+Expanded to ~30 verbs + new non-`我` anchors (`踩过`, `本机实测`,
+`实测下来`, `从经验看`, `我们最后`, `这次我`, `我的(?:经验|理解|做法)`).
+Confirmed false-positive safety: `我是开发者` / `我国` / `我们`
+(without `最后`) / `他在做实验` all still do NOT match.
+
+`PERSONAL_VOICE_REGEX` at line ~888 (used by Rule 17 sub-check A)
+was intentionally left untouched — unifying both into one constant
+is logged as B21 in the backlog.
+
+### B16 — Scope-aware ASCII gate
+
+New `scripts/ascii_gate.py` — thin CLI that reuses rule_14's existing
+scoping logic (only flags ASCII inside non-executable code blocks via
+`box ≥ 5` OR `box ≥ 2 AND arrow ≥ 2` thresholds). `_BOX_CHARS`,
+`_ARROW_CHARS`, `_EXECUTABLE_LANGS` imported from `review_selfcheck.py`
+— no duplication of the underlying detector.
+
+`skills/write/SKILL.md` Step 6 (and the parallel Step 4a check)
+updated from `grep -nE '│|├|...'` to
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ascii_gate.py <article>`. Exit
+codes: 0 clean, 1 violations, 2 file missing.
+
+Result: inline rhetorical arrows (`需要更强推理 → 上 Pro` as prose)
+no longer trip the gate. Genuine ASCII diagrams inside a `text`-tagged
+code block still do.
+
+### Tests
+
+24 new tests across 3 files:
+
+- `tests/test_rule_6_style_aware.py` (11) — style A/B/C/E/G coverage
+  + default + unknown + lowercase normalization + intro-chapter scaling
+- `tests/test_rule_5_personal_anchor.py` (5) — 23 positive samples,
+  7 negative samples, 3 integration tests
+- `tests/test_ascii_gate.py` (8) — prose arrow PASS, text-block FAIL,
+  bash-block PASS, no-ASCII PASS, missing-file / no-arg / box+arrow
+  combo / single-box below threshold
+
+**369 total tests pass** (was 345 + 2 pre-existing
+`test_screenshot_upload.py` failures unrelated to this work — env-
+specific, mock-shadow issue when PicGo is actually on PATH).
+
+### Discovered during implementation
+
+The agent doing the work noted that `PERSONAL_VOICE_REGEX` and the
+`check_rule_5` inline regex have drifted — different verb lists, both
+incomplete, used by different rules. Logged as **B21** in
+`docs/research/2026-05-20-feature-candidates.md` for a future
+unification pass.
+
+### Closes
+
+- B14, B15, B16 from `docs/research/2026-05-20-feature-candidates.md`
+- All three surfaced as concrete pain points in the v1.6.13 e2e test
+  article ("Gemini 3.5 Flash 发布解读" written via the orchestrator).
+
 ## [1.6.13] - 2026-05-20 — per-section tone override syntax (B10, v1)
 
 ### New — `<!-- tone:X -->...<!-- /tone -->` regions in articles

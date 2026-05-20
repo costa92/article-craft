@@ -218,6 +218,39 @@ folder is the kind of bug that won't get noticed for releases.
   explicitly lists this as "v2 candidate." Spec shipped in v1.5.0; authors
   hitting the limit now.
 
+**B14. `check_rule_6` reads `writing_style` for per-style thresholds** *(discovered while writing the v1.6.13 Gemini-3.5 e2e test article)*
+The generic "≥2 code blocks per section" rule conflicts with Style B/E/G
+which the canonical style table says require only 1 code block. Style E
+articles get 4 false-positive shallow-section flags by design.
+- ✅ **done v1.6.14** — `STYLE_CODE_BLOCK_THRESHOLD` dict + frontmatter
+  read; A=3, B/E/G=1, C=5, D/F/H=2.
+
+**B15. `check_rule_5` personal-anchor regex expansion** *(discovered same e2e test)*
+The original 10-verb whitelist (`我(?:在|曾|的|会|用|选|踩|测|最后|发现)`)
+forced authors to artificially restructure natural Chinese phrasing
+(`我接 agent 项目` → `我在 agent 项目踩过的坑回看`) just to pass the rule.
+- ✅ **done v1.6.14** — verb list expanded ~10→30+, plus non-`我` anchors
+  (`踩过`, `本机实测`, `从经验看`, `这次我`, etc.).
+
+**B16. Scope-aware ASCII gate** *(discovered same e2e test)*
+The raw `grep -nE '│|├|...'` in `skills/write/SKILL.md` Step 6 matched
+inline rhetorical arrows (`需要更强推理 → 上 Pro`) and forced unnecessary
+edit cycles. The actual rule should only fire on ASCII *diagrams inside
+non-executable code blocks* — which `check_rule_14` already does
+correctly; the gate just needed to use that scoping.
+- ✅ **done v1.6.14** — new `scripts/ascii_gate.py` reuses rule_14's
+  scoping logic; SKILL.md Step 6 + Step 4a updated to call it.
+
+**B21. Unify `PERSONAL_VOICE_REGEX` and `check_rule_5`'s inline regex** *(discovered in v1.6.14 work)*
+The agent doing B14/B15/B16 noticed that `PERSONAL_VOICE_REGEX` at
+`scripts/review_selfcheck.py:~888` is a near-duplicate of the inline
+regex in `check_rule_5`. They've drifted — different verb lists, both
+incomplete. Rule 17 sub-check A uses one, rule 5 uses the other.
+- Effort: S (~30 min). Extract to a module-level constant both consume.
+- Risk: low (medium if tone calibration data hinges on the exact
+  regex — verify before swapping).
+- Triggered by: B14/B15/B16 implementation in v1.6.14.
+
 **B12. Reference entries for self-check rules 12–15** *(doc debt — discovered in v1.6.4)*
 `scripts/review_selfcheck.py` implements 17 active rules
 (`check_rule_1` … `check_rule_17`), but `references/self-check-rules.md`

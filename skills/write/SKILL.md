@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.6.13
+version: 1.6.14
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -608,10 +608,13 @@ Pod A 挂载路径
 
 **检测命令（保存前运行）：**
 ```bash
-grep -n '│\|├\|└\|┌\|┐\|─\|▼\|▶\|←\|→\|↑\|↓' article.md | grep '```' -A 10
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ascii_gate.py /ABSOLUTE/PATH/article.md
 ```
 
-如果有输出且不是可执行代码，**必须转换**。
+该脚本只扫描**代码块内部**且**非可执行语言**（```text / ```ascii / ```diagram 等）的 ASCII 框/箭头字符，避免对正文里的 `→`（"导致 / 推出"）误报。
+
+- 退出码 `0` = 干净，直接进入下一步。
+- 退出码 `1` = 命中违规，stderr 打印 `file:line` 列表 — **必须转换**为 `<!-- IMAGE: --> ` 占位符后再跑一次。
 
 #### 4b. Paragraph Structure Rules
 
@@ -729,18 +732,18 @@ WORD_COUNT_CHECK: <count> chars (target [<min>, <max>], depth=<depth>) → PASS|
 
 ### Step 6: Save Article (GATE CHECK REQUIRED)
 
-**BEFORE saving**，执行最后的 ASCII 图检查（强制性）：
+**BEFORE saving**，执行最后的 ASCII 图检查（强制性，scope-aware）：
 
 ```bash
-grep -nE '│|├|└|┌|┐|─|▼|▶|←|→|↑|↓' article.md
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ascii_gate.py /ABSOLUTE/PATH/article.md
 ```
 
-**If any matches found**:
-1. Verify each match is **executable code** (bash/python/json/etc.)
-2. If any match is NOT executable code → **DO NOT SAVE YET**
-3. Convert all ASCII diagrams to `<!-- IMAGE -->` placeholders
-4. Verify again with the same grep command — **must return 0 results**
-5. Only then proceed to save
+该脚本与 `review_selfcheck.check_rule_14` 共享同一套阈值（`box ≥ 5` 或 `box ≥ 2 且 arrow ≥ 2`），并且**只扫描代码块内部的非可执行语言**——正文里 `→`（"导致"／"推出"）这种修辞箭头不会误报。
+
+**Exit codes**:
+- `0` — 干净，进入保存步骤。
+- `1` — stderr 列出 `file:line` 违规位置。**DO NOT SAVE YET**：把每一处转换为 `<!-- IMAGE: name - desc (ratio) -->` 占位符，重新跑直到返回 `0`。
+- `2` — 文件不存在，检查路径。
 
 Use the `Write` tool to save `article.md` to the determined path from Step 2.
 
