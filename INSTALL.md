@@ -126,7 +126,7 @@ notebooklm-mcp --help
 ├── .claude-plugin/             # 插件元数据
 │   ├── plugin.json             # 插件配置
 │   └── marketplace.json
-├── skills/                     # 13 个 Skill 模块（orchestrator + 12 子技能）
+├── skills/                     # 14 个 Skill 模块（orchestrator + 13 子技能）
 │   ├── orchestrator/          # 主编排器
 │   ├── write/                 # 文章生成
 │   ├── images/                 # 图片生成
@@ -139,6 +139,7 @@ notebooklm-mcp --help
 │   ├── publish/               # 发布入库
 │   ├── lint/                 # 风格检查
 │   ├── series/               # 系列管理
+│   ├── share-card/            # 社交分享卡片（v1.6.7+）
 │   └── youtube/              # 视频转文章
 ├── commands/                   # Slash 命令入口（顶层 flat 布局）
 ├── scripts/                    # Python 自动化脚本
@@ -193,6 +194,7 @@ notebooklm-mcp --help
 /article-craft:lint           # 风格检查
 /article-craft:series         # 系列管理
 /article-craft:youtube        # YouTube 转文章
+/article-craft:share-card     # 社交分享卡片（v1.6.7+,10 平台/7 配色）
 /article-craft:doctor         # 运行时健康检查（v1.6.0+）
 /article-craft:upgrade        # 升级 draft/quick 文章到标准
 ```

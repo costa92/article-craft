@@ -1,6 +1,6 @@
 # article-craft
 
-Modular article generation plugin for Claude Code — 12 composable skills plus orchestrator for the full article lifecycle.
+Modular article generation plugin for Claude Code — 13 composable skills plus orchestrator for the full article lifecycle.
 
 ## What it does
 
@@ -54,6 +54,7 @@ This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and
 | lint | Style violation detection + auto-fix |
 | series | Multi-part article management |
 | youtube | Video transcript to article |
+| share-card | Platform-optimized social share images (10 platforms, 7 colors) |
 
 ## Workflow Modes
 
@@ -193,6 +194,7 @@ Every skill is independently invokable. All commands resolve as
 /article-craft:lint           # Style check + auto-fix
 /article-craft:series         # Multi-part series management
 /article-craft:youtube        # YouTube video → article
+/article-craft:share-card     # Social share images (10 platforms, 7 colors)
 /article-craft:doctor         # Runtime healthcheck (v1.6.0+)
 /article-craft:upgrade /path  # Upgrade a draft/quick article to standard
 ```

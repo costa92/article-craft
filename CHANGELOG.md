@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.6.7] - 2026-05-20 — share-card standalone skill (B4)
+
+### New — `/article-craft:share-card` standalone skill
+
+`scripts/share_card.py` (553 LOC, 10 platform presets, 7 color schemes)
+was previously only reachable from the orchestrator pipeline's Step
+3.4.5 — there was no way to regenerate cards for a published article
+without rerunning the whole pipeline.
+
+Promoted to a first-class skill at `skills/share-card/SKILL.md` with
+top-level `commands/share-card.md` (single-prefix `/article-craft:share-card`
+per the v1.6.3 convention). Same engine, just a standalone entry point
+for post-publish card regeneration, brand-refresh batches, and color
+tweaks without article-level changes.
+
+The orchestrator still calls the same script directly — no behavior
+change for the integrated pipeline.
+
+### Skill count
+
+13 → **14** child skills under `skills/` (orchestrator unchanged at 1).
+README, INSTALL, scripts/README all updated.
+
 ## [1.6.6] - 2026-05-20 — cookie injection for headless screenshots (B1)
 
 ### New — Playwright cookie loading in `screenshot_tool`
