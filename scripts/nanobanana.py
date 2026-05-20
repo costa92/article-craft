@@ -207,89 +207,134 @@ def enhance_prompt(original_prompt):
     return original_prompt
 
 
+# --------------------------------------------------------------------- #
+# B7 Phase 1: provider-backed shims.
+#
+# The real generation logic now lives in
+# ``scripts/image_providers.{MinimaxProvider, GeminiProvider}``. These
+# wrappers preserve the public name + the `@retry_on_error()` decorator
+# (the retry policy is a *caller* concern per the protocol contract).
+# --------------------------------------------------------------------- #
+try:
+    from image_providers import (
+        for_model as _provider_for_model,
+        NoImageDataError as _ProviderNoImageDataError,
+    )
+    # Re-bind so callers catching nanobanana.NoImageDataError catch both.
+    NoImageDataError = _ProviderNoImageDataError  # noqa: F811
+except ImportError:  # pragma: no cover — only triggers if cwd setup is off
+    _provider_for_model = None
+    _ProviderNoImageDataError = NoImageDataError
+
+
+def _gemini_provider():
+    if _provider_for_model is None:
+        raise RuntimeError("image_providers module not importable")
+    p = _provider_for_model("gemini-3-pro-image-preview")
+    if p is None:
+        raise RuntimeError("GeminiProvider not registered")
+    return p
+
+
+def _minimax_provider():
+    if _provider_for_model is None:
+        raise RuntimeError("image_providers module not importable")
+    p = _provider_for_model("minimax-image-01")
+    if p is None:
+        raise RuntimeError("MinimaxProvider not registered")
+    return p
+
+
+def _contents_to_prompt(contents):
+    """Collapse the historical `contents` list/string into a single prompt str.
+
+    The Gemini SDK accepts mixed lists (prompt + PIL images for editing);
+    when no image is included we flatten to a string for provider parity.
+    """
+    if isinstance(contents, str):
+        return contents
+    parts = []
+    for item in contents:
+        if isinstance(item, str):
+            parts.append(item)
+    return "\n".join(parts)
+
+
 @retry_on_error()
 def _generate_single_model(model, contents, aspect_ratio, resolution, output_path):
-    """Single model attempt with retry on transient errors."""
-    response = _get_client().models.generate_content(
-        model=model,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            response_modalities=["IMAGE"],
-            image_config=types.ImageConfig(
-                aspect_ratio=aspect_ratio,
-                image_size=resolution,
+    """Gemini single-model attempt — delegates to GeminiProvider.
+
+    Edit mode (``contents`` includes PIL Image objects) still hits the SDK
+    directly because the provider's ``generate()`` API takes a string
+    prompt, not a mixed content list. This branch preserves the v1.6.16
+    behaviour exactly.
+    """
+    has_image = any(not isinstance(c, str) for c in contents) if isinstance(contents, list) else False
+
+    if has_image:
+        # Edit mode — keep the existing inline SDK call (provider API
+        # doesn't model image edit yet; deferred to Phase 2+).
+        response = _get_client().models.generate_content(
+            model=model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                image_config=types.ImageConfig(
+                    aspect_ratio=aspect_ratio,
+                    image_size=resolution,
+                ),
             ),
-        ),
-    )
-
-    if (
-        response.candidates is None
-        or len(response.candidates) == 0
-        or response.candidates[0].content is None
-        or response.candidates[0].content.parts is None
-    ):
-        raise ValueError("No data received from the API.")
-
-    image_saved = False
-    for part in response.candidates[0].content.parts:
-        if part.text is not None:
-            print(f"{part.text}", end="")
-        elif part.inline_data is not None and part.inline_data.data is not None:
-            image = Image.open(BytesIO(part.inline_data.data))
-            image.save(output_path)
-            image_saved = True
-            print(f"\n\nImage saved to: {output_path}")
-
-    if not image_saved:
-        raise NoImageDataError(
-            "No image data in API response. Try a more specific prompt."
         )
+
+        if (
+            response.candidates is None
+            or len(response.candidates) == 0
+            or response.candidates[0].content is None
+            or response.candidates[0].content.parts is None
+        ):
+            raise ValueError("No data received from the API.")
+
+        image_saved = False
+        for part in response.candidates[0].content.parts:
+            if part.text is not None:
+                print(f"{part.text}", end="")
+            elif part.inline_data is not None and part.inline_data.data is not None:
+                image = Image.open(BytesIO(part.inline_data.data))
+                image.save(output_path)
+                image_saved = True
+                print(f"\n\nImage saved to: {output_path}")
+
+        if not image_saved:
+            raise NoImageDataError(
+                "No image data in API response. Try a more specific prompt."
+            )
+        return
+
+    prompt = _contents_to_prompt(contents)
+    _gemini_provider().generate(
+        model,
+        prompt,
+        output_path,
+        aspect_ratio=aspect_ratio,
+        resolution=resolution,
+        timeout=_request_timeout,
+    )
+    print(f"\n\nImage saved to: {output_path}")
 
 
 @retry_on_error()
 def _generate_single_minimax(model, contents, aspect_ratio, resolution, output_path):
-    api_key = _minimax_api_key()
-    if not api_key:
-        raise ValueError(
-            "Missing MINIMAX_API_KEY. Please configure in ~/.claude/env.json or environment"
-        )
-    prompt = "\n".join(str(item) for item in contents if isinstance(item, str))
-    response = requests.post(
-        "https://api.minimaxi.com/v1/image_generation",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": _minimax_model_name(model),
-            "prompt": prompt,
-            "response_format": "base64",
-        },
+    """Minimax single-model attempt — delegates to MinimaxProvider."""
+    prompt = _contents_to_prompt(contents)
+    _minimax_provider().generate(
+        model,
+        prompt,
+        output_path,
+        aspect_ratio=aspect_ratio,
+        resolution=resolution,
         timeout=_request_timeout,
     )
-    if response.status_code >= 400:
-        raise RuntimeError(f"Minimax API error {response.status_code}: {(response.text or '')[:200]}")
-
-    data = response.json() if response.text else {}
-    image_b64 = ((data.get("data") or {}).get("image_base64") if isinstance(data, dict) else None)
-    if isinstance(image_b64, list):
-        image_b64 = image_b64[0] if image_b64 else None
-    if image_b64:
-        image = Image.open(BytesIO(base64.b64decode(image_b64)))
-        image.save(output_path)
-        print(f"\n\nImage saved to: {output_path}")
-        return
-
-    image_urls = ((data.get("data") or {}).get("image_urls") if isinstance(data, dict) else None) or []
-    if image_urls:
-        img_resp = requests.get(image_urls[0], timeout=_request_timeout)
-        img_resp.raise_for_status()
-        image = Image.open(BytesIO(img_resp.content))
-        image.save(output_path)
-        print(f"\n\nImage saved to: {output_path}")
-        return
-
-    raise NoImageDataError("No image data in Minimax response.")
+    print(f"\n\nImage saved to: {output_path}")
 
 
 def generate_image(model, contents, aspect_ratio, resolution, output_path, no_fallback=False):
@@ -300,7 +345,17 @@ def generate_image(model, contents, aspect_ratio, resolution, output_path, no_fa
     Never escalates to a more expensive model.
     """
     if no_fallback:
-        if str(model).startswith("minimax"):
+        # B7 Phase 1: route via the image-provider registry. Falls back to
+        # the legacy startswith() check if the registry isn't reachable
+        # (e.g. cwd has no scripts/ on the path — happens in some test
+        # harnesses).
+        is_minimax = False
+        if _provider_for_model is not None:
+            p = _provider_for_model(model)
+            is_minimax = p is not None and p.name == "minimax"
+        else:
+            is_minimax = str(model).startswith("minimax")
+        if is_minimax:
             return _generate_single_minimax(model, contents, aspect_ratio, resolution, output_path)
         return _generate_single_model(model, contents, aspect_ratio, resolution, output_path)
 
@@ -330,7 +385,15 @@ def generate_image(model, contents, aspect_ratio, resolution, output_path, no_fa
 
     for i, fallback_model in enumerate(chain):
         try:
-            if str(fallback_model).startswith("minimax"):
+            # B7 Phase 1: provider-aware dispatch (mirrors the no_fallback
+            # branch above).
+            is_minimax = False
+            if _provider_for_model is not None:
+                p = _provider_for_model(fallback_model)
+                is_minimax = p is not None and p.name == "minimax"
+            else:
+                is_minimax = str(fallback_model).startswith("minimax")
+            if is_minimax:
                 return _generate_single_minimax(fallback_model, contents, aspect_ratio, resolution, output_path)
             return _generate_single_model(fallback_model, contents, aspect_ratio, resolution, output_path)
         except NoImageDataError:

@@ -351,9 +351,12 @@ MODEL_FALLBACK_CHAIN = [
 def filter_chain_by_available_keys(chain: List[str]) -> List[str]:
     """Drop models whose provider API key isn't configured (B13).
 
-    Minimax models require ``MINIMAX_API_KEY`` (env var) or
-    ``minimax_api_key`` (env.json). Gemini models require
-    ``GEMINI_API_KEY`` (env var) or ``gemini_api_key`` (env.json).
+    Routes through the image-provider registry (B7 Phase 1) — a model
+    is kept iff some registered :class:`image_providers.ImageProvider`
+    claims it via ``model_names()`` AND that provider's
+    ``is_configured()`` returns True. Unknown models (no registered
+    provider) pass through unchanged (forward-compat for future chain
+    entries).
 
     Returns the filtered chain preserving original order. Empty result
     means **no image provider is configured** — callers should fail
@@ -365,30 +368,21 @@ def filter_chain_by_available_keys(chain: List[str]) -> List[str]:
     every batched image first try Minimax, fail with an auth error,
     then fall through to Gemini — N wasted attempts per N-image
     generation. This filter prunes the dead leg up front.
-
-    Models with prefixes other than ``minimax`` / ``gemini`` pass
-    through unchanged (forward-compat for future providers added to
-    the chain — they get their own key check when implemented).
     """
-    has_minimax = bool(_user_config.get("minimax_api_key")) or bool(
-        os.environ.get("MINIMAX_API_KEY")
-    )
-    has_gemini = bool(_user_config.get("gemini_api_key")) or bool(
-        os.environ.get("GEMINI_API_KEY")
-    )
+    # Late import to avoid a circular: image_providers reads env.json the
+    # same way config does but doesn't depend on it.
+    from image_providers import for_model
 
     out: List[str] = []
     for model in chain:
-        prefix = model.split("-", 1)[0] if "-" in model else model
-        if prefix == "minimax":
-            if has_minimax:
-                out.append(model)
-        elif prefix == "gemini":
-            if has_gemini:
-                out.append(model)
-        else:
-            # Unknown provider prefix → keep (forward-compat).
+        provider = for_model(model)
+        if provider is None:
+            # Unknown model → keep (forward-compat — caller will hit a
+            # registry miss at dispatch time with a clear error).
             out.append(model)
+        elif provider.is_configured():
+            out.append(model)
+        # else: drop silently — the dead-leg prune is the entire point.
     return out
 
 # Text model used by nanobanana.py --enhance (prompt expansion).

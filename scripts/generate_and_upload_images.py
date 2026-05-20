@@ -705,45 +705,33 @@ def check_dependencies(upload_required: bool = True):
     return errors
 
 
+# --------------------------------------------------------------------- #
+# Minimax shims (B7 Phase 1).
+#
+# Real HTTP body now lives in scripts/image_providers.MinimaxProvider.
+# These thin wrappers preserve the public name so tests / external
+# callers that ``mock.patch.object(mod, '_generate_minimax_image*')``
+# keep working unchanged.
+# --------------------------------------------------------------------- #
+
+
+def _minimax_provider():
+    """Late lookup so tests can swap providers via the registry."""
+    from image_providers import for_model
+
+    p = for_model("minimax-image-01")
+    if p is None:
+        raise RuntimeError("MinimaxProvider not registered")
+    return p
+
+
 def _generate_minimax_image(model: str, prompt: str, output_path: Path) -> None:
-    if not REQUESTS_AVAILABLE:
-        raise RuntimeError("requests not installed")
-    api_key = _minimax_api_key()
-    if not api_key:
-        raise RuntimeError("MINIMAX_API_KEY missing")
-    payload = {
-        "model": _minimax_model_name(model),
-        "prompt": prompt,
-        "response_format": "base64",
-    }
-    response = requests.post(
-        MINIMAX_API_URL,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
+    _minimax_provider().generate(
+        model,
+        prompt,
+        output_path,
         timeout=TIMEOUTS.get("image_generation", 120),
     )
-    if response.status_code >= 400:
-        raise RuntimeError(f"Minimax API error {response.status_code}: {(response.text or '')[:200]}")
-
-    data = response.json() if response.text else {}
-    image_base64 = ((data.get("data") or {}).get("image_base64") if isinstance(data, dict) else None)
-    if isinstance(image_base64, list):
-        image_base64 = image_base64[0] if image_base64 else None
-    if image_base64:
-        image = Image.open(BytesIO(base64.b64decode(image_base64)))
-        image.save(output_path)
-        return
-
-    image_urls = ((data.get("data") or {}).get("image_urls") if isinstance(data, dict) else None) or []
-    if image_urls:
-        img_resp = requests.get(image_urls[0], timeout=TIMEOUTS.get("image_generation", 120))
-        img_resp.raise_for_status()
-        image = Image.open(BytesIO(img_resp.content))
-        image.save(output_path)
-        return
 
 
 def _generate_minimax_image_with_options(
@@ -754,49 +742,15 @@ def _generate_minimax_image_with_options(
     width: int | None = None,
     height: int | None = None,
 ) -> None:
-    if not REQUESTS_AVAILABLE:
-        raise RuntimeError("requests not installed")
-    api_key = _minimax_api_key()
-    if not api_key:
-        raise RuntimeError("MINIMAX_API_KEY missing")
-    payload = {
-        "model": _minimax_model_name(model),
-        "prompt": prompt,
-        "response_format": "base64",
-    }
-    if aspect_ratio:
-        payload["aspect_ratio"] = aspect_ratio
-    if width and height:
-        payload["width"] = width
-        payload["height"] = height
-    response = requests.post(
-        MINIMAX_API_URL,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
+    _minimax_provider().generate(
+        model,
+        prompt,
+        output_path,
+        aspect_ratio=aspect_ratio,
+        width=width,
+        height=height,
         timeout=TIMEOUTS.get("image_generation", 120),
     )
-    if response.status_code >= 400:
-        raise RuntimeError(f"Minimax API error {response.status_code}: {(response.text or '')[:200]}")
-
-    data = response.json() if response.text else {}
-    image_base64 = ((data.get("data") or {}).get("image_base64") if isinstance(data, dict) else None)
-    if isinstance(image_base64, list):
-        image_base64 = image_base64[0] if image_base64 else None
-    if image_base64:
-        image = Image.open(BytesIO(base64.b64decode(image_base64)))
-        image.save(output_path)
-        return
-
-    image_urls = ((data.get("data") or {}).get("image_urls") if isinstance(data, dict) else None) or []
-    if image_urls:
-        img_resp = requests.get(image_urls[0], timeout=TIMEOUTS.get("image_generation", 120))
-        img_resp.raise_for_status()
-        image = Image.open(BytesIO(img_resp.content))
-        image.save(output_path)
-        return
 
 
 def _minimax_prompt(config: ImageConfig, enhance: bool | None = None) -> str:
@@ -897,11 +851,20 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
         except Exception:
             pass
 
+    # B7 Phase 1: dispatch via the image-provider registry. Minimax
+    # providers handle their own HTTP in-process; non-Minimax providers
+    # still shell out to nanobanana.py — the subprocess hop is the
+    # existing per-call timeout boundary (tenacity-wrapped below) and
+    # the in-process migration is deferred to a later phase to preserve
+    # net-zero behaviour.
+    from image_providers import for_model as _provider_for_model
+
     last_error_was_rate_limit = False
     last_error_msg = ""
     for i, current_model in enumerate(model_chain, 1):
         try:
-            if current_model.startswith("minimax"):
+            provider = _provider_for_model(current_model)
+            if provider is not None and provider.name == "minimax":
                 prompt = _minimax_prompt(config, enhance)
                 _generate_minimax_image_with_options(
                     current_model,

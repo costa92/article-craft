@@ -1,5 +1,93 @@
 # Changelog
 
+## [1.6.17] - 2026-05-20 — `ImageProvider` protocol + registry (B7 Phase 1)
+
+### Why
+
+Adding a third image-generation backend (OpenAI gpt-image-1, Stable
+Diffusion, Flux, …) required edits in 5+ files in lockstep:
+`generate_and_upload_images.py` (`_generate_minimax_image*`,
+`startswith("minimax")` dispatch), `nanobanana.py` (`_generate_single_*`,
+mirrored dispatch), `config.filter_chain_by_available_keys` (hardcoded
+`prefix == "minimax"` / `"gemini"` branches), `setup_dependencies.py`
+(per-provider preflight). Each addition was one more `if`-branch in
+each file. Phase 1 lays down the abstraction so future providers are a
+single subclass + `register()` call.
+
+This is the contract phase — **net-zero behaviour change** for current
+Minimax + Gemini users. Phases 2 (OpenAI), 3 (self-hosted SD /
+Replicate), and 4 (per-provider config namespacing) build on it.
+
+### What changed
+
+New module **`scripts/image_providers.py`**:
+
+- `ImageProvider` Protocol (`@runtime_checkable`) — three required
+  methods (`model_names()`, `is_configured()`, `generate()`) and one
+  attribute (`name`). Errors normalized to `NoImageDataError`
+  (recoverable, try next model) vs `RuntimeError` (hard fail).
+- Registry: `register()`, `unregister()`, `for_model()`,
+  `configured_providers()`, `all_providers()`.
+- `MinimaxProvider` — HTTP body extracted from
+  `_generate_minimax_image_with_options` (byte-for-byte identical
+  HTTP shape).
+- `GeminiProvider` — SDK call extracted from
+  `nanobanana._generate_single_model` (string-prompt path; edit mode
+  with PIL Image inputs still goes through the legacy SDK path in
+  `nanobanana` because the protocol doesn't model image-edit yet).
+- Built-in registrations at module import time.
+- `_load_env_json()` consults `config._user_config` when available so
+  tests that monkey-patch `config._user_config` continue to see the
+  same source of truth.
+
+**Call-site refactors**:
+
+| File | Before | After |
+|------|--------|-------|
+| `generate_and_upload_images.py` `_generate_minimax_image*` | 80-line HTTP duplicates | Thin shims that call `MinimaxProvider().generate(...)` |
+| `generate_and_upload_images.py:902` main loop | `if current_model.startswith("minimax"):` | `provider = for_model(current_model)` + `provider.name == "minimax"` check |
+| `nanobanana.py:210` `_generate_single_model` | Inline SDK call | Routes string-prompt path through `GeminiProvider`; preserves edit-mode SDK call |
+| `nanobanana.py:250` `_generate_single_minimax` | Inline HTTP | Routes through `MinimaxProvider` |
+| `nanobanana.py:295` `generate_image` chain loop | `if startswith("minimax")` (twice) | Registry lookup + provider-name check |
+| `config.py` `filter_chain_by_available_keys` | Hardcoded `prefix == "minimax"`/`"gemini"` branches | `for_model(m) is not None and p.is_configured()` |
+
+The shim names (`_generate_minimax_image_with_options`,
+`_generate_single_minimax`, etc.) **stay importable at the same paths**
+so existing tests that `mock.patch.object(mod, "...")` keep working
+without modification (`test_images_cli.py`, `test_image_parallel_backoff.py`).
+
+### Tests
+
+**New**: `tests/test_image_providers.py` (27 tests covering protocol
+conformance, registry lifecycle, `is_configured()` env-var/env.json
+parity, `configured_providers()` filtering, registry round-trip with
+`filter_chain_by_available_keys`, provider error semantics
+(HTTP 4xx → RuntimeError, missing image bytes → NoImageDataError),
+non-overlapping model_names across providers).
+
+**Updated**: `tests/test_filter_chain.py` switched from
+`importlib.spec_from_file_location` reload to canonical `import config`
++ adds `import image_providers` so the registry's `is_configured()`
+sees the same `config._user_config` patches the tests apply.
+
+**Total**: 398 passing (was 371 — +27 new tests, no regressions).
+
+### What this enables
+
+Phase 2 (OpenAI): one new class `OpenAIImageProvider` in
+`image_providers.py` + one `register(OpenAIImageProvider())` line. No
+edits to `generate_and_upload_images.py`, `nanobanana.py`, or
+`config.filter_chain_by_available_keys`. The doctor preflight picks it
+up via the registry automatically (when that helper migrates in
+Phase 4).
+
+### Spec
+
+`docs/superpowers/specs/2026-05-20-multi-provider-image-abstraction.md`
+— Phase 1 contract closed; Phases 2-4 still queued.
+
+---
+
 ## [1.6.16] - 2026-05-20 — unify personal-anchor regex (B21)
 
 ### Why

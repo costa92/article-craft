@@ -1,8 +1,8 @@
 # Multi-Provider Image Generation Abstraction (B7)
 
-**Status**: design (not implemented — scoped for multi-phase execution)
+**Status**: Phase 1 ✅ **done v1.6.17** (2026-05-20); Phases 2-4 queued
 **Date**: 2026-05-20
-**Target version**: TBD — multi-phase (estimated 4 release cycles)
+**Target version**: multi-phase
 **Author**: costa
 **Backlog ref**: B7 in `docs/research/2026-05-20-feature-candidates.md`
 **Strategic enabler for**: D2 (English-language output) in same backlog doc

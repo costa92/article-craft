@@ -8,25 +8,18 @@ OR env.json both honored, unknown providers passed through, empty
 result surfaced cleanly).
 """
 
-import importlib.util
 import os
 import sys
 from pathlib import Path
 from unittest import mock
 
+# scripts/ on path so `import config` + `import image_providers` resolve
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
 
-def _load_config():
-    p = Path(__file__).resolve().parents[1] / "scripts" / "config.py"
-    if str(p.parent) not in sys.path:
-        sys.path.insert(0, str(p.parent))
-    spec = importlib.util.spec_from_file_location("config_filter_test", p)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["config_filter_test"] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-config = _load_config()
+import config  # noqa: E402
+import image_providers  # noqa: E402 — B7 Phase 1: filter_chain delegates here
 
 # The default chain (pinned here so we don't break if MODEL_FALLBACK_CHAIN
 # expands — these tests target the FILTER, not the chain contents).
