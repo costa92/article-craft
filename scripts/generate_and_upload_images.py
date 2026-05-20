@@ -861,7 +861,24 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
     output_path = images_dir / config.filename
 
     # 使用降级模型链：用户选定模型在前，其余从 config.MODEL_FALLBACK_CHAIN 补齐
-    model_chain = [model] + [m for m in MODEL_FALLBACK_CHAIN if m != model]
+    raw_chain = [model] + [m for m in MODEL_FALLBACK_CHAIN if m != model]
+
+    # B13: drop models whose provider key isn't configured so we don't
+    # burn a guaranteed-fail attempt per image. If the user explicitly
+    # selected a model that gets dropped, warn loudly so the override
+    # not taking effect isn't silent.
+    from config import filter_chain_by_available_keys
+    model_chain = filter_chain_by_available_keys(raw_chain)
+    if not model_chain:
+        raise RuntimeError(
+            "No image-provider API key configured. "
+            "Set MINIMAX_API_KEY or GEMINI_API_KEY (env var or ~/.claude/env.json)."
+        )
+    if model in raw_chain and model not in model_chain:
+        print(
+            f"   ⚠️  Requested model '{model}' dropped — its provider key isn't set; "
+            f"continuing with: {model_chain[0]}"
+        )
 
     # Use shared aspect ratio mapping
     size = ASPECT_RATIO_TO_SIZE.get(config.aspect_ratio, "1248x832")

@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.6.9] - 2026-05-20 — auto-prune fallback chain by available API keys (B13)
+
+### Fix — no more wasted Minimax attempts for Gemini-only users
+
+Before: a user with only `GEMINI_API_KEY` (the default new-user state
+since v1.6.0 made Minimax the headline default) saw the fallback chain
+try `minimax-image-01` first **per image**, fail with an auth error,
+then fall through to Gemini. Across a batch of N placeholders that was
+N wasted Minimax attempts plus the latency / log-noise overhead.
+
+After: `config.filter_chain_by_available_keys(chain)` prunes models
+whose provider key isn't set. Minimax models need
+`minimax_api_key` (env.json) or `MINIMAX_API_KEY` (env var); Gemini
+models need `gemini_api_key` or `GEMINI_API_KEY`. Both call sites
+(`generate_and_upload_images.py:864`, `nanobanana.py:308`) filter
+through the helper after building the chain.
+
+### Behaviour notes
+
+- **Filtered chain empty** → callers raise `RuntimeError` with a clear
+  fix hint instead of letting an empty loop silently succeed-zero or
+  emit a confusing "all attempts exhausted" error.
+- **Explicit `--model` dropped** → warning printed showing what fell
+  back to. (User selected a model whose provider isn't configured —
+  surface the override rather than silently overriding their choice.)
+- **Unknown provider prefix** → passes through (forward-compat: future
+  Qiniu / DALL-E / Flux entries get their own key check when wired up,
+  not arbitrarily dropped by this filter).
+- **Empty-string env.json key** treated as missing (matches the
+  existing API-key-check semantics in `doctor.py`).
+
+### Tests
+
+10 new tests (`tests/test_filter_chain.py`) cover: both keys, only
+Gemini (the headline scenario), only Minimax, neither, env.json-only,
+env-var-only, chain order preservation, unknown-prefix pass-through,
+empty-string-key handling, empty input chain. **279 total tests pass**
+(was 269).
+
+### Closes
+
+- B13 from `docs/research/2026-05-20-feature-candidates.md` —
+  originally surfaced as a side observation while documenting the
+  Minimax default for a user question.
+
 ## [1.6.8] - 2026-05-20 — shared PicGo parser + Uploader protocol (B2)
 
 ### Refactor — canonical PicGo output parser in `scripts/uploaders.py`

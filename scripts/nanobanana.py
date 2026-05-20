@@ -312,6 +312,22 @@ def generate_image(model, contents, aspect_ratio, resolution, output_path, no_fa
     else:
         chain.insert(0, model)
 
+    # B13: prune models lacking their provider key — otherwise the loop
+    # below burns a guaranteed-fail attempt per generation.
+    from config import filter_chain_by_available_keys
+    raw_chain = list(chain)
+    chain = filter_chain_by_available_keys(chain)
+    if not chain:
+        raise RuntimeError(
+            "No image-provider API key configured. "
+            "Set MINIMAX_API_KEY or GEMINI_API_KEY (env var or ~/.claude/env.json)."
+        )
+    if model in raw_chain and model not in chain:
+        print(
+            f"⚠️  Requested model '{model}' dropped — its provider key isn't set; "
+            f"continuing with: {chain[0]}"
+        )
+
     for i, fallback_model in enumerate(chain):
         try:
             if str(fallback_model).startswith("minimax"):
