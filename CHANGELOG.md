@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.6.10] - 2026-05-20 — self-check rules 12–15 reference entries (B12)
+
+### Docs — closes the v1.6.4 doc debt
+
+`references/self-check-rules.md` previously had prose entries for
+rules 1–11 + 7b + 16 + 17 only. The v1.6.4 sweep updated the preamble
+to acknowledge rules 12–15 were implemented but undocumented and to
+point readers at the `check_rule_N` docstrings as the interim source.
+
+This release fills the gap:
+
+- **Rule 12 — Template Summary Detection**: full list of 6 regex
+  patterns, line-bounded matching, bad/good replacement examples
+  (lead with a concrete problem instead of "本文将…")
+- **Rule 13 — Code Block Language Identifier**: state-machine scan,
+  default-to-`text` auto-fix policy, common tag list
+- **Rule 14 — ASCII Diagram in Non-Executable Code Blocks**:
+  box/arrow character thresholds (`box ≥ 5` OR `box ≥ 2 AND arrow ≥ 2`),
+  `_EXECUTABLE_LANGS` skip-list explained, side-by-side table comparing
+  Rule 14 vs Rule 11 (where they overlap and where they don't)
+- **Rule 15 — Orphan PROMPT Comments**: 2-line look-back detection,
+  auto-fix policy (delete safely), common causes
+
+The "Who enforces what" table at the top expanded from 12 rows to 18
+(adds rules 12–17). Preamble doc-debt warning + "consult the docstrings"
+pointer removed — every active rule now has a canonical reference entry.
+
+279 tests still pass — pure documentation, no code change.
+
+### Closes
+
+- B12 from `docs/research/2026-05-20-feature-candidates.md`
+- v1.6.4's "doc debt" item flagged in `references/self-check-rules.md`
+
 ## [1.6.9] - 2026-05-20 — auto-prune fallback chain by available API keys (B13)
 
 ### Fix — no more wasted Minimax attempts for Gemini-only users

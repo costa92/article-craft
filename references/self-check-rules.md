@@ -6,12 +6,9 @@
 > run the patterns from it.
 >
 > **Active rule count: 17.** `scripts/review_selfcheck.py` implements
-> `check_rule_1` through `check_rule_17` (see the dispatcher table at the
-> bottom of that file). Reference entries below currently cover rules
-> 1–11, 16, 17, plus the 7b degradation-aware variant — full prose entries
-> for rules 12–15 are a doc-debt item; until those entries land, consult
-> the docstrings on each `check_rule_N` function in
-> `scripts/review_selfcheck.py` for behavior.
+> `check_rule_1` through `check_rule_17` sequentially (see the dispatcher
+> list at the bottom of that file). Reference entries below cover all
+> 17 plus the `7b` degradation-aware variant of Rule 7.
 
 ## Who enforces what
 
@@ -29,6 +26,12 @@
 | 9 Mermaid residue       |   | report | ✓ |
 | 10 References inline    |   | ✓ | ✓ |
 | 11 ASCII diagrams       | ✓ GATE (auto-fix) | report | detect-only, block |
+| 12 Template summaries   |   |   | ✓ |
+| 13 Code block lang tag  | ✓ | ✓ default `text` | ✓ |
+| 14 ASCII in code blocks |   |   | ✓ |
+| 15 Orphan PROMPT lines  |   | ✓ | ✓ |
+| 16 PROMPT CJK render    | ✓ |   | ✓ |
+| 17 Register naturalness |   |   | ✓ (tone-aware) |
 
 ## Rule schema
 
@@ -446,6 +449,187 @@ Markdown 列表替代：
 ```
 
 不要把目录树放在任何代码块里，即使 `text` 语言标识也不建议（`├` 字符会被规则检测器标记）。
+
+---
+
+## Rule 12: Template Summary Detection
+
+**Severity**: FAIL
+**Auto-fix**: no — needs human rewrite (formulaic "本文将…" prose can only be replaced by actual reporting / opinion)
+**Escalation**: review Phase 1 flags; user decides revision
+
+### Why
+
+LLM-generated articles default to a small set of summary openers: "本文从X
+出发拆解Y", "下面章节将逐一介绍", "本文系统讲解从A到B". They feel safe
+because they describe what the article does instead of doing it — and they're
+exactly the cadence readers learn to skim past as "AI boilerplate".
+
+### Canonical patterns
+
+```
+本文从.*出发.*拆解
+本文将.*详细.*介绍
+接下来.*我们将.*逐一
+下面.*章节.*将.*逐一
+本文.*完整.*梳理.*通过.*最后
+本文.*系统.*讲解.*从.*到
+```
+
+(Source: `TEMPLATE_SUMMARY_PATTERNS` in `scripts/review_selfcheck.py`. Patterns
+are regex `re.search` against each article line — matching is line-bounded.)
+
+### Detection
+
+Per line, scan against each pattern; first match per line is enough. Code
+blocks are stripped before the check so legitimate code comments / docstrings
+don't false-positive.
+
+### Bad / Good
+
+```
+Bad : 本文从 Kubernetes 调度器的核心机制出发，详细拆解 ...
+Good: 我们 etcd 翻车那次，最后定位到 scheduler 的一个 lease 续约 bug。下面
+      这一段是当时的复盘记录。
+```
+
+Replacement strategy: lead with a concrete problem, an experience, or an
+opinion — anything that proves the next 800 words won't be a Wikipedia
+paraphrase.
+
+---
+
+## Rule 13: Code Block Language Identifier
+
+**Severity**: FAIL
+**Auto-fix**: context-dependent — `lint` can append a sensible default (`text`)
+but the writer should provide the right tag (`bash`/`go`/`yaml`/etc.) for
+syntax highlighting.
+**Escalation**: write GATE flags missing tags at save; lint reports / auto-defaults;
+review Phase 1 blocks if any remain.
+
+### Why
+
+Opening ` ``` ` without a language identifier ships an unhighlighted block.
+Most renderers (公众号 / Obsidian / GitHub) require the tag to apply syntax
+colors. Untagged blocks read as "raw text in a box" — visually identical to
+ASCII art, which Rule 14 then incorrectly tries to filter as a diagram.
+
+### Detection procedure
+
+State-machine scan over `lines`:
+
+1. Track in/out of code block via ` ``` ` fences.
+2. Opening fence — capture text after the three backticks.
+3. If empty after strip → violation on that line.
+4. Closing fence has no language tag (it's bare ` ``` `) — skip.
+
+### Auto-fix
+
+When `lint` chooses to fill the gap, default to `text` (universally safe). The
+writer should override with the real language when re-running the article.
+
+### Bad / Good
+
+```
+Bad : ```
+      $ kubectl get pods
+      ```
+
+Good: ```bash
+      $ kubectl get pods
+      ```
+```
+
+Common tags: `bash` `shell` `python` `go` `yaml` `json` `sql` `js` `ts`
+`hcl` `dockerfile` `diff` `nginx` `text`.
+
+---
+
+## Rule 14: ASCII Diagram in Non-Executable Code Blocks
+
+**Severity**: FAIL
+**Auto-fix**: no — diagrams must be re-authored as `<!-- IMAGE: -->` placeholders
+that the images stage generates
+**Escalation**: review Phase 1 flags. Companion to Rule 11 — where Rule 11
+scans **anywhere** in the body for box/arrow chars (including raw markdown),
+Rule 14 narrows in on **code blocks specifically** and skips executable
+languages so a real `bash` snippet with `│` in a string literal doesn't
+false-positive.
+
+### Why
+
+Even with a language tag, putting an ASCII flowchart inside a code block
+(commonly `text` / `markdown` / no language) bypasses the renderer's image
+treatment — the reader sees a wall of box-drawing characters that won't
+zoom, won't theme, and look broken on mobile. Always convert to a real
+generated image.
+
+### Detection procedure
+
+For each closed code block:
+
+1. Count box-drawing characters `│├└┌┐─┬┴┤┼╔╗╚╝║═╭╮╯╰` (`_BOX_CHARS`).
+2. Count arrow characters `▼▶◄◀←→↑↓►` (`_ARROW_CHARS`).
+3. Flag if **(box ≥ 5)** OR **(box ≥ 2 AND arrow ≥ 2)**.
+4. If the block's language is in `_EXECUTABLE_LANGS` (`bash` `python` `go` `yaml`
+   `json` `sql` `dockerfile` and 30+ others) → **skip** the flag (those chars
+   are likely string-literal content, not a diagram).
+
+### Auto-convert template (write only, parallels Rule 11)
+
+```markdown
+<!-- IMAGE: slug - description (ratio) -->
+<!-- PROMPT: [shared visual prefix], [describe the diagram content in English] -->
+```
+
+### Relationship to Rule 11
+
+| | Rule 11 | Rule 14 |
+|---|---|---|
+| Scope | Entire body | Code blocks only |
+| Code-block filter | n/a | Skips `_EXECUTABLE_LANGS` |
+| Enforcers | write GATE + lint + review | review only |
+| Auto-fix | write does, others detect-only | none — flagged for human |
+
+Rule 11 catches the common "ASCII art directly in prose" case at write
+time; Rule 14 is a defensive backstop for the "ASCII hidden inside a
+code block" case that slips past Rule 11's body scan.
+
+---
+
+## Rule 15: Orphan PROMPT Comments
+
+**Severity**: FAIL
+**Auto-fix**: yes — delete the orphan line
+**Escalation**: review Phase 1 deletes via `Edit`; lint reports.
+
+### Why
+
+`<!-- PROMPT: ... -->` is the second half of a two-line image directive —
+`<!-- IMAGE: slug - desc (ratio) -->` directly above it. After the `images`
+stage runs, the `IMAGE:` line is replaced with the rendered URL, and any
+**stray `PROMPT:` line that wasn't paired with an `IMAGE:`** becomes a
+visible HTML comment in the published article. Style: looks broken.
+
+Common causes:
+
+- Hand-edited the `IMAGE:` line away but forgot to delete the `PROMPT:` below
+- Generated image was rejected and the `IMAGE:` placeholder was removed but
+  the prompt kept "for next time" — never cleaned up before publish
+
+### Detection procedure
+
+For each `<!-- PROMPT:` line:
+
+1. Look backward up to 2 non-empty lines.
+2. If the most recent non-empty line is `<!-- IMAGE:` → paired (no violation).
+3. Otherwise → orphan, flag for deletion.
+
+### Auto-fix
+
+Delete the orphan line. Safe because the orphan provides no rendered output
+anyway — it's dead text the renderer will print verbatim.
 
 ---
 
