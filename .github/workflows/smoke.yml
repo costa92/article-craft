@@ -1,0 +1,59 @@
+name: Plugin Layout Smoke Test
+
+# Runs on every PR and on push to main. Catches the v1.6.2 / v1.6.3 /
+# v1.3.4 class of bugs — issues that don't break individual scripts
+# but break the plugin's *layout contract* (command files in wrong
+# place, frontmatter versions out of lockstep, referenced scripts
+# missing, marketplace.json drift from plugin.json).
+#
+# See tests/test_plugin_layout.py for what's checked and why.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-flight runs for the same PR / branch when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  layout-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Minimal deps for the layout suite — pyyaml for frontmatter parsing,
+          # pytest as runner. Full scripts/requirements.txt isn't needed because
+          # layout tests don't exercise Playwright / Gemini / PicGo paths.
+          python -m pip install pyyaml pytest
+
+      - name: Run plugin layout tests
+        run: python -m pytest tests/test_plugin_layout.py tests/test_bump_version.py -v
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Plugin Layout Smoke" >> "$GITHUB_STEP_SUMMARY"
+          echo "Checks the layout contract that the v1.6.x release cadence depends on:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- All sub-commands live at \`commands/\` top level (single-prefix invariant)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 1:1 skill ↔ command pairing" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Skill SKILL.md \`version:\` matches plugin.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Frontmatter is valid YAML with required fields" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`\${CLAUDE_PLUGIN_ROOT}/scripts/X.py\` references resolve" >> "$GITHUB_STEP_SUMMARY"
+          echo "- marketplace.json plugins[0].version == plugin.json version" >> "$GITHUB_STEP_SUMMARY"

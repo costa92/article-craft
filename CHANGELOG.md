@@ -1,5 +1,69 @@
 # Changelog
 
+## [1.6.12] - 2026-05-20 — plugin-layout smoke test in CI (B6)
+
+### New — `tests/test_plugin_layout.py` (10 tests) + GitHub Actions workflow
+
+Closes the v1.6.2 / v1.6.3 / v1.3.4 fragility pattern: bugs that don't
+break individual scripts but break the plugin's **layout contract**
+(command files in wrong place, frontmatter versions out of lockstep,
+referenced scripts missing, marketplace.json drift from plugin.json).
+Pre-v1.6.12, none of these were CI-enforced — every drift surfaced as
+a user report after the release shipped.
+
+**Tests pinned**:
+
+- `test_no_commands_nested_under_article_craft_subdir` — would have
+  caught v1.6.2 (the original `commands/article-craft/doctor.md`
+  placement that registered as the doubled `/article-craft:article-craft:doctor`).
+- `test_every_skill_has_matching_command` — 1:1 invariant from CLAUDE.md.
+- `test_every_command_either_wraps_a_skill_or_is_in_allowlist` — orphan
+  catcher; adding a non-skill command requires explicit allowlisting
+  in the test (forces code-review).
+- `test_all_skill_versions_match_plugin_json` — would have caught
+  v1.3.4 (marketplace.json stuck at 1.1.0 for months).
+- `test_marketplace_json_agrees_with_plugin_json` — same lockstep
+  check from the bump_version side, pinned at PR time.
+- `test_skill_name_matches_directory` — `skills/X/SKILL.md` frontmatter
+  `name:` must be `article-craft:X`.
+- `test_referenced_scripts_actually_exist` — every
+  `${CLAUDE_PLUGIN_ROOT}/scripts/X.py` mentioned in any markdown
+  (skills, commands, CLAUDE.md, INSTALL.md, README.md) must resolve.
+- Frontmatter validity: command `description:` present, skill
+  required-fields complete, plugin.json shape sane.
+
+**GitHub Actions workflow** `.github/workflows/smoke.yml` runs the
+above on every PR and push to main. Minimal deps (pyyaml + pytest);
+~5 second job. Concurrency-grouped so new pushes cancel stale runs.
+
+### Fix — 14 command files had invalid YAML frontmatter
+
+The test caught a **real layout bug** the moment it ran:
+`argument-hint:` values with multiple unquoted square brackets were
+being read by YAML as malformed flow-sequence syntax. For example,
+`commands/series.md` had:
+
+```yaml
+argument-hint: [create|next|status|validate|audit|collection] [series-file-path]
+```
+
+YAML reads the first `[...]` as a flow sequence, then expects `,`
+or `]` — and finds `[` instead, raising `ParserError`. The repo had
+been shipping these invalid YAML frontmatters since v1.5.x because
+Claude Code's plugin loader uses a more lenient parser than strict
+`yaml.safe_load`. Strict YAML is now the canonical contract; 14 files
+fixed by quoting the value:
+
+```yaml
+argument-hint: "[create|next|status|validate|audit|collection] [series-file-path]"
+```
+
+**331 total tests pass** (was 321).
+
+### Closes
+
+- B6 from `docs/research/2026-05-20-feature-candidates.md`
+
 ## [1.6.11] - 2026-05-20 — test coverage for evidence / utils / bump_version (B9)
 
 ### Tests — 42 new across the three biggest no-test scripts

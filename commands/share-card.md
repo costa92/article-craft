@@ -1,6 +1,6 @@
 ---
 description: Generate platform-optimized social share cards from article frontmatter
-argument-hint: [path/to/article.md] [--platforms ...] [--color ...] [--upload]
+argument-hint: "[path/to/article.md] [--platforms ...] [--color ...] [--upload]"
 ---
 
 Read and follow the skill at `${CLAUDE_PLUGIN_ROOT}/skills/share-card/SKILL.md`.

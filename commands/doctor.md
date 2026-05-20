@@ -1,6 +1,6 @@
 ---
 description: Run the article-craft runtime healthcheck (dependency preflight)
-argument-hint: [--json] [--network]
+argument-hint: "[--json] [--network]"
 ---
 
 Run the article-craft dependency healthcheck and report the result:

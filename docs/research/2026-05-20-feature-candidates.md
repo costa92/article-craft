@@ -168,7 +168,7 @@ endpoints; check `CLAUDE_PLUGIN_ROOT` env resolution; verify
 
 | # | Title | Effort | Notes |
 |---|-------|--------|-------|
-| **B6** | Plugin-layout smoke test in CI | S–M | Prevents v1.6.2-class drift |
+| **B6** | Plugin-layout smoke test in CI | S–M | Prevents v1.6.2-class drift — ✅ **done v1.6.12** |
 | **B7** | Multi-provider image abstraction | M | Enables English-language output (D2) |
 | **B8** | Verify-claims expanded scope (flag validation) | M | Start with 5–10 high-frequency tools |
 | **B9** | Tests for `evidence.py` / `bump_version.py` / `utils.py` | S | Three biggest no-test scripts — ✅ **done v1.6.11** |

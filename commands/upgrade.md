@@ -1,6 +1,6 @@
 ---
 description: Upgrade a draft or quick article to standard mode — run only the missing stages
-argument-hint: <article-path> [--to standard|quick]
+argument-hint: "<article-path> [--to standard|quick]"
 ---
 
 Read the orchestrator skill at `${CLAUDE_PLUGIN_ROOT}/skills/orchestrator/SKILL.md`.

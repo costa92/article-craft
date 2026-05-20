@@ -1,6 +1,6 @@
 ---
 description: Generate and upload images for technical articles using Minimax first, with Gemini fallback
-argument-hint: [path/to/article.md]
+argument-hint: "[path/to/article.md]"
 ---
 
 Read and follow the skill at `${CLAUDE_PLUGIN_ROOT}/skills/images/SKILL.md`.

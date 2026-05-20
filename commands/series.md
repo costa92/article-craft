@@ -1,6 +1,6 @@
 ---
 description: Plan, manage, and generate article series — create series, write next article, check progress, validate, audit coverage, or generate collection
-argument-hint: [create|next|status|validate|audit|collection] [series-file-path]
+argument-hint: "[create|next|status|validate|audit|collection] [series-file-path]"
 ---
 
 Read and follow the skill at `${CLAUDE_PLUGIN_ROOT}/skills/series/SKILL.md`.
