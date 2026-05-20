@@ -1,0 +1,32 @@
+Provenance
+==========
+
+Origin: SYNTHETIC (hand-authored)
+Date:   2026-05-20
+Author: costa (B3 Phase 1 — see docs/superpowers/specs/2026-05-20-screenshot-e2e-snapshot-tests.md)
+
+Why synthetic rather than a real github.com capture:
+
+  Phase 1 is the "Foundation" deliverable. It proves the route-redirect
+  architecture works against ONE platform. A minimal synthetic fixture
+  satisfies that goal in <1 KB while keeping the DOM contract identical
+  to what HOST_MAIN_SELECTORS expects:
+
+    article.markdown-body  (target — main readme content)
+    .file-tree             (decoy — must NOT win matching)
+    .sidebar-meta          (decoy — same)
+    .AppHeader             (decoy — top nav)
+
+  Phase 2 captures real public pages for the remaining ~14 entries in
+  HOST_MAIN_SELECTORS using `_capture.py` (TBD). Real captures inline
+  100 KB - 2 MB of vendor CSS / inlined images per file — acceptable
+  cost spread across releases, not Phase 1.
+
+If GitHub redesigns its DOM and the production selector
+(`article.markdown-body`) no longer matches, the fixture should be
+re-authored (or replaced with a fresh capture) in a SEPARATE PR from
+any production selector change — otherwise the test's regression net
+is bypassed.
+
+SHA-256 of repo-readme.html (auto-generated; do not edit manually):
+  (computed in CI; see tests/test_screenshot_e2e.py if drift detected)

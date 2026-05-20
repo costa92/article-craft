@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>example/repo: A fixture for screenshot E2E tests</title>
+<style>
+  /* Mimic the load-bearing layout properties of github.com without
+     committing 800 KB of vendor CSS. The selectors we test for —
+     `article.markdown-body`, the layout sidebars, sticky nav — are
+     reproduced 1:1 in DOM structure so HOST_MAIN_SELECTORS logic can
+     bind against this fixture exactly as it would against the real
+     page. */
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", sans-serif;
+         font-size: 14px; line-height: 1.5; color: #1f2328; background: #fff; }
+  .layout-wrapper { display: grid; grid-template-columns: 296px 1fr 296px;
+                    gap: 24px; max-width: 1280px; margin: 0 auto;
+                    padding: 24px 32px; }
+  .file-tree { background: #f6f8fa; border: 1px solid #d1d9e0;
+               border-radius: 6px; padding: 16px; height: 600px; }
+  .sidebar-meta { padding: 16px; }
+  article.markdown-body { background: #fff; min-height: 800px;
+                          padding: 32px; border: 1px solid #d1d9e0;
+                          border-radius: 6px; }
+  article.markdown-body h1 { font-size: 2em; border-bottom: 1px solid #d1d9e0;
+                              padding-bottom: 0.3em; margin-top: 0; }
+  article.markdown-body h2 { font-size: 1.5em; border-bottom: 1px solid #d1d9e0;
+                              padding-bottom: 0.3em; }
+  article.markdown-body code { background: #f6f8fa; padding: 0.2em 0.4em;
+                                border-radius: 3px; font-family: monospace; }
+  article.markdown-body pre { background: #f6f8fa; padding: 16px;
+                               border-radius: 6px; overflow-x: auto; }
+  article.markdown-body pre code { background: transparent; padding: 0; }
+  header.AppHeader { background: #24292f; color: #fff; padding: 16px 32px;
+                     display: flex; gap: 16px; align-items: center; }
+  .Header-link { color: #fff; text-decoration: none; font-weight: 500; }
+</style>
+</head>
+<body>
+<header class="AppHeader" role="banner">
+  <a class="Header-link" href="#">GitHub</a>
+  <span>/</span>
+  <a class="Header-link" href="#">example</a>
+  <span>/</span>
+  <a class="Header-link" href="#">repo</a>
+</header>
+
+<div class="layout-wrapper">
+  <!-- The "decoy" content. main_content_selectors_for_host must NOT
+       pick this when github.com is the host. v1.5.4 regression history
+       baked the lesson: matching .file-tree or .sidebar-meta first
+       sends the screenshot crop off into the sidebar. -->
+  <aside class="file-tree" aria-label="Files">
+    <ul>
+      <li>src/</li>
+      <li>tests/</li>
+      <li>README.md</li>
+      <li>package.json</li>
+    </ul>
+  </aside>
+
+  <!-- The target. HOST_MAIN_SELECTORS["github.com"] lists
+       `article#readme`, `article.markdown-body`, `.markdown-body`.
+       This fixture uses the second selector (the most common shape
+       on real github.com repo home pages — `article#readme` is only
+       set in some layouts). -->
+  <article class="markdown-body" data-testid="readme">
+    <h1>example/repo</h1>
+
+    <p>A fixture page exercising the GitHub host selector path. This
+    HTML is intentionally minimal — the screenshot E2E test only
+    needs the DOM shape to be representative, not the production
+    CSS / JS bundle.</p>
+
+    <h2>Installation</h2>
+
+    <pre><code>npm install example-repo</code></pre>
+
+    <h2>Usage</h2>
+
+    <p>Import and call. The selector test asserts that the
+    <code>article.markdown-body</code> selector matches exactly this
+    element, not the sibling sidebar or the AppHeader nav.</p>
+
+    <pre><code>const repo = require('example-repo');
+repo.run();</code></pre>
+
+    <h2>Why a fixture?</h2>
+
+    <p>See <code>docs/superpowers/specs/2026-05-20-screenshot-e2e-snapshot-tests.md</code>
+    for the design. Five consecutive releases (v1.4.17 - v1.5.6) fixed
+    a screenshot framing regression. This fixture is the regression
+    net.</p>
+
+    <h2>License</h2>
+
+    <p>MIT (fixture only).</p>
+  </article>
+
+  <aside class="sidebar-meta">
+    <h3>About</h3>
+    <p>Fixture for E2E tests. Not a real package.</p>
+    <h3>Languages</h3>
+    <p>HTML 100%</p>
+  </aside>
+</div>
+</body>
+</html>

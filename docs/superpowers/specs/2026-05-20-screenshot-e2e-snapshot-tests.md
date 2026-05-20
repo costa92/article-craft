@@ -1,8 +1,8 @@
 # Screenshot End-to-End Snapshot Tests (B3)
 
-**Status**: design (not implemented — scoped for future multi-phase execution)
+**Status**: Phase 1 ✅ **done v1.6.18** (2026-05-20); Phases 2-4 queued
 **Date**: 2026-05-20
-**Target version**: TBD — multi-phase (estimated 4 release cycles)
+**Target version**: multi-phase
 **Author**: costa
 **Backlog ref**: B3 in `docs/research/2026-05-20-feature-candidates.md`
 **Closes pattern**: A2 (Screenshot framing / selector regressions) in same doc

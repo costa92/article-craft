@@ -1,0 +1,17 @@
+{
+  "schema_version": "1",
+  "platform": "github",
+  "url_pattern": "https://github.com/example/repo",
+  "fixture_html": "repo-readme.html",
+  "expected_selector_candidates": [
+    "article#readme",
+    "article.markdown-body",
+    ".markdown-body"
+  ],
+  "expected_first_match": "article.markdown-body",
+  "expected_bbox_min": {"width": 200, "height": 100},
+  "expected_bbox_max": {"width": 1600, "height": 5000},
+  "anchor_keywords": ["installation", "usage"],
+  "is_404_expected": false,
+  "notes": "Tests that HOST_MAIN_SELECTORS['github.com'] matches the article.markdown-body element AND that the file-tree sidebar / AppHeader nav do NOT win (regression net for v1.5.4 anchor-scoping bug)."
+}

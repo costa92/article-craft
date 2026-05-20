@@ -1,5 +1,93 @@
 # Changelog
 
+## [1.6.18] - 2026-05-20 — Screenshot E2E snapshot test foundation (B3 Phase 1)
+
+### Why
+
+`scripts/screenshot_tool.HOST_MAIN_SELECTORS` ships per-platform CSS
+selectors for 15 hosts (GitHub, Stack Overflow, X, Reddit, HN, Weibo,
+Zhihu, WeChat, YouTube, Bilibili, Medium, arXiv, …). Five consecutive
+releases (v1.4.17 - v1.5.6) fixed framing / anchor / selector
+regressions in this dict — there was no regression net beyond
+`tests/test_screenshot_crop.py`, which only checks dict-lookup
+plumbing, not "does the selector actually match a real DOM."
+
+Each user-reported screenshot bug was the only feedback signal.
+
+### What changed
+
+New test infrastructure under `tests/fixtures/screenshot/`. The
+foundation pieces (Phase 1 of the 4-phase spec
+`docs/superpowers/specs/2026-05-20-screenshot-e2e-snapshot-tests.md`):
+
+- **`tests/fixtures/_screenshot_e2e_helpers.py`** — Playwright
+  `route.fulfill()` handler that serves a fixture HTML file inline
+  while the page URL stays canonical (e.g. `https://github.com/example/repo`).
+  This is what lets `screenshot_tool.suggest_selector(url)` /
+  `main_content_selectors_for_host(url)` still resolve "github.com"
+  against the fixture. Also includes a `FixtureServer` (stdlib
+  `ThreadingHTTPServer`) for any future test that needs local hosting
+  without the route trick.
+- **`tests/fixtures/screenshot/github/`** — the Phase 1 fixture:
+  - `repo-readme.html` — synthetic, minimal HTML with the same DOM
+    shape github.com uses (target `article.markdown-body` + decoy
+    `.file-tree` / `.sidebar-meta` / `.AppHeader` siblings that must
+    NOT win selection).
+  - `repo-readme.expected.json` — schema_version 1: url_pattern,
+    fixture_html ref, expected_selector_candidates,
+    expected_first_match, bbox tolerances, anchor_keywords,
+    is_404_expected. The contract every fixture follows.
+  - `SOURCE.txt` — provenance (origin, date, author).
+- **`tests/fixtures/screenshot/README.md`** — fixture-capture
+  procedure + maintenance protocol (PR-A captures new HTML, PR-B
+  updates the production selector — never both in the same change).
+- **`tests/test_screenshot_e2e.py`** — parametrized over every
+  discovered fixture. Three tests per fixture:
+  1. `test_selector_resolves_via_host_map` — selector lookup logic
+     (no browser; fast pre-check).
+  2. `test_selector_matches_dom_with_route_redirect` — full Playwright
+     headless flow: `page.goto(url)` → routed fixture → selector
+     match + bbox-within-tolerance assertion.
+  3. `test_fixtures_discovered_at_least_one` — sanity check that
+     the parametrize list isn't empty (would otherwise silently skip
+     every test if the fixture dir were broken).
+
+The whole module skips gracefully when Playwright Chromium isn't
+installed (CI installs via `shot-scraper install`; doctor warns).
+
+### Architecture note: route.fulfill vs route.continue_
+
+The spec §3.2 originally sketched `route.continue_(url=local_url)` to
+rewrite the request URL to localhost. Playwright rejects this with
+"New URL must have same protocol as overridden URL" — security guard
+against https→http downgrade. Implementation uses `route.fulfill()`
+instead: serves the fixture HTML inline as the response body, page
+URL stays canonical. The risk listed in spec §5.2 turned out to be a
+real one, and the fix is recorded here for future fixture work.
+
+### Tests
+
+**Total**: 401 passing (was 398 — +3 new e2e, no regressions).
+
+### What this enables
+
+Phase 2 (platform coverage): add one fixture dir per
+`HOST_MAIN_SELECTORS` entry. Each fixture is auto-discovered — no
+edits to `test_screenshot_e2e.py` needed. ~30 min per platform.
+
+Phase 3 (CI): new workflow file. Caches Playwright Chromium between
+runs.
+
+Phase 4 (maintenance doc): consolidate the protocol from the fixture
+README into CONTRIBUTING.md.
+
+### Spec
+
+`docs/superpowers/specs/2026-05-20-screenshot-e2e-snapshot-tests.md`
+— Phase 1 contract closed; Phases 2-4 still queued.
+
+---
+
 ## [1.6.17] - 2026-05-20 — `ImageProvider` protocol + registry (B7 Phase 1)
 
 ### Why
