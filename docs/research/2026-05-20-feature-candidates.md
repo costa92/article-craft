@@ -241,6 +241,39 @@ correctly; the gate just needed to use that scoping.
 - ✅ **done v1.6.14** — new `scripts/ascii_gate.py` reuses rule_14's
   scoping logic; SKILL.md Step 6 + Step 4a updated to call it.
 
+**B22. `verify` skill must WebFetch official sources, not just HEAD-check URLs** *(discovered when auditing the v1.6.13 Gemini-3.5 test article)*
+The current `skills/verify/SKILL.md` Step 1 (Feature Discovery) is
+written for "tool/project articles" and the orchestrator skipped it
+for a Style E (news/release) article. Step 2 (Batch Link Verification)
+only validates URL status codes (200/404), not page content. Result:
+the article's specific facts — `"289 tokens/sec"`, pricing figures,
+benchmark percentages — came from WebSearch *snippets*, not from
+WebFetched official sources. Post-hoc verification (using WebFetch
+manually) revealed:
+
+- `"289 tokens/sec"` not in Google's official blog, TechCrunch, OR
+  llm-stats. Source unverifiable. ❌
+- `"$1.50 / $9 pricing"` only in llm-stats; Google's blog doesn't
+  publish a price table. ⚠️
+- Article missed CharXiv Reasoning (4th benchmark, 84.2%) and 3
+  availability channels because they only appeared in the official
+  blog post's body, not in WebSearch snippets.
+
+**Fix**: add explicit Step 1.5 "Official Source Fact Extraction" to
+`skills/verify/SKILL.md` that runs `WebFetch(t0_source_url,
+prompt="extract verbatim figures, quotes, benchmark scores")` for
+**every T0/T1 source** discovered in requirements. Pass the
+extracted facts dict to the write skill as `_extracted_facts`. Write
+must cite from this dict, not from search snippets.
+
+- Effort: M (~2-3 hours). Needs schema for `_extracted_facts` + write
+  skill consumption + tests covering "snippets-vs-fetched fact
+  parity".
+- Risk: medium — increases verify stage runtime by N×WebFetch (slow).
+  Mitigate via the existing verify-cache.json.
+- Triggered by: post-hoc audit of the v1.6.13 e2e test article on
+  2026-05-20.
+
 **B21. Unify `PERSONAL_VOICE_REGEX` and `check_rule_5`'s inline regex** *(discovered in v1.6.14 work)*
 The agent doing B14/B15/B16 noticed that `PERSONAL_VOICE_REGEX` at
 `scripts/review_selfcheck.py:~888` is a near-duplicate of the inline
