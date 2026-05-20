@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.6.11] - 2026-05-20 — test coverage for evidence / utils / bump_version (B9)
+
+### Tests — 42 new across the three biggest no-test scripts
+
+Before: `scripts/evidence.py` (356 LOC), `scripts/utils.py` (317 LOC),
+and `scripts/bump_version.py` (254 LOC) had **zero** matching
+`tests/test_*.py`. `SmartDirectoryMatcher` in particular is the
+publish-skill auto-placement engine — silently picking the wrong KB
+folder is the kind of bug that wouldn't surface for releases. Bump
+tooling was similarly unverified, despite being on the critical path
+of every release.
+
+New test files:
+
+- **`tests/test_bump_version.py`** (12 tests): version arithmetic
+  (major/minor/patch/explicit X.Y.Z), arity rejection, non-numeric
+  part rejection, `parse_bump_arg` CLI validation, current-version
+  semver shape, **plugin.json ↔ marketplace.json lockstep invariant**
+  (would catch the v1.3.4 drift).
+- **`tests/test_evidence_parse.py`** (14 tests): `parse_materials`
+  bucket sorting (public / local / gated), section header
+  variants in Chinese and English (`## 公开` / `## local` / `## 付费` /
+  `## paywall`), `tier=T1`, quoted `note="..."` / `desc="..."` syntax,
+  bullet prefix variants (`- ` / `* `), trailing-punctuation cleanup,
+  unrecognized-section fallback to public.
+- **`tests/test_utils_classes.py`** (16 tests):
+  `SmartDirectoryMatcher` keyword / pattern / history rules,
+  case-insensitivity, invalid-regex tolerance, cross-instance
+  persistence, `learn_feedback` token extraction;
+  `PlaceholderManager` construction / learn / suggest / recent-prompts
+  cap / clear-history; singleton helpers for both.
+
+**321 total tests pass** (was 279).
+
+### Fix — `SmartDirectoryMatcher.get_rules()` now returns a deep copy
+
+A real latent defect surfaced while writing test coverage:
+`get_rules()` returned `self.rules.copy()` (shallow), sharing the
+nested `keywords` / `patterns` / `history` containers with internal
+state. A caller doing `rules["keywords"].clear()` would silently wipe
+the matcher's rules. Fixed by switching to `copy.deepcopy`.
+
+### Closes
+
+- B9 from `docs/research/2026-05-20-feature-candidates.md`
+
 ## [1.6.10] - 2026-05-20 — self-check rules 12–15 reference entries (B12)
 
 ### Docs — closes the v1.6.4 doc debt

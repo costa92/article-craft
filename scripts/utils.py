@@ -269,8 +269,14 @@ class SmartDirectoryMatcher:
             print(f"⚠️  无效的正则表达式: {e}")
 
     def get_rules(self) -> Dict[str, Any]:
-        """获取当前规则"""
-        return self.rules.copy()
+        """获取当前规则的深拷贝，调用方可自由修改不会影响内部状态。
+
+        历史上返回 ``self.rules.copy()``（浅拷贝），nested 字典与列表
+        是与内部状态共享的同一引用 —— 调用方 ``rules["keywords"].clear()``
+        会把内部规则也清空。改为 ``copy.deepcopy`` 后调用方拿到的是
+        完整快照。"""
+        import copy as _copy
+        return _copy.deepcopy(self.rules)
 
     def clear_rules(self) -> None:
         """清除所有规则"""
