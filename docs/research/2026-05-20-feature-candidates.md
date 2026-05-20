@@ -173,6 +173,7 @@ endpoints; check `CLAUDE_PLUGIN_ROOT` env resolution; verify
 | **B8** | Verify-claims expanded scope (flag validation) | M | Start with 5–10 high-frequency tools |
 | **B9** | Tests for `evidence.py` / `bump_version.py` / `utils.py` | S | Three biggest no-test scripts |
 | **B10** | Per-section tone override syntax | M | Tone spec v2 candidate |
+| **B12** | Write reference entries for self-check rules 12–15 | S | Discovered in the v1.6.4 doc sweep; canonical reference has the gap flagged |
 
 **B6. Plugin-layout smoke test in CI**
 GitHub workflow that does `bash install.sh --no-interactive`, then runs each
@@ -215,6 +216,27 @@ folder is the kind of bug that won't get noticed for releases.
 - Refs: `docs/superpowers/specs/2026-05-07-tone-system-design.md:474`
   explicitly lists this as "v2 candidate." Spec shipped in v1.5.0; authors
   hitting the limit now.
+
+**B12. Reference entries for self-check rules 12–15** *(doc debt — discovered in v1.6.4)*
+`scripts/review_selfcheck.py` implements 17 active rules
+(`check_rule_1` … `check_rule_17`), but `references/self-check-rules.md`
+only carries prose entries for rules 1–11, 16, 17, plus the 7b
+degradation-aware variant. Rules 12–15 work in code but the canonical
+reference has no description — `references/self-check-rules.md`'s
+preamble (post-v1.6.4) flags this and points readers to the docstrings
+as the interim source.
+
+- Refs: `scripts/review_selfcheck.py` — `check_rule_12` (line 691, AI-style
+  summary detection), `check_rule_13` (line 713, code-block language tags),
+  `check_rule_14` (line 754, ASCII diagrams in code blocks),
+  `check_rule_15` (line 795, orphan PROMPT comments).
+  `references/self-check-rules.md:1-13` (preamble flagging the gap).
+- Effort: S — read each docstring + body, write a prose entry in the
+  canonical reference matching the format used for rules 1–11 (one
+  function/regex per rule, plus the "Who enforces what" table row).
+- Risk: zero — pure documentation of existing behavior.
+- Why it matters: closes the loop on the v1.6.4 sweep, removes the
+  preamble's apologetic "consult the docstrings" pointer.
 
 ### P2 — bigger investments
 
