@@ -174,6 +174,7 @@ endpoints; check `CLAUDE_PLUGIN_ROOT` env resolution; verify
 | **B9** | Tests for `evidence.py` / `bump_version.py` / `utils.py` | S | Three biggest no-test scripts |
 | **B10** | Per-section tone override syntax | M | Tone spec v2 candidate |
 | **B12** | Write reference entries for self-check rules 12–15 | S | Discovered in the v1.6.4 doc sweep; canonical reference has the gap flagged |
+| **B13** | Auto-prune `MODEL_FALLBACK_CHAIN` by available API keys | S | Discovered while documenting the Minimax default on 2026-05-20; cuts a wasted attempt for single-key users |
 
 **B6. Plugin-layout smoke test in CI**
 GitHub workflow that does `bash install.sh --no-interactive`, then runs each
@@ -237,6 +238,30 @@ as the interim source.
 - Risk: zero — pure documentation of existing behavior.
 - Why it matters: closes the loop on the v1.6.4 sweep, removes the
   preamble's apologetic "consult the docstrings" pointer.
+
+**B13. Auto-prune `MODEL_FALLBACK_CHAIN` by available API keys** *(discovered while answering "default is Minimax?" on 2026-05-20)*
+Today the fallback chain is consumed verbatim regardless of which keys
+are configured. A user with only `GEMINI_API_KEY` (no
+`MINIMAX_API_KEY`) still sees `minimax-image-01` tried first, fail
+immediately, then fall back to Gemini — a wasted API attempt **per
+image**. Across a batch of N placeholders that is N wasted Minimax
+calls, each adding latency and noise to the run.
+
+- Fix: introduce `config.available_models(env, environ) -> list[str]`
+  that filters `MODEL_FALLBACK_CHAIN` by key presence (Minimax models
+  require `minimax_api_key` or `MINIMAX_API_KEY`; Gemini models
+  require `gemini_api_key` or `GEMINI_API_KEY`). Both consumers route
+  through it.
+- Refs: `scripts/config.py:307-312` (the chain); `scripts/generate_and_upload_images.py:864`
+  (`model_chain = [model] + [m for m in MODEL_FALLBACK_CHAIN if m != model]` — add the filter);
+  `scripts/nanobanana.py:308` (`chain = MODEL_FALLBACK_CHAIN.copy()` — same).
+- Effort: S, ~1 h. Risk: zero — pure pruning; an explicit user-selected
+  model still takes priority. Edge case: filtered chain empty → fail
+  fast with "no API keys configured for any image provider" instead of
+  the current opaque exhaust-then-error.
+- Why it matters: removes the "expected failure" attempt on every image
+  generation for single-key users (which is the common new-user state
+  since v1.6.0 made Minimax the headline default).
 
 ### P2 — bigger investments
 
