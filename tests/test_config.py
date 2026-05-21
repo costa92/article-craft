@@ -105,8 +105,13 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             mod = load_config_module(Path(tmp))
 
-            self.assertEqual(mod.MODEL_FALLBACK_CHAIN[-1], "gemini-2.5-flash-image")
+            # Headline default unchanged. The chain tail moved when B7
+            # Phase 2 (v1.6.20) appended openai-gpt-image-1; minimax
+            # stays the first attempt, the Gemini block stays in the
+            # middle, openai is the OPENAI_API_KEY-only escape hatch.
             self.assertEqual(mod.MODEL_FALLBACK_CHAIN[0], "minimax-image-01")
+            self.assertEqual(mod.MODEL_FALLBACK_CHAIN[-1], "openai-gpt-image-1")
+            self.assertIn("gemini-2.5-flash-image", mod.MODEL_FALLBACK_CHAIN)
             self.assertEqual(mod.IMAGE_DEFAULTS["model"], "minimax-image-01")
 
     def test_text_model_default_and_override(self):

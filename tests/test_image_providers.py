@@ -33,6 +33,7 @@ from image_providers import (  # noqa: E402
     ImageProvider,
     MinimaxProvider,
     NoImageDataError,
+    OpenAIImageProvider,
     all_providers,
     configured_providers,
     for_model,
@@ -53,6 +54,10 @@ def test_minimax_satisfies_protocol():
 
 def test_gemini_satisfies_protocol():
     assert isinstance(GeminiProvider(), ImageProvider)
+
+
+def test_openai_satisfies_protocol():
+    assert isinstance(OpenAIImageProvider(), ImageProvider)
 
 
 def test_protocol_rejects_random_object():
@@ -82,15 +87,20 @@ def test_for_model_resolves_all_gemini_variants():
         assert for_model(m).name == "gemini", m
 
 
+def test_for_model_resolves_openai_gpt_image():
+    assert for_model("openai-gpt-image-1").name == "openai"
+
+
 def test_for_model_unknown_returns_none():
     assert for_model("openai-dalle-99") is None
     assert for_model("totally-made-up") is None
 
 
-def test_all_providers_lists_both_built_ins():
+def test_all_providers_lists_all_built_ins():
     names = [p.name for p in all_providers()]
     assert "minimax" in names
     assert "gemini" in names
+    assert "openai" in names
 
 
 def test_register_and_unregister_round_trip():
@@ -155,6 +165,7 @@ def test_re_register_same_name_replaces():
 def _clear_keys(monkeypatch):
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(config, "_user_config", {})
 
 
@@ -198,6 +209,23 @@ def test_gemini_not_configured_when_both_empty(monkeypatch):
     assert GeminiProvider().is_configured() is False
 
 
+def test_openai_is_configured_from_env_var(monkeypatch):
+    _clear_keys(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert OpenAIImageProvider().is_configured() is True
+
+
+def test_openai_is_configured_from_env_json(monkeypatch):
+    _clear_keys(monkeypatch)
+    monkeypatch.setattr(config, "_user_config", {"openai_api_key": "sk-test"})
+    assert OpenAIImageProvider().is_configured() is True
+
+
+def test_openai_not_configured_when_both_empty(monkeypatch):
+    _clear_keys(monkeypatch)
+    assert OpenAIImageProvider().is_configured() is False
+
+
 # --------------------------------------------------------------------- #
 # configured_providers / chain filter integration
 # --------------------------------------------------------------------- #
@@ -222,6 +250,26 @@ def test_configured_providers_both_when_both_keys(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "g")
     names = {p.name for p in configured_providers()}
     assert names == {"minimax", "gemini"}
+
+
+def test_configured_providers_includes_openai_when_key_set(monkeypatch):
+    """B7 Phase 2: OpenAI is a peer provider, not a Minimax/Gemini fallback."""
+    _clear_keys(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    names = {p.name for p in configured_providers()}
+    assert names == {"openai"}
+
+
+def test_filter_chain_keeps_only_openai_when_only_openai_key(monkeypatch):
+    """A user with only OPENAI_API_KEY gets a chain of just openai-gpt-image-1."""
+    _clear_keys(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    chain = [
+        "minimax-image-01",
+        "gemini-3-pro-image-preview",
+        "openai-gpt-image-1",
+    ]
+    assert config.filter_chain_by_available_keys(chain) == ["openai-gpt-image-1"]
 
 
 def test_filter_chain_routes_through_registry(monkeypatch):
@@ -308,6 +356,102 @@ def test_gemini_raises_when_key_missing(monkeypatch, tmp_path):
             tmp_path / "out.png",
         )
     assert "GEMINI_API_KEY" in str(exc_info.value)
+
+
+# --------------------------------------------------------------------- #
+# OpenAI provider — generate path
+# --------------------------------------------------------------------- #
+
+
+def test_openai_raises_when_key_missing(monkeypatch, tmp_path):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(config, "_user_config", {})
+    with pytest.raises(RuntimeError) as exc_info:
+        OpenAIImageProvider().generate(
+            "openai-gpt-image-1",
+            "prompt",
+            tmp_path / "out.png",
+        )
+    assert "OPENAI_API_KEY" in str(exc_info.value)
+
+
+def test_openai_raises_runtime_on_http_error(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    class FakeResponse:
+        status_code = 401
+        text = '{"error":{"message":"Invalid auth"}}'
+
+        def json(self):
+            return {"error": {"message": "Invalid auth"}}
+
+    with mock.patch.object(image_providers, "requests") as mock_requests:
+        mock_requests.post.return_value = FakeResponse()
+        with pytest.raises(RuntimeError) as exc_info:
+            OpenAIImageProvider().generate(
+                "openai-gpt-image-1",
+                "prompt",
+                tmp_path / "out.png",
+            )
+    assert "401" in str(exc_info.value)
+
+
+def test_openai_raises_no_image_data_when_response_empty(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    class FakeResponse:
+        status_code = 200
+        text = '{"data":[]}'
+
+        def json(self):
+            return {"data": []}
+
+    with mock.patch.object(image_providers, "requests") as mock_requests:
+        mock_requests.post.return_value = FakeResponse()
+        with pytest.raises(NoImageDataError):
+            OpenAIImageProvider().generate(
+                "openai-gpt-image-1",
+                "prompt",
+                tmp_path / "out.png",
+            )
+
+
+def test_openai_strips_provider_prefix_in_request_body(monkeypatch, tmp_path):
+    """The chain entry is namespaced 'openai-gpt-image-1' to avoid
+    cross-provider name collisions; the actual OpenAI API expects bare
+    'gpt-image-1'. ``_openai_model()`` strips the prefix."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = '{"data":[{"b64_json":"x"}]}'
+
+        def json(self):
+            return {"data": [{"b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="}]}
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return FakeResponse()
+
+    with mock.patch.object(image_providers, "requests") as mock_requests:
+        mock_requests.post.side_effect = fake_post
+        OpenAIImageProvider().generate(
+            "openai-gpt-image-1",
+            "a prompt",
+            tmp_path / "out.png",
+            aspect_ratio="16:9",
+        )
+
+    assert captured["url"].startswith("https://api.openai.com/v1/images/generations")
+    body = captured["json"]
+    # Bare model name, not the registry-namespaced form
+    assert body["model"] == "gpt-image-1", body
+    assert body["prompt"] == "a prompt"
+    # 16:9 → 1536x1024 per _OPENAI_ASPECT_TO_SIZE
+    assert body["size"] == "1536x1024", body
 
 
 # --------------------------------------------------------------------- #

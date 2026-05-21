@@ -27,6 +27,7 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
   "gemini_api_key": "YOUR_GEMINI_API_KEY",
   "gemini_image_model": "gemini-3-pro-image-preview",
   "gemini_text_model": "gemini-2.0-flash",
+  "openai_api_key": "YOUR_OPENAI_API_KEY",
   "user_name": "",
   "share_card_logo": "",
   "verify_cdn_whitelist": [
@@ -64,6 +65,7 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `gemini_api_key` | string | Gemini API Key，用于 fallback / `--enhance` |
+| `openai_api_key` | string | OpenAI API Key（B7 Phase 2 起支持）— 用于 `openai-gpt-image-1`。Minimax / Gemini 都不可用时的兜底链末位。可在 [platform.openai.com](https://platform.openai.com/api-keys) 申请。 |
 
 ### 可选配置
 
@@ -80,6 +82,9 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 - `gemini-3-pro-image-preview` — Gemini 首个回退
 - `gemini-3.1-flash-image-preview` — 快速版本
 - `gemini-2.5-flash-image` — 轻量级兜底
+- `openai-gpt-image-1` — OpenAI 兜底（B7 Phase 2 起；需要 `openai_api_key`）
+
+`filter_chain_by_available_keys` 在生成前会把没有对应 API Key 的模型从链路里剔除，所以即使链路里列了 5 个模型，只配了 OpenAI Key 的用户会直接从 `openai-gpt-image-1` 开始尝试，不会浪费 4 次失败请求。
 
 #### 文本模型（用于 Prompt 扩写）
 

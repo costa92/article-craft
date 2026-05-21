@@ -1,6 +1,6 @@
 # Multi-Provider Image Generation Abstraction (B7)
 
-**Status**: Phase 1 ✅ **done v1.6.17** (2026-05-20); Phases 2-4 queued
+**Status**: Phases 1-2 ✅ done v1.6.17 / v1.6.20; Phases 3-4 queued
 **Date**: 2026-05-20
 **Target version**: multi-phase
 **Author**: costa

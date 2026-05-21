@@ -406,17 +406,146 @@ class GeminiProvider:
 
 
 # --------------------------------------------------------------------- #
+# Built-in: OpenAI (HTTP) — B7 Phase 2
+# --------------------------------------------------------------------- #
+
+
+_OPENAI_API_URL = "https://api.openai.com/v1/images/generations"
+
+
+# Aspect-ratio → OpenAI size string. gpt-image-1 supports the three
+# sizes listed; legacy DALL-E 3 supports {1024x1024, 1792x1024, 1024x1792}.
+# Anything outside this list falls back to 1024x1024 (square).
+_OPENAI_ASPECT_TO_SIZE = {
+    "1:1": "1024x1024",
+    "16:9": "1536x1024",  # gpt-image-1 landscape
+    "3:2": "1536x1024",
+    "4:3": "1536x1024",
+    "9:16": "1024x1536",  # gpt-image-1 portrait
+    "2:3": "1024x1536",
+    "3:4": "1024x1536",
+}
+
+
+class OpenAIImageProvider:
+    """OpenAI Images API — currently supports gpt-image-1.
+
+    Adding DALL-E 3 / 2 is a one-line edit to ``model_names()`` plus a
+    quality-knob check in ``generate()`` (DALL-E 3 takes ``quality``,
+    gpt-image-1 doesn't).
+
+    Endpoint: POST https://api.openai.com/v1/images/generations
+    Auth: Bearer key from OPENAI_API_KEY env var or ``openai_api_key`` in env.json.
+    Response: base64-encoded image in ``data[0].b64_json``.
+    """
+
+    name = "openai"
+
+    def model_names(self) -> List[str]:
+        return ["openai-gpt-image-1"]
+
+    def is_configured(self) -> bool:
+        return bool(_env_or_json("OPENAI_API_KEY", "openai_api_key"))
+
+    def _openai_model(self, model: str) -> str:
+        """Public model name (registry-namespaced) → OpenAI API model name.
+
+        We namespace the chain entry with ``openai-`` to avoid collisions
+        with other providers (gpt-image-1 is generic enough that another
+        backend could plausibly use the same string later).
+        """
+        if model.startswith("openai-"):
+            return model[len("openai-"):]
+        return model
+
+    def generate(
+        self,
+        model: str,
+        prompt: str,
+        output_path: Path,
+        *,
+        aspect_ratio: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        resolution: Optional[str] = None,
+        timeout: Optional[int] = None,
+    ) -> None:
+        if not _REQUESTS_AVAILABLE:
+            raise RuntimeError("requests not installed (openai provider needs it)")
+        if not _PIL_AVAILABLE:
+            raise RuntimeError("Pillow not installed (openai provider needs it)")
+
+        api_key = _env_or_json("OPENAI_API_KEY", "openai_api_key")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY missing")
+
+        # Size resolution: explicit width×height beats aspect_ratio.
+        if width and height:
+            size = f"{int(width)}x{int(height)}"
+        elif aspect_ratio and aspect_ratio in _OPENAI_ASPECT_TO_SIZE:
+            size = _OPENAI_ASPECT_TO_SIZE[aspect_ratio]
+        else:
+            size = "1024x1024"
+
+        payload = {
+            "model": self._openai_model(model),
+            "prompt": prompt,
+            "n": 1,
+            "size": size,
+        }
+
+        response = requests.post(
+            _OPENAI_API_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=timeout or _DEFAULT_REQUEST_TIMEOUT,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"OpenAI API error {response.status_code}: {(response.text or '')[:200]}"
+            )
+
+        data = response.json() if response.text else {}
+        items = data.get("data") if isinstance(data, dict) else None
+        if not items or not isinstance(items, list):
+            raise NoImageDataError("No image data in OpenAI response.")
+
+        first = items[0] if isinstance(items[0], dict) else {}
+        b64 = first.get("b64_json")
+        if b64:
+            image = Image.open(BytesIO(base64.b64decode(b64)))
+            image.save(output_path)
+            return
+
+        # Older response shape with hosted URLs (fallback path).
+        url = first.get("url")
+        if url:
+            img_resp = requests.get(url, timeout=timeout or _DEFAULT_REQUEST_TIMEOUT)
+            img_resp.raise_for_status()
+            image = Image.open(BytesIO(img_resp.content))
+            image.save(output_path)
+            return
+
+        raise NoImageDataError("OpenAI response had data[] but no b64_json / url.")
+
+
+# --------------------------------------------------------------------- #
 # Built-in registrations
 # --------------------------------------------------------------------- #
 
 register(MinimaxProvider())
 register(GeminiProvider())
+register(OpenAIImageProvider())
 
 
 __all__ = [
     "ImageProvider",
     "MinimaxProvider",
     "GeminiProvider",
+    "OpenAIImageProvider",
     "NoImageDataError",
     "register",
     "unregister",

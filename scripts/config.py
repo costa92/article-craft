@@ -339,12 +339,18 @@ RETRY_CONFIG = {
     ]
 }
 
-# Model degradation chain: minimax → pro → 3.1-flash → 2.5-flash
+# Model degradation chain: minimax → pro → 3.1-flash → 2.5-flash → openai
+#
+# OpenAI gpt-image-1 is appended at the end (lowest priority) per
+# B7 Phase 2 spec — Minimax / Gemini stay the headline default. Users
+# who only have OPENAI_API_KEY rely on filter_chain_by_available_keys
+# to prune everything above gpt-image-1.
 MODEL_FALLBACK_CHAIN = [
     "minimax-image-01",
     "gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview",
     "gemini-2.5-flash-image",
+    "openai-gpt-image-1",
 ]
 
 

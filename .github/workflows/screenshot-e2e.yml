@@ -54,11 +54,13 @@ jobs:
       - name: Install Python test dependencies
         run: |
           python -m pip install --upgrade pip
-          # pytest + Pillow (image-providers indirect dep) + playwright.
-          # We deliberately do NOT install full scripts/requirements.txt —
-          # the e2e tests don't need Gemini SDK, requests, tenacity, etc.
-          # Keeps the workflow lean.
-          python -m pip install pytest pillow playwright
+          # screenshot_tool.py does `import requests` at module top with a
+          # `sys.exit(1)` on ImportError, so requests has to be installed
+          # even if the e2e tests don't actually use it. PyYAML is needed
+          # by lib helpers screenshot_tool imports transitively. We still
+          # deliberately skip the heavy genai / minimax / tenacity bits —
+          # the e2e suite is hermetic.
+          python -m pip install pytest pillow playwright requests pyyaml
 
       # Playwright browsers are the heaviest dep (~120 MB). Cache them
       # across runs — only re-downloads on Playwright version change.

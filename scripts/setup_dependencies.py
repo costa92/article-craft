@@ -310,6 +310,41 @@ def check_minimax_api_key() -> dict[str, Any]:
     )
 
 
+def check_openai_api_key() -> dict[str, Any]:
+    """B7 Phase 2: OPENAI_API_KEY is a peer image-provider key — optional.
+
+    A user with only Minimax or only Gemini still has a working
+    pipeline. OpenAI is the third escape hatch — present means
+    ``openai-gpt-image-1`` can be used as a fallback or as the only
+    provider. Missing → warn (not block), pipeline still works via
+    Minimax / Gemini.
+    """
+    env_val = os.getenv("OPENAI_API_KEY", "").strip()
+    if env_val:
+        return _result(
+            "openai_api_key",
+            "pass",
+            "OPENAI_API_KEY is set in environment",
+        )
+
+    env_json = _load_env_json()
+    val = str(env_json.get("openai_api_key", "")).strip()
+    if val:
+        return _result(
+            "openai_api_key",
+            "pass",
+            "openai_api_key is configured in ~/.claude/env.json",
+        )
+
+    return _result(
+        "openai_api_key",
+        "warn",
+        "OPENAI_API_KEY not configured (optional)",
+        'Optional: add "openai_api_key" to ~/.claude/env.json '
+        "for openai-gpt-image-1 fallback support",
+    )
+
+
 def check_ytdlp() -> dict[str, Any]:
     if check_command_exists("yt-dlp"):
         return _result("yt_dlp", "pass", "yt-dlp is available")
@@ -455,6 +490,7 @@ def check_plugin_root() -> dict[str, Any]:
 _NETWORK_PROBE_TARGETS = {
     "minimax": "https://api.minimaxi.com/",
     "gemini": "https://generativelanguage.googleapis.com/",
+    "openai": "https://api.openai.com/",
 }
 _NETWORK_PROBE_TIMEOUT_SEC = 3.0
 
@@ -494,19 +530,22 @@ def check_network_reachability() -> dict[str, Any]:
     env = _load_env_json()
     has_minimax = bool(env.get("minimax_api_key")) or bool(os.environ.get("MINIMAX_API_KEY"))
     has_gemini = bool(env.get("gemini_api_key")) or bool(os.environ.get("GEMINI_API_KEY"))
+    has_openai = bool(env.get("openai_api_key")) or bool(os.environ.get("OPENAI_API_KEY"))
 
     targets: list[tuple[str, str]] = []
     if has_minimax:
         targets.append(("minimax", _NETWORK_PROBE_TARGETS["minimax"]))
     if has_gemini:
         targets.append(("gemini", _NETWORK_PROBE_TARGETS["gemini"]))
+    if has_openai:
+        targets.append(("openai", _NETWORK_PROBE_TARGETS["openai"]))
 
     if not targets:
         return _result(
             "network_reachability",
             "warn",
             "no API keys configured — nothing to probe",
-            "Set minimax_api_key / gemini_api_key first",
+            "Set minimax_api_key / gemini_api_key / openai_api_key first",
             details={"probed": 0},
         )
 
@@ -547,6 +586,7 @@ def run_all_checks(include_network: bool = False) -> list[dict[str, Any]]:
         check_python_dependencies(),
         check_gemini_api_key(),
         check_minimax_api_key(),
+        check_openai_api_key(),
         check_playwright(),
         check_picgo(),
         check_ytdlp(),

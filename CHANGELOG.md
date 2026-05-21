@@ -1,5 +1,110 @@
 # Changelog
 
+## [1.6.20] - 2026-05-21 — OpenAI gpt-image-1 provider (B7 Phase 2) + screenshot-e2e CI fix
+
+### Why
+
+v1.6.17 shipped the `ImageProvider` protocol with two built-ins
+(Minimax + Gemini). Phase 2 is the proof that the abstraction actually
+buys new-provider velocity: adding OpenAI gpt-image-1 should be a
+single subclass + one `register()` line + no edits to dispatch loops.
+This release is exactly that — net code added is one class, one
+registration, one fallback-chain append.
+
+This also unblocks **D2 (English-language output)**: the Minimax key
+is hard to get for English-market users, the Gemini key has its own
+regional quirks, OpenAI gpt-image-1 is the universally available
+option.
+
+Also bundled: a CI fix for v1.6.19's lean install (was missing
+`requests`, broke the new screenshot-e2e workflow on first run).
+
+### What changed — B7 Phase 2
+
+**New provider class** in `scripts/image_providers.py`:
+
+- `OpenAIImageProvider` — POST `https://api.openai.com/v1/images/generations`
+- Registered as `name = "openai"`, model `openai-gpt-image-1`
+- `is_configured()` honors `OPENAI_API_KEY` env var + `openai_api_key`
+  in env.json (parity with Minimax + Gemini conventions)
+- Aspect-ratio → OpenAI size mapping for `1:1` / `16:9` / `4:3` / `9:16`
+  (gpt-image-1 supports 1024×1024 / 1536×1024 / 1024×1536)
+- `_openai_model()` strips the `openai-` namespace prefix before
+  hitting the API (`openai-gpt-image-1` → `gpt-image-1`) — keeps the
+  fallback-chain entry unambiguous
+- Handles both b64_json (gpt-image-1 default) and hosted URL fallback
+  shapes
+
+**`scripts/config.MODEL_FALLBACK_CHAIN`** now ends in
+`openai-gpt-image-1`. Minimax stays at index 0 (headline default); the
+Gemini block stays in the middle. A user with only `OPENAI_API_KEY`
+gets a chain of just `["openai-gpt-image-1"]` after
+`filter_chain_by_available_keys` — no wasted attempts on missing
+providers.
+
+**`scripts/setup_dependencies.py`** (doctor):
+
+- New `check_openai_api_key()` returns `warn` (not `block`) when
+  missing — OpenAI is optional, the pipeline works without it.
+- `check_network_reachability()` extended to probe
+  `https://api.openai.com/` when an OpenAI key is configured.
+- `_NETWORK_PROBE_TARGETS` gets the OpenAI entry.
+
+**Documentation**:
+
+- `env.example.json` — adds `openai_api_key` placeholder.
+- `ENV.md` — adds OpenAI to recommended config table + lists
+  `openai-gpt-image-1` in the available-models block; calls out
+  the auto-prune behavior of `filter_chain_by_available_keys`.
+
+### Tests
+
++11 new in `tests/test_image_providers.py`:
+
+- Protocol conformance for OpenAIImageProvider
+- Registry resolution (`for_model("openai-gpt-image-1").name == "openai"`)
+- `is_configured()` env var + env.json parity (3 tests)
+- `configured_providers()` includes openai when key set
+- `filter_chain_by_available_keys` returns only `["openai-gpt-image-1"]`
+  when only OPENAI_API_KEY is set
+- `generate()` raises RuntimeError on missing key
+- `generate()` raises RuntimeError on HTTP 4xx (401 mocked)
+- `generate()` raises NoImageDataError on empty `data:[]` response
+- `generate()` strips the `openai-` namespace prefix from the model
+  name before hitting the API + maps `16:9` → `1536x1024`
+
+`tests/test_config.py::test_model_defaults_remain_stable` updated:
+now pins the headline default (`minimax-image-01` at index 0) AND the
+new tail (`openai-gpt-image-1`), without locking the exact length.
+
+**Total**: 418 passing (was 407 — +11 new, no regressions).
+
+### What this enables
+
+Phase 3 (self-hosted provider — Stable Diffusion via Automatic1111
+or Replicate) follows the same pattern. Phase 4 (per-provider config
+namespacing) is the hygiene pass once 4+ providers are registered.
+
+D2 (English-language output): users now have a universal-availability
+image backend that doesn't require a Chinese-market Minimax key or a
+regional Gemini key. Style guides + lint patterns are still CJK-centric
+— that's the next D2 dependency.
+
+### Bundled fix: screenshot-e2e CI
+
+`.github/workflows/screenshot-e2e.yml` failed its first run on v1.6.19
+because the lean install (`pytest pillow playwright`) was missing
+`requests` — `scripts/screenshot_tool.py` imports it at module top
+and `sys.exit(1)` on miss. Added `requests pyyaml` to the install line.
+The workflow now passes on the same fixture set v1.6.19 added.
+
+### Spec
+
+`docs/superpowers/specs/2026-05-20-multi-provider-image-abstraction.md`
+— Phases 1-2 closed; Phases 3-4 still queued.
+
+---
+
 ## [1.6.19] - 2026-05-21 — Screenshot E2E in CI + 3 more platform fixtures (B3 Phases 2-3)
 
 ### Why
