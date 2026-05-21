@@ -1233,29 +1233,106 @@ def to_json(results: List[CheckResult]) -> str:
 
 # ─── Main ────────────────────────────────────────────────────────
 
+_RULE_DISPATCH = {
+    1: check_rule_1, 2: check_rule_2, 3: check_rule_3, 4: check_rule_4,
+    5: check_rule_5, 6: check_rule_6, 7: check_rule_7, 8: check_rule_8,
+    9: check_rule_9, 10: check_rule_10, 11: check_rule_11, 12: check_rule_12,
+    13: check_rule_13, 14: check_rule_14, 15: check_rule_15, 16: check_rule_16,
+    17: check_rule_17,
+}
+
+# Pre-save GATE for the write skill: blocks save when any of these fail.
+# Source: references/self-check-rules.md "Who enforces what" matrix —
+# write column. Keep this constant in sync with that matrix; the test
+# `CLIRuleSelectionTests.test_write_gate_rules_constant_matches_doc`
+# pins the tuple to (1, 2, 6, 11, 13, 16) on purpose.
+WRITE_GATE_RULES = (1, 2, 6, 11, 13, 16)
+
+
+def run_selected_rules(article_path: str, rule_ids: List[int]) -> Tuple[List[CheckResult], bool]:
+    """Run a subset of rules by ID. Returns (results, all_passed).
+
+    Unknown rule IDs are skipped silently (a CheckResult with skipped=True
+    is emitted so the caller can see the gap)."""
+    content = Path(article_path).read_text(encoding='utf-8')
+    lines_list = content.split('\n')
+    results: List[CheckResult] = []
+    for rid in rule_ids:
+        fn = _RULE_DISPATCH.get(rid)
+        if fn is None:
+            results.append(CheckResult(
+                rule_id=rid, rule_name=f"unknown rule {rid}",
+                passed=True, details="not implemented",
+                skipped=True, skip_reason="unknown rule id",
+            ))
+            continue
+        results.append(fn(content, lines_list))
+    all_passed = all(r.passed for r in results)
+    return results, all_passed
+
+
+def _parse_rule_list(s: str) -> List[int]:
+    out: List[int] = []
+    for token in s.split(','):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            out.append(int(token))
+        except ValueError:
+            raise SystemExit(f"❌ Invalid rule id in --rules: {token!r}")
+    return out
+
+
 def main():
     import argparse
 
     parser = argparse.ArgumentParser(description=f"Article self-check ({len(ALL_CHECKS)} rules)")
     parser.add_argument("article", help="Path to .md file")
     parser.add_argument("--json", action="store_true", help="Output JSON")
-    parser.add_argument("--gate-only", action="store_true", help="Only check Rule 11 (placeholder gate)")
+    parser.add_argument("--gate-only", action="store_true",
+                        help="Only check Rule 11 (placeholder gate) — alias for --rules 11")
+    parser.add_argument("--write-gate", action="store_true",
+                        help=f"Run only the write skill pre-save GATE rules ({','.join(str(r) for r in WRITE_GATE_RULES)})")
+    parser.add_argument("--rules", type=str, default=None,
+                        help='Comma-separated rule IDs to run (e.g. "1,2,6,11,13"). '
+                             'Overrides --gate-only and --write-gate when present.')
     args = parser.parse_args()
 
     if not os.path.exists(args.article):
         print(f"❌ File not found: {args.article}", file=sys.stderr)
         sys.exit(2)
 
-    if args.gate_only:
-        content = Path(args.article).read_text(encoding='utf-8')
-        lines_list = content.split('\n')
-        result = check_rule_11(content, lines_list)
+    # Resolve which rules to run. Precedence: --rules > --write-gate > --gate-only > all.
+    # `args.rules is not None` — distinguishes "--rules was passed (even as '')"
+    # from "--rules omitted entirely". An empty string must error, not fall through.
+    if args.rules is not None:
+        selected = _parse_rule_list(args.rules)
+        if not selected:
+            parser.error("--rules requires at least one valid rule ID "
+                         f"(got {args.rules!r}; example: --rules 1,6,11)")
+    elif args.write_gate:
+        selected = list(WRITE_GATE_RULES)
+    elif args.gate_only:
+        selected = [11]
+    else:
+        selected = None
+
+    if selected is not None:
+        results, all_passed = run_selected_rules(args.article, selected)
         if args.json:
-            print(to_json([result]))
+            print(to_json(results))
         else:
-            icon = "✅" if result.passed else "❌"
-            print(f"{icon} Rule 11 (Placeholder Gate): {result.details}")
-        sys.exit(0 if result.passed else 1)
+            for r in results:
+                icon = "✅" if r.passed else "❌"
+                print(f"{icon} Rule {r.rule_id} ({r.rule_name}): {r.details}")
+                if not r.passed:
+                    for v in r.violations[:5]:
+                        line_info = f"L{v.line}" if v.line > 0 else ""
+                        print(f"   {line_info} {v.text[:80]}")
+                        if v.suggestion:
+                            print(f"   → {v.suggestion}")
+        sys.exit(0 if all_passed else 1)
 
     results, all_passed = run_all_checks(args.article)
 

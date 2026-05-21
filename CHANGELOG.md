@@ -1,5 +1,135 @@
 # Changelog
 
+## [1.6.24] - 2026-05-21 — pipeline GATE alignment + youtube transcript robustness
+
+### Why
+
+A live `/article-craft:orchestrator` run on a YouTube video surfaced 8 design
+gaps that traced back to skills/SKILL.md drift away from the canonical
+`references/self-check-rules.md` matrix and from the actually-shipped
+`scripts/`. Concretely:
+
+- **write skill's pre-save GATE only enforced Rule 11/14** via the focused
+  `ascii_gate.py`, but rules.md says write owns 1/2/6/11/13/16. Result: an
+  article shipped with 4 red-flag words (Rule 1), 9 shallow `##` sections
+  (Rule 6), and 3 untagged code blocks (Rule 13) — all caught only at review
+  time when they should have been blocked at save.
+- **youtube skill's `yt-dlp --dump-json` path is broken by YouTube's 2026
+  n-challenge** — even `--no-check-formats` fails with "Requested format is
+  not available". There was no graceful fallback and cookie handling was
+  reactive (error-table only). The Step 4 handoff to `article-craft:write`
+  was also ambiguous ("调用 write 的写作规范" — invoke the skill, or
+  inline-follow?), so the failing run bypassed write entirely and missed
+  every GATE.
+- **review SKILL.md told the agent to "read rules.md and grep"** instead of
+  calling the already-implemented `scripts/review_selfcheck.py --json`. The
+  agent re-implemented half a dozen rule checks in one-off Bash/Python that
+  the script already did, including subtly different (and worse) detection.
+- **AskUserQuestion presented `02-技术/AI 应用/` as a save destination on a
+  vault that has `02-技术/AI-生态/Claude-Code/`** — write skill didn't
+  validate paths against the actual filesystem before surfacing options.
+- **youtube skill never wrote `pipeline_state.py`**, so `--upgrade` mode
+  can't resume articles produced via that branch.
+
+### What changed
+
+**`scripts/review_selfcheck.py`**:
+
+- New `WRITE_GATE_RULES = (1, 2, 6, 11, 13, 16)` constant — the source of
+  truth for which rules block save. Pinned by
+  `CLIRuleSelectionTests.test_write_gate_rules_constant_matches_doc`.
+- New CLI flag `--write-gate` — runs only those 6 rules, exit 1 on any FAIL.
+- New CLI flag `--rules N,M,...` — run an arbitrary subset by ID. Precedence:
+  `--rules > --write-gate > --gate-only > all`. Empty / whitespace-only input
+  fails with `parser.error`, not a silent pass.
+- New `run_selected_rules()` and `_parse_rule_list()` helpers. Unknown rule
+  IDs surface as `skipped=True` CheckResult entries so callers can detect
+  typos via the JSON output.
+- Backward compat: `--gate-only` still works as an alias for `--rules 11`.
+
+**`skills/write/SKILL.md`**:
+
+- **Step 2** now requires `ls 02-技术/` before presenting save-path options
+  via AskUserQuestion. Options must be paths that returned from `ls` (or
+  paths to be created via explicit `mkdir -p` with the action announced).
+- **Step 5** updated to list rules 1/2/6/11/13/16 as the pre-save GATE
+  (was: 1/2/6/11 only). Deferred list expanded to 3/4/5/7/7b/8/9/10/12/14/15/17.
+  Mentions the `WRITE_GATE_RULES` constant in `review_selfcheck.py` as the
+  source of truth.
+- **Step 6** now shells out to `review_selfcheck.py --write-gate --json`
+  instead of just `ascii_gate.py`. `ascii_gate.py` is kept as a focused
+  Step 4a tool (Rule 14 only). Per-rule failure-handling table inline.
+- **Step 7** adds Check E — IMAGE placeholder count vs Rule 7b thresholds.
+  Soft warning (writes a `cover` placeholder if missing, warns on rhythm-image
+  shortfall but doesn't auto-insert — those would be orphaned). The
+  "职责分工" callout no longer contradicts Step 6.
+- "11 rule bodies" / "11 self-check rules" → 17 in both prose mentions.
+
+**`skills/review/SKILL.md`**:
+
+- **Phase 1 rewritten** to call `review_selfcheck.py --json` and parse the
+  structured output, not to grep manually. Includes the JSON shape, exit-code
+  semantics, and per-rule disposition (fix-in-place vs detect-only).
+- "rules 1-11" → "all 17 rules" in feature list and output template.
+- **Rules Index** at the end of the file rewritten to match actual
+  `_RULE_DISPATCH` names in `review_selfcheck.py` — previous index had Rule 1
+  as "Template Filler" (actually 红旗词汇), Rule 4 as "Code Block Depth"
+  (actually Description 字段), Rule 11 as "ASCII Diagrams" (actually 占位符
+  残留 — ASCII is Rule 14), etc. The misleading index was guiding agents to
+  fix the wrong things.
+
+**`skills/youtube/SKILL.md`**:
+
+- **Complete rewrite** (308 lines, +166/-101 net).
+- **Method A (recommended)**: `Skill(skill="baoyu-skills:baoyu-youtube-transcript", args=URL)`
+  via the Skill tool — leverages baoyu's InnerTube + multi-client + yt-dlp
+  fallback + cookie prompt that's already implemented. If Skill tool not
+  available, bash glob now has correct path (`baoyu-skills/baoyu-skills/<hash>/...`
+  — the directory is nested twice, was missed in the previous version).
+- **Method B (fallback)**: `yt-dlp --cookies-from-browser=chrome` with
+  cookies up front (not as error recovery), and `--print` instead of
+  `--dump-json` to bypass the format check.
+- **Method C (last resort)**: WebFetch for cases where A/B both fail.
+- **Step 4** now explicitly invokes `article-craft:write` via the Skill tool
+  with a complete args JSON template (topic / audience / depth /
+  writing_style / key_points / source / transcript_path). The previous
+  ambiguous "调用 write 的写作规范" was the root cause of write being
+  skipped entirely during the failing session.
+- **Step 6** calls `pipeline_state.py init / complete / skip` so
+  articles produced via youtube can be resumed by `--upgrade`.
+- Bot-detection handling moved from error-table into a step-by-step
+  procedure in §Step 1+2.
+- Hand-off section now mentions `--upgrade` for resuming.
+
+**`tests/test_review_selfcheck.py`**:
+
+- New `CLIRuleSelectionTests` class (8 tests). Coverage:
+  - `WRITE_GATE_RULES` constant stays at `(1, 2, 6, 11, 13, 16)`
+  - `_parse_rule_list` handles whitespace, commas, empty tokens
+  - `_parse_rule_list` rejects non-integer with SystemExit
+  - `run_selected_rules` emits skipped+passed for unknown IDs (doesn't mask real bugs)
+  - End-to-end `--write-gate` exit 1 on failing article
+  - End-to-end `--write-gate` exit 0 on clean article (happy path)
+  - `--rules` flag overrides `--write-gate` per documented precedence
+  - `--rules ""` / `--rules ",,,"` fails with argparse error (not silent pass)
+- Total suite: 446 → 454 tests, all green (~21s).
+
+### Independent code review
+
+`superpowers:code-reviewer` audited the first round of fixes and found 5
+BLOCKERs + 4 IMPORTANTs (write/SKILL.md Step 7 directly contradicting Step 6,
+write/SKILL.md Step 5 still listing the old GATE rules, the misleading review
+Rules Index, the broken baoyu path glob, the `--rules ""` silent pass, missing
+happy-path test, stale source comment). All addressed in the same release.
+
+### Migration notes
+
+- No breaking API changes. New CLI flags are additive.
+- Skills that were following the prior write SKILL.md will auto-pick up the
+  new GATE on next run; existing articles are not re-validated retroactively.
+- If you maintain a fork of `review_selfcheck.py`, the new `_RULE_DISPATCH`
+  dict and `run_selected_rules` function are public-ish surface for callers.
+
 ## [1.6.23] - 2026-05-21 — verify-claims flag validation (B8 Phase 1)
 
 ### Why

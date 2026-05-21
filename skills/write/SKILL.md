@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.6.23
+version: 1.6.24
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -137,11 +137,23 @@ Follow these steps in order. Each step is mandatory unless marked optional.
 
 ### Step 2: Determine Save Path
 
-1. Check if the working directory contains an Obsidian knowledge base (look for `02-技术/` directory).
-2. If found, auto-match a subdirectory under `02-技术/` based on the article's technology category.
-3. If no match, `mkdir -p` to create the appropriate subdirectory.
-4. If no knowledge base detected, save to the user's current working directory.
-5. If a `save_path` was provided by the requirements skill, use that directly.
+1. If a `save_path` was provided by the requirements skill, use that directly. **Skip the rest of this step.**
+2. Check if the working directory contains an Obsidian knowledge base (look for `02-技术/` directory).
+3. **Before guessing a subdirectory, list what actually exists** — don't fabricate paths:
+   ```bash
+   ls "02-技术/" 2>&1 | sort
+   # And for AI-related articles, drill one level deeper:
+   ls "02-技术/AI-生态/" "02-技术/AI工具/" 2>&1 | sort
+   ```
+   This catches the common failure of asking the user "save to `02-技术/AI 应用/`?" when that
+   directory doesn't exist and the real home is `02-技术/AI-生态/Claude-Code/`. When presenting
+   path options to the user via AskUserQuestion, **every option must be a path that returned
+   from `ls`** (or one you'll create with `mkdir -p` and explicitly say so).
+4. Auto-match a subdirectory using `references/knowledge-base-rules.md` (the canonical mapping
+   table — Claude Code → `02-技术/AI-生态/Claude-Code/`, RAG → `02-技术/AI-生态/RAG/`, etc.).
+5. If no exact match in the table, pick the closest existing parent and `mkdir -p` the new
+   subdir (announce the new directory creation in chat).
+6. If no knowledge base detected at all, save to the user's current working directory.
 
 See `references/knowledge-base-rules.md` for the full directory mapping.
 
@@ -685,17 +697,20 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ascii_gate.py /ABSOLUTE/PATH/article.md
 
 Canonical source: **`${CLAUDE_PLUGIN_ROOT}/references/self-check-rules.md`**.
 
-Read that file before saving. All 11 rule bodies, canonical grep patterns, and
+Read that file before saving. All 17 rule bodies, canonical grep patterns, and
 auto-fix mappings live there — do not re-type them here.
 
 **Write's ownership (per the "Who enforces what" matrix in rules.md):**
 
 - **Pre-save GATE (must pass before Step 6 can save)**: apply rules **1, 2, 6,
-  and 11** from `references/self-check-rules.md`. The rule bodies, canonical
-  grep patterns, and auto-fix mappings live in that file; do not restate them
-  here.
+  11, 13, and 16** from `references/self-check-rules.md`. Step 6 calls
+  `scripts/review_selfcheck.py --write-gate` which runs exactly these six —
+  do not re-implement them via grep here. The constant
+  `WRITE_GATE_RULES = (1, 2, 6, 11, 13, 16)` in `review_selfcheck.py` is the
+  source of truth; if you think a rule should move in or out of the GATE,
+  update both rules.md and that constant together.
 - **Deferred to lint / review (do not duplicate here)**: rules **3, 4, 5, 7,
-  7b, 8, 9, 10**. Those are lint's or review Phase 1's job.
+  7b, 8, 9, 10, 12, 14, 15, 17**. Those are lint's or review Phase 1's job.
 
 For the quick convenience sweep before Step 6, use the single combined grep in
 the appendix of rules.md.
@@ -765,20 +780,32 @@ WORD_COUNT_CHECK: <count> chars (target [<min>, <max>], depth=<depth>) → PASS|
 
 ### Step 6: Save Article (GATE CHECK REQUIRED)
 
-**BEFORE saving**，执行最后的 ASCII 图检查（强制性，scope-aware）：
+**BEFORE saving**，执行 write pre-save GATE — 这是把 write 的"自检责任"机器化的入口，不再让 agent 用 grep 重新发明（rules 1/2/6/11/13/16）：
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ascii_gate.py /ABSOLUTE/PATH/article.md
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py \
+  /ABSOLUTE/PATH/article.md --write-gate --json
 ```
 
-该脚本与 `review_selfcheck.check_rule_14` 共享同一套阈值（`box ≥ 5` 或 `box ≥ 2 且 arrow ≥ 2`），并且**只扫描代码块内部的非可执行语言**——正文里 `→`（"导致"／"推出"）这种修辞箭头不会误报。
+`--write-gate` 一次跑完 6 条 pre-save 阻断规则，源头是 `references/self-check-rules.md` 的 "Who enforces what" 矩阵中 write 列勾选的规则：
+
+| Rule | 检查内容 | 失败处理 |
+|------|---------|---------|
+| 1 | 红旗词汇（无缝/赋能/链路/实际上/综上所述...） | 删词或改写,见 rules.md Rule 1 的 mapping 表 |
+| 2 | Hook ≤100 字 + 禁止套路化开头 | 拆段或重写开头 |
+| 6 | 每章 ≥ N 代码块（N 因 style 而异） | 补命令/配置/输出/对比代码片段 |
+| 11 | ASCII 流程图字符（│├└→ 等）残留 | 转 `<!-- IMAGE: -->` 占位符 |
+| 13 | 代码块裸开 ` ``` ` 没语言 tag | 补语言标识（bash/yaml/python/text 等） |
+| 16 | `<!-- PROMPT: -->` 含 CJK 或要 Gemini 渲染文字 | 改用 silhouette / 抽象描述 |
 
 **Exit codes**:
-- `0` — 干净，进入保存步骤。
-- `1` — stderr 列出 `file:line` 违规位置。**DO NOT SAVE YET**：把每一处转换为 `<!-- IMAGE: name - desc (ratio) -->` 占位符，重新跑直到返回 `0`。
+- `0` — 全部 PASS，进入保存步骤。
+- `1` — 至少一条 FAIL，stderr/stdout 给出 file:line 列表。**DO NOT SAVE YET**：按上表的失败处理列逐条修复，重新跑直到 `0`。
 - `2` — 文件不存在，检查路径。
 
-Use the `Write` tool to save `article.md` to the determined path from Step 2.
+> `ascii_gate.py` 只跑 Rule 14（代码块内部的 ASCII 框/箭头字符），是 `--write-gate` 的真子集。保留给 Step 4a 这种"写作中途快速 ASCII 扫"的场景。Step 6 一律走 `--write-gate`，因为它额外覆盖 Rule 1/2/6/11/13/16。
+
+Use the `Write` tool to save `article.md` to the determined path from Step 2 — **only after `--write-gate` 返回 0**。
 
 Print the absolute file path after saving so subsequent skills can find it.
 
@@ -789,9 +816,10 @@ Print the absolute file path after saving so subsequent skills can find it.
 **文件保存后，立即运行自动化验证** — 这是交给 screenshot / images 前的 handoff 契约检查，确保下游 skill 能正确消费。
 
 > **职责分工**:
-> - write Step 7 **只检查下游 skill 的硬契约**(格式、占位符、命令正确性),即使被触发 review 也无法从格式层面修复的问题。
-> - **内容质量规则**(红旗词、模板化句式、章节深度、结尾行动力等)由 `review` skill 的 Phase 1 (11 条 self-check rules) 统一执行,write 不再重复做。
-> - 不要调用 `${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py` —— 那是 review skill 内部使用的。
+> - write Step 6 **跑 pre-save GATE 的 6 条规则** (1/2/6/11/13/16) via `review_selfcheck.py --write-gate` —— 内容硬约束在保存前阻断。
+> - write Step 7 **只检查下游 skill 的硬契约**(占位符格式、IMAGE/HARVEST 解析、SCREENSHOT/IMAGE 覆盖警告),这是给 screenshot / images 的入参验证。
+> - **其余 11 条内容质量规则**(描述字段完整性、模板化句式、外链格式、Mermaid 残留、表格/孤儿 PROMPT、register naturalness 等)由 `review` skill 的 Phase 1 (17 条 self-check rules 全套)统一执行,write Step 7 不重复跑。
+> - 不要在 Step 7 里再调一次 `${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py` —— Step 6 已经跑过 GATE 子集,后续 17 条全套留给 review。
 
 **必须检查的 3 项 handoff 契约（精简,只保留真正的下游阻断项）+ 1 项软警告：**
 
@@ -835,7 +863,35 @@ Print the absolute file path after saving so subsequent skills can find it.
 
    修好后**重新保存 article.md**，再跑一次 `--dry-run --strict`，直到 exit=0。
 
-4. **Check D（SCREENSHOT 覆盖软警告 — 非阻断）** — 统计正文引用的外部 URL 数和 `<!-- SCREENSHOT: -->` 占位符数；如果**引用了 ≥3 个外部 URL 但发射了 0 个 SCREENSHOT 占位符**，打印一条警告。**不阻断 handoff，不自动插入占位符**（Rule 7b 明文：写完之后再补占位符会被下游 skill 孤立，留到下次重写）。
+4. **Check E（IMAGE 占位符数量对照 Rule 7b — 软警告 + 自补 cover）** — 按字数阈值检查 `<!-- IMAGE: -->` 占位符数：≤1500 字至少 1 张（cover）；1500–3000 字至少 2 张（cover + 1 节奏图）；>3000 字至少 3 张（cover + 2 节奏图）。**cover 缺失时自动补**（第一张图永远在 H1 下方，模板固定）；**节奏图缺失只警告不自动插**（写完之后再撒下去 LLM 选不对位置，留给作者人工或重跑 write）。
+
+   ```bash
+   # 统计当前 IMAGE 占位符数
+   IMG_COUNT=$(grep -c '<!-- IMAGE:' /ABSOLUTE/PATH/article.md || echo 0)
+   # 字数（用 Step 5.5 同样的算法）
+   WORDS=$(python3 -c "
+   import re,sys
+   src=open(sys.argv[1]).read()
+   src=re.sub(r'^---\n.*?\n---\n','',src,count=1,flags=re.DOTALL)
+   src=re.sub(r'\`\`\`[\s\S]*?\`\`\`','',src)
+   src=re.sub(r'<!--[\s\S]*?-->','',src)
+   src=re.sub(r'!\[[^\]]*\]\([^)]+\)','',src)
+   print(len(re.findall(r'[一-鿿]',src)))
+   " /ABSOLUTE/PATH/article.md)
+   # 阈值
+   if   [ "$WORDS" -le 1500 ]; then MIN=1
+   elif [ "$WORDS" -le 3000 ]; then MIN=2
+   else                              MIN=3
+   fi
+   if [ "$IMG_COUNT" -lt "$MIN" ]; then
+     echo "⚠️  IMAGE coverage: $IMG_COUNT placeholders for $WORDS chars (Rule 7b wants ≥$MIN)."
+     echo "    → If cover is missing: add it directly under H1 (16:9, standard cover prompt)."
+     echo "    → For rhythm images: edit the article to add <!-- IMAGE: --> + <!-- PROMPT: -->"
+     echo "      between sections, then run /article-craft:images to render them."
+   fi
+   ```
+
+5. **Check D（SCREENSHOT 覆盖软警告 — 非阻断）** — 统计正文引用的外部 URL 数和 `<!-- SCREENSHOT: -->` 占位符数；如果**引用了 ≥3 个外部 URL 但发射了 0 个 SCREENSHOT 占位符**，打印一条警告。**不阻断 handoff，不自动插入占位符**（Rule 7b 明文：写完之后再补占位符会被下游 skill 孤立，留到下次重写）。
 
    ```bash
    # 统计引用数 vs SCREENSHOT 数
@@ -859,13 +915,15 @@ Print the absolute file path after saving so subsequent skills can find it.
 ```
 保存文件
   ↓
-inline Grep/Bash 检查 3 项 handoff 契约 + 1 项软警告
+inline Grep/Bash 检查 3 项 handoff 契约 + 2 项软警告
   ↓
 Check A 失败? → 转换为标准占位符格式 → 重新保存
   ↓
 Check B 失败? → 补全 ratio/PROMPT/翻译 → 重新保存
   ↓
 Check C 失败 (Style H)? → 按 trace 修 HARVEST 占位符 → 重新保存 → 重跑 --dry-run --strict
+  ↓
+Check E? → cover 缺则自动补；节奏图不足只警告
   ↓
 Check D? → 只打印警告，不修复（已写的文章不再事后插占位符）
   ↓
@@ -877,10 +935,11 @@ Check D? → 只打印警告，不修复（已写的文章不再事后插占位�
 **验证通过后输出：**
 ```
 ✅ Handoff Contract Validation PASSED
-   Check A (占位符格式): 0 问题
+   Check A (占位符格式):           0 问题
    Check B (IMAGE 占位符双行格式): N 个，合规 ✅
-   Check C (HARVEST preflight): M 个占位符，全部可解析 ✅ (Style H only)
-   Check D (SCREENSHOT 覆盖): P 外链 / Q 占位符  [⚠️ 若 P≥3 且 Q=0]
+   Check C (HARVEST preflight):    M 个占位符，全部可解析 ✅ (Style H only)
+   Check E (IMAGE 数量 vs Rule 7b): N/最少 X 张 [⚠️ 若 N<X]
+   Check D (SCREENSHOT 覆盖):      P 外链 / Q 占位符  [⚠️ 若 P≥3 且 Q=0]
 
    Command correctness is checked by /article-craft:verify-claims later in
    the pipeline (post-images, pre-review).
