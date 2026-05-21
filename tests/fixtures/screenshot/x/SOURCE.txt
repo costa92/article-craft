@@ -1,0 +1,27 @@
+Provenance
+==========
+
+Origin: SYNTHETIC (hand-authored)
+Date:   2026-05-21
+Author: costa (B3 Phase 2 batch 1)
+
+x.com has path-sensitive selector logic in suggest_selector:
+
+  /status/ URLs        → returns '[data-testid="tweet"]'
+  /<username>          → returns "" (profile page, viewport screenshot)
+  /<username>/likes    → returns "" (same)
+
+This fixture exercises the /status/ branch — the most common screenshot
+target for articles (citing specific tweets, not profile snapshots).
+
+HOST_MAIN_SELECTORS["x.com"] lists:
+
+  article[data-testid='tweet']  — preferred (article-wrapped, most specific)
+  [data-testid='tweet']         — fallback (any tweet element)
+
+The fixture has TWO data-testid='tweet' articles — primary + a reply.
+This tests "first match" semantics: the primary tweet wins, the reply
+doesn't pollute the bounding box.
+
+For twitter.com (legacy redirect), the same HOST_MAIN_SELECTORS entry
+is reused — no separate fixture needed.

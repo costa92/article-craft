@@ -1,5 +1,8 @@
 # article-craft
 
+[![Plugin Layout Smoke](https://github.com/costa92/article-craft/actions/workflows/smoke.yml/badge.svg)](https://github.com/costa92/article-craft/actions/workflows/smoke.yml)
+[![Screenshot E2E](https://github.com/costa92/article-craft/actions/workflows/screenshot-e2e.yml/badge.svg)](https://github.com/costa92/article-craft/actions/workflows/screenshot-e2e.yml)
+
 Modular article generation plugin for Claude Code — 13 composable skills plus orchestrator for the full article lifecycle.
 
 ## What it does

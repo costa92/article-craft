@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Example User on X: "An example tweet" / X</title>
+<style>
+  body { margin: 0; font-family: -apple-system, "Segoe UI", sans-serif;
+         font-size: 15px; line-height: 1.4; color: #0f1419; background: #fff; }
+  .layout { display: grid; grid-template-columns: 275px 600px 350px;
+            max-width: 1265px; margin: 0 auto; min-height: 100vh; }
+  nav.SideNav { border-right: 1px solid #eff3f4; padding: 16px; }
+  aside.RightRail { border-left: 1px solid #eff3f4; padding: 16px; }
+  main.TimelineContainer { border-right: 1px solid #eff3f4; }
+  article[data-testid="tweet"] { padding: 16px; border-bottom: 1px solid #eff3f4;
+                                  min-height: 120px; }
+  .Tweet-username { font-weight: 700; }
+  .Tweet-handle { color: #536471; }
+  .Tweet-body { padding: 12px 0; font-size: 17px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <!-- Decoy: the left nav. selector must NOT pick this. -->
+  <nav class="SideNav">
+    <ul>
+      <li>Home</li>
+      <li>Explore</li>
+      <li>Notifications</li>
+    </ul>
+  </nav>
+
+  <main class="TimelineContainer">
+    <!-- Target: the tweet itself. HOST_MAIN_SELECTORS["x.com"] lists
+         ["article[data-testid='tweet']", "[data-testid='tweet']"].
+         suggest_selector() for x.com /status/ URLs path-overrides
+         to '[data-testid="tweet"]' (the simpler form). Both candidates
+         match this fixture. -->
+    <article data-testid="tweet">
+      <header>
+        <span class="Tweet-username">Example User</span>
+        <span class="Tweet-handle">@example</span>
+      </header>
+      <div class="Tweet-body">
+        An example tweet with some text content. Long enough to give
+        the bounding-box assertion a non-trivial height to bound.
+      </div>
+      <footer>
+        273 Likes &middot; 84 Reposts &middot; 12 Replies
+      </footer>
+    </article>
+
+    <!-- Reply thread — should NOT be the primary target (the parent
+         tweet wins). Tests that "first match" semantics hold even
+         when multiple data-testid='tweet' exist. -->
+    <article data-testid="tweet">
+      <header><span class="Tweet-username">Replier</span></header>
+      <div class="Tweet-body">Cool tweet, thanks for sharing!</div>
+    </article>
+  </main>
+
+  <!-- Decoy: trending sidebar. -->
+  <aside class="RightRail">
+    <h3>Trending</h3>
+    <ul>
+      <li>#example</li>
+      <li>#trending</li>
+    </ul>
+  </aside>
+</div>
+</body>
+</html>

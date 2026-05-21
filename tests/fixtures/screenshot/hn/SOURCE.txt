@@ -1,0 +1,17 @@
+Provenance
+==========
+
+Origin: SYNTHETIC (hand-authored)
+Date:   2026-05-21
+Author: costa (B3 Phase 2 batch 1)
+
+HN is a table-based layout (the 2007-era Arc HTML structure has been
+remarkably stable). HOST_MAIN_SELECTORS["news.ycombinator.com"] lists:
+
+  .fatitem   — /item page (story + subtext + comments tree wrapper)
+  tr.athing  — story row used on / home page (the canonical "thing" row)
+
+This fixture reproduces an /item page (the more common screenshot
+target — articles cite specific comment threads). For a separate
+home-page fixture, future work can add hn/home.html with the same
+tr.athing target.

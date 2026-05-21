@@ -1,0 +1,17 @@
+{
+  "schema_version": "1",
+  "platform": "stackoverflow",
+  "url_pattern": "https://stackoverflow.com/questions/12345/how-do-i-parse-json-in-python",
+  "fixture_html": "question.html",
+  "expected_selector_candidates": [
+    "#question",
+    "#answer",
+    "#mainbar"
+  ],
+  "expected_first_match": "#question",
+  "expected_bbox_min": {"width": 200, "height": 80},
+  "expected_bbox_max": {"width": 1600, "height": 5000},
+  "anchor_keywords": ["answer"],
+  "is_404_expected": false,
+  "notes": "Pins HOST_MAIN_SELECTORS['stackoverflow.com'] order: #question (preferred — captures only the question body) before #mainbar (the full mainbar fallback). The #sidebar decoy must not win."
+}

@@ -1,0 +1,17 @@
+Provenance
+==========
+
+Origin: SYNTHETIC (hand-authored)
+Date:   2026-05-21
+Author: costa (B3 Phase 2 batch 1)
+
+Reproduces the DOM contract HOST_MAIN_SELECTORS["stackoverflow.com"]
+binds against:
+
+  #mainbar  (full main column — fallback selector)
+    #question  (preferred — the question body alone)
+    #answer    (single accepted answer)
+  #sidebar  (decoy — right rail with related questions, must NOT win)
+
+Real captures from stackoverflow.com inline ~600 KB of vendor CSS;
+synthetic HTML proves selector resolution without the file-size cost.

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How do I parse JSON in Python? - Stack Overflow</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, sans-serif; font-size: 13px;
+         line-height: 1.5; color: #232629; background: #f1f2f3; }
+  .top-bar { background: #f48024; color: #fff; padding: 8px 16px; }
+  .container { max-width: 1240px; margin: 0 auto; display: grid;
+               grid-template-columns: 1fr 300px; gap: 24px; padding: 24px; }
+  #mainbar { background: #fff; padding: 24px; border-radius: 4px;
+             min-height: 600px; }
+  #sidebar { background: #fff; padding: 16px; border-radius: 4px;
+             height: 400px; }
+  #question { border-bottom: 1px solid #d6d9dc; padding-bottom: 24px;
+              margin-bottom: 24px; }
+  #question h1 { margin: 0 0 16px; font-size: 1.6em; }
+  .post-text { font-size: 15px; line-height: 1.6; }
+  #answer { padding-top: 24px; }
+  pre { background: #f6f6f6; padding: 12px; border-radius: 4px;
+        overflow-x: auto; font-family: monospace; }
+</style>
+</head>
+<body>
+<div class="top-bar">stackoverflow</div>
+
+<div class="container">
+  <!-- Target: #mainbar wraps both #question and #answer. The selector
+       list HOST_MAIN_SELECTORS["stackoverflow.com"] is
+       ["#question", "#answer", "#mainbar"] — #question is preferred
+       (the question body alone), #mainbar is the fallback. -->
+  <div id="mainbar">
+    <div id="question">
+      <h1>How do I parse JSON in Python?</h1>
+      <div class="post-text">
+        <p>I have a JSON string and want to convert it to a Python dict.
+        What's the canonical way?</p>
+        <pre>{"foo": "bar", "baz": [1, 2, 3]}</pre>
+      </div>
+    </div>
+
+    <div id="answer">
+      <h2>Answer (273 votes)</h2>
+      <div class="post-text">
+        <p>Use the <code>json</code> module:</p>
+        <pre>import json
+data = json.loads(my_json_string)
+print(data["foo"])  # "bar"</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Decoy: the right-rail sidebar must NOT win selection. -->
+  <aside id="sidebar">
+    <h3>Related</h3>
+    <ul>
+      <li>How do I parse YAML?</li>
+      <li>How do I parse XML?</li>
+    </ul>
+  </aside>
+</div>
+</body>
+</html>

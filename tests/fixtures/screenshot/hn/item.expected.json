@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "platform": "hn",
+  "url_pattern": "https://news.ycombinator.com/item?id=42",
+  "fixture_html": "item.html",
+  "expected_selector_candidates": [
+    ".fatitem",
+    "tr.athing"
+  ],
+  "expected_first_match": ".fatitem",
+  "expected_bbox_min": {"width": 100, "height": 30},
+  "expected_bbox_max": {"width": 1600, "height": 5000},
+  "anchor_keywords": [],
+  "is_404_expected": false,
+  "notes": "HN's table-based layout — .fatitem is the wrapper used on /item pages. tr.athing alone is the home-page row form; both selectors are listed so the same dict handles both URL shapes."
+}

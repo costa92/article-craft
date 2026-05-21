@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "platform": "x",
+  "url_pattern": "https://x.com/example/status/1234567890",
+  "fixture_html": "status.html",
+  "expected_selector_candidates": [
+    "[data-testid=\"tweet\"]",
+    "[data-testid='tweet']"
+  ],
+  "expected_first_match": "article[data-testid=\"tweet\"]",
+  "expected_bbox_min": {"width": 100, "height": 80},
+  "expected_bbox_max": {"width": 1600, "height": 5000},
+  "anchor_keywords": [],
+  "is_404_expected": false,
+  "notes": "x.com has path-sensitive suggest_selector logic — only /status/ URLs return a selector (profile pages return empty for viewport screenshot). expected_first_match uses the article-prefixed form (the first HOST_MAIN_SELECTORS candidate); expected_selector_candidates tolerates both quote styles (suggest_selector uses double-quotes; the host map uses single)."
+}

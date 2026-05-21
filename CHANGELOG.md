@@ -1,5 +1,79 @@
 # Changelog
 
+## [1.6.19] - 2026-05-21 — Screenshot E2E in CI + 3 more platform fixtures (B3 Phases 2-3)
+
+### Why
+
+v1.6.18 shipped the foundation (one fixture + auto-discovery infrastructure)
+but the test only ran locally — no CI signal. Two follow-ups close that:
+
+1. **Phase 3 (CI wiring)**: new `.github/workflows/screenshot-e2e.yml`
+   so PRs touching `screenshot_tool.py` or fixture files actually exercise
+   the e2e suite before merge. The workflow runs on `pull_request` +
+   `push: main`, scoped via `paths:` so unrelated PRs don't burn CI
+   minutes. Playwright Chromium is cached across runs (~120 MB only
+   re-downloaded on Playwright version change).
+2. **Phase 2 batch 1 (platform coverage)**: 3 more fixtures so the e2e
+   suite isn't a one-platform proof-of-concept. Auto-discovery means
+   no test-file edits needed — drop a fixture dir, the test runs.
+
+### What changed
+
+**New CI workflow** (`.github/workflows/screenshot-e2e.yml`):
+
+- Triggers: `pull_request` + `push: main` + `workflow_dispatch`, scoped to
+  `scripts/screenshot_tool.py` / `tests/fixtures/screenshot/**` /
+  `tests/test_screenshot_e2e.py` / `tests/fixtures/_screenshot_e2e_helpers.py` /
+  the workflow file itself.
+- `concurrency: cancel-in-progress` per ref — new commits cancel
+  pending runs.
+- Caches `~/.cache/ms-playwright` keyed on `scripts/requirements.txt`
+  hash; cache miss → `playwright install --with-deps chromium`;
+  cache hit → `playwright install-deps chromium` (idempotent, ~10s,
+  covers system-library drift between cached browser and CI image).
+- Lean Python deps: `pytest pillow playwright` only — no full
+  `scripts/requirements.txt` (Gemini SDK / tenacity / etc. not
+  needed for the hermetic e2e suite).
+
+**README badges**: added both `Plugin Layout Smoke` and
+`Screenshot E2E` workflow status badges to the project header.
+
+**3 new platform fixtures** under `tests/fixtures/screenshot/`:
+
+| Slug | URL pattern | Target selector | Why |
+|------|-------------|-----------------|-----|
+| `stackoverflow/question` | `https://stackoverflow.com/questions/.../...` | `#question` (preferred) / `#mainbar` (fallback) | Pins selector ORDER — `#question` should win over `#mainbar` when both exist. `#sidebar` is the decoy. |
+| `hn/item` | `https://news.ycombinator.com/item?id=42` | `.fatitem` / `tr.athing` | HN's table-based layout (Arc HTML); `.fatitem` wraps /item pages, `tr.athing` is the home-page row form. |
+| `x/status` | `https://x.com/.../status/...` | `article[data-testid="tweet"]` / `[data-testid="tweet"]` | Path-sensitive: `suggest_selector` only returns a selector for `/status/` URLs (profile pages → viewport screenshot). Two tweet articles in fixture test "first match" semantics. |
+
+All synthetic — minimal HTML reproducing the load-bearing DOM shape
+without committing 100 KB+ vendor CSS captures. Each ships
+`<slug>.html`, `<slug>.expected.json`, `SOURCE.txt`. See
+`tests/fixtures/screenshot/README.md` for the capture procedure.
+
+### Tests
+
+**Total**: 407 passing (was 401 — +6 new e2e parametrized tests,
++3 platforms × 2 tests each, no regressions).
+
+### What this enables
+
+Phase 2 continues additively: 11 more `HOST_MAIN_SELECTORS` entries
+to cover (npmjs, twitter alias, reddit, weibo×2, xiaohongshu×2,
+zhihu, mp.weixin, youtube, bilibili, medium, arxiv). Each is a
+fixture dir + parametrize-list pickup — no further infra work.
+
+Phase 4 (maintenance doc consolidation into CONTRIBUTING.md) is the
+last open piece.
+
+### Manual follow-up (not in this commit)
+
+Per spec §6 OQ #5: make `screenshot-e2e.yml` a required check for
+`main` branch protection. This is a GitHub admin setting, not
+something the workflow file controls.
+
+---
+
 ## [1.6.18] - 2026-05-20 — Screenshot E2E snapshot test foundation (B3 Phase 1)
 
 ### Why

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Show HN: A thing | Hacker News</title>
+<style>
+  body { margin: 0; font-family: Verdana, sans-serif; font-size: 10pt;
+         color: #000; background: #f6f6ef; }
+  #hnmain { width: 85%; max-width: 1200px; margin: 0 auto;
+            background: #f6f6ef; padding: 8px; }
+  .topbar { background: #ff6600; color: #000; padding: 4px 8px;
+            font-weight: bold; }
+  tr.athing td { padding: 6px 4px; vertical-align: top; }
+  .fatitem { padding: 8px 0; }
+  .title { font-size: 11pt; }
+  .subtext { color: #828282; font-size: 8pt; padding-top: 4px; }
+  .comment-tree { padding-top: 16px; }
+  .comment { padding: 6px 0 6px 24px; border-top: 1px solid #d0d0c0; }
+</style>
+</head>
+<body>
+<table id="hnmain" cellspacing="0">
+  <tr><td class="topbar">Hacker News</td></tr>
+
+  <!-- The story item — HOST_MAIN_SELECTORS["news.ycombinator.com"] lists
+       [".fatitem", "tr.athing"]. .fatitem wraps the title + subtext for
+       /item pages; tr.athing is the row form used on the home page. -->
+  <tr><td>
+    <table class="fatitem" cellspacing="0">
+      <tr class="athing" id="item-42">
+        <td class="title"><a href="#">Show HN: A thing that does the thing</a></td>
+      </tr>
+      <tr>
+        <td colspan="2" class="subtext">
+          273 points by example_user 2 hours ago | 84 comments
+        </td>
+      </tr>
+    </table>
+
+    <div class="comment-tree">
+      <div class="comment">
+        <p>Great write-up. Reminds me of <code>foo</code> from 2018.</p>
+      </div>
+      <div class="comment">
+        <p>How does this compare to <code>bar</code>?</p>
+      </div>
+    </div>
+  </td></tr>
+</table>
+</body>
+</html>

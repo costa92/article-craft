@@ -1,6 +1,6 @@
 # Screenshot End-to-End Snapshot Tests (B3)
 
-**Status**: Phase 1 ✅ **done v1.6.18** (2026-05-20); Phases 2-4 queued
+**Status**: Phases 1+3 ✅ done v1.6.18 / v1.6.19; Phase 2 ⏳ in progress (4 / 15 platforms — v1.6.19); Phase 4 queued
 **Date**: 2026-05-20
 **Target version**: multi-phase
 **Author**: costa

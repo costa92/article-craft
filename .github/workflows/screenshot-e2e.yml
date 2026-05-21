@@ -1,0 +1,98 @@
+name: Screenshot E2E Snapshot Tests
+
+# B3 Phase 3 — runs tests/test_screenshot_e2e.py against the frozen
+# fixtures under tests/fixtures/screenshot/. Catches the A2-class
+# regressions (v1.4.17 through v1.5.6 — five consecutive releases on
+# the same subsystem because there was no DOM regression net).
+#
+# Hermetic: no live-site requests. Every test uses Playwright
+# `route.fulfill()` to serve fixture HTML inline while the page URL
+# stays canonical, so the host-resolution code path is exercised
+# faithfully.
+#
+# Spec: docs/superpowers/specs/2026-05-20-screenshot-e2e-snapshot-tests.md
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/screenshot_tool.py'
+      - 'tests/fixtures/screenshot/**'
+      - 'tests/test_screenshot_e2e.py'
+      - 'tests/fixtures/_screenshot_e2e_helpers.py'
+      - '.github/workflows/screenshot-e2e.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/screenshot_tool.py'
+      - 'tests/fixtures/screenshot/**'
+      - 'tests/test_screenshot_e2e.py'
+      - 'tests/fixtures/_screenshot_e2e_helpers.py'
+      - '.github/workflows/screenshot-e2e.yml'
+  workflow_dispatch:
+
+# Cancel in-flight runs for the same PR / branch when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  screenshot-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # pytest + Pillow (image-providers indirect dep) + playwright.
+          # We deliberately do NOT install full scripts/requirements.txt —
+          # the e2e tests don't need Gemini SDK, requests, tenacity, etc.
+          # Keeps the workflow lean.
+          python -m pip install pytest pillow playwright
+
+      # Playwright browsers are the heaviest dep (~120 MB). Cache them
+      # across runs — only re-downloads on Playwright version change.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('scripts/requirements.txt') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install Chromium (only on cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: python -m playwright install --with-deps chromium
+
+      - name: Install system deps if Chromium was cached
+        # Cached browsers but missing system libraries → headless boot fails.
+        # `install-deps` is idempotent and fast (~10s).
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: python -m playwright install-deps chromium
+
+      - name: Run screenshot E2E tests
+        run: python -m pytest tests/test_screenshot_e2e.py -v
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Screenshot E2E Snapshot" >> "$GITHUB_STEP_SUMMARY"
+          echo "Per-fixture regression net for \`HOST_MAIN_SELECTORS\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Each fixture under \`tests/fixtures/screenshot/\` pins:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`suggest_selector(url)\` returns the right CSS string" >> "$GITHUB_STEP_SUMMARY"
+          echo "- That selector matches a DOM node in the frozen HTML" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Bounding box falls within the expected tolerance" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "When a test fails, see \`tests/fixtures/screenshot/README.md\` for the refresh protocol." >> "$GITHUB_STEP_SUMMARY"
