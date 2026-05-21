@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>如何评价 X? - 知乎</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", sans-serif;
+         font-size: 14px; line-height: 1.6; color: #1a1a1a; background: #f6f6f6; }
+  .ZhihuHeader { background: #0084ff; color: #fff; padding: 12px 24px;
+                 font-size: 18px; font-weight: 600; }
+  .Topstory-mainColumn { max-width: 690px; margin: 24px auto; }
+  .QuestionRichText {
+    background: #fff;
+    border-radius: 4px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .QuestionRichText h1 { margin: 0 0 12px; font-size: 1.5em; }
+  .AnswerCard {
+    background: #fff;
+    border-radius: 4px;
+    padding: 24px;
+    margin-bottom: 16px;
+    border: 1px solid #ebebeb;
+  }
+  .AnswerCard-meta { color: #8590a6; font-size: 13px; padding-bottom: 12px; }
+  .RichContent-inner { font-size: 15px; line-height: 1.7; }
+  .RichContent-inner p { margin: 0.8em 0; }
+  pre { background: #f7f8fa; padding: 12px; border-radius: 4px;
+        font-family: "Source Code Pro", monospace; }
+  .Sidebar-related {
+    background: #fff;
+    border-radius: 4px;
+    padding: 16px;
+    margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+<header class="ZhihuHeader">知乎</header>
+
+<div class="Topstory-mainColumn">
+  <!-- HOST_MAIN_SELECTORS["zhihu.com"] lists in order:
+       .Post-RichTextContainer  — 专栏文章
+       .RichContent-inner       — 答案正文
+       .QuestionRichText        — 问题描述
+       .AnswerCard              — 答案卡片
+
+       This fixture exercises an answer page — .QuestionRichText comes
+       first (question above), .AnswerCard wraps each answer with
+       .RichContent-inner inside.
+
+       suggest_selector returns the comma-joined list, so any one of
+       these can be the "first match" in expected_first_match. -->
+  <div class="QuestionRichText">
+    <h1>如何评价 X 这个工具?</h1>
+    <p>最近 X 工具更新了，想听听大家的实际使用体验。</p>
+  </div>
+
+  <div class="AnswerCard" data-zop-itemid="answer_1234">
+    <div class="AnswerCard-meta">
+      <span>张三</span> · 关注 100 人
+    </div>
+    <div class="RichContent-inner">
+      <p>用了三个月，整体不错。优点：</p>
+      <ul>
+        <li>性能比上一代高 30%</li>
+        <li>文档清晰</li>
+      </ul>
+      <p>缺点：</p>
+      <pre>$ x --help
+Usage: x [OPTIONS] COMMAND</pre>
+      <p>CLI 帮助太简短。</p>
+    </div>
+  </div>
+
+  <!-- Decoy: 相关推荐 sidebar — selector must not pick this. -->
+  <div class="Sidebar-related">
+    <h3>相关问题</h3>
+    <ul><li>另一个相关问题</li></ul>
+  </div>
+</div>
+</body>
+</html>

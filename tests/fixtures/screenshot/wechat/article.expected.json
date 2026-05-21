@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "platform": "wechat",
+  "url_pattern": "https://mp.weixin.qq.com/s/example-article-id",
+  "fixture_html": "article.html",
+  "expected_selector_candidates": [
+    "#js_content",
+    ".rich_media_content"
+  ],
+  "expected_first_match": "#js_content",
+  "expected_bbox_min": {"width": 200, "height": 100},
+  "expected_bbox_max": {"width": 1600, "height": 5000},
+  "anchor_keywords": [],
+  "is_404_expected": false,
+  "notes": "公众号 article body is wrapped in #js_content (canonical id injected by the editor); .rich_media_content is the fallback class also present. The QR-code/follow-button .qrcode_box decoy must not win — it's a Style H 'reblog-decay' regression risk if the screenshot crops to include the call-to-action."
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": "1",
+  "platform": "reddit",
+  "url_pattern": "https://reddit.com/r/programming/comments/example/show_i_built_a_thing",
+  "fixture_html": "post.html",
+  "expected_selector_candidates": [
+    "shreddit-post",
+    "[data-testid='post-container']",
+    ".Post"
+  ],
+  "expected_first_match": "shreddit-post",
+  "expected_bbox_min": {"width": 200, "height": 100},
+  "expected_bbox_max": {"width": 1600, "height": 5000},
+  "anchor_keywords": [],
+  "is_404_expected": false,
+  "notes": "Modern Reddit uses shreddit-post web component as the canonical post wrapper. Older layouts use [data-testid='post-container'] (2020-2023 'new Reddit') or .Post (pre-2020). The host map lists all three in preference order; this fixture pins the modern shape."
+}

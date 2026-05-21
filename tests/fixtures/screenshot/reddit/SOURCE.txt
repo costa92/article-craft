@@ -1,0 +1,17 @@
+Provenance
+==========
+
+Origin: SYNTHETIC (hand-authored)
+Date:   2026-05-21
+Author: costa (B3 Phase 2 batch 2)
+
+Reddit went through three layout eras and HOST_MAIN_SELECTORS reflects
+that:
+
+  shreddit-post                       — current (web-component era, 2023+)
+  [data-testid='post-container']      — "new Reddit" SPA (2020-2023)
+  .Post                               — legacy class (pre-2020)
+
+This fixture exercises the modern shape. Cookie-gated paywalled subs
+are a separate B1 concern (cookies via setup-browser-cookies) — the
+selector path is identical, this just proves it binds.

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Show: I built a thing : r/programming</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "IBM Plex Sans", Arial, sans-serif;
+         font-size: 14px; line-height: 1.4; color: #1c1c1c; background: #f8f8f8; }
+  .RedditHeader { background: #0079d3; color: #fff; padding: 12px 24px; }
+  .layout { display: grid; grid-template-columns: 1fr 312px;
+            max-width: 1280px; margin: 0 auto; padding: 24px; gap: 24px; }
+  shreddit-post {
+    display: block;
+    background: #fff;
+    border: 1px solid #d3d6da;
+    border-radius: 8px;
+    padding: 16px;
+    min-height: 200px;
+  }
+  shreddit-post h1 { margin: 0 0 12px; font-size: 1.4em; }
+  .post-meta { color: #7c7c7c; font-size: 12px; padding-bottom: 12px; }
+  .post-body { font-size: 15px; line-height: 1.55; }
+  .Sidebar { background: #fff; border: 1px solid #d3d6da; border-radius: 8px;
+             padding: 16px; height: 400px; }
+  .CommentTree { padding-top: 24px; }
+  .Comment { padding: 12px 0; border-top: 1px solid #e6e6e6; }
+</style>
+</head>
+<body>
+<header class="RedditHeader">reddit</header>
+
+<div class="layout">
+  <!-- Target: shreddit-post is the modern Reddit web-component wrapper.
+       HOST_MAIN_SELECTORS["reddit.com"] lists
+       ["shreddit-post", "[data-testid='post-container']", ".Post"].
+       The web component wraps the whole post; data-testid is the
+       fallback for the old new-reddit layout; .Post is the legacy
+       (pre-2023) class. -->
+  <shreddit-post id="t3_example" permalink="/r/programming/comments/example">
+    <h1>Show: I built a thing for parsing JSON</h1>
+    <div class="post-meta">posted by u/example_user · 2 hours ago · r/programming</div>
+    <div class="post-body">
+      <p>Built a small CLI tool that parses JSON faster than the
+      built-in. Open source, MIT, would love feedback.</p>
+      <p>The trick is using a SIMD-friendly tokenizer. See repo for
+      benchmarks.</p>
+    </div>
+    <div class="CommentTree">
+      <div class="Comment">
+        <p>This looks great. How does it compare to simdjson?</p>
+      </div>
+      <div class="Comment">
+        <p>Star-shipped. Will try this on our log pipeline.</p>
+      </div>
+    </div>
+  </shreddit-post>
+
+  <!-- Decoy: subreddit sidebar must not win selection. -->
+  <aside class="Sidebar">
+    <h3>r/programming</h3>
+    <p>5.2M members · 1.2K online</p>
+    <p>Rules · Wiki · Moderators</p>
+  </aside>
+</div>
+</body>
+</html>

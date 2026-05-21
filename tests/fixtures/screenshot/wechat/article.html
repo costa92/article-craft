@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>关于 X 的几点思考 - 公众号</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", sans-serif;
+         font-size: 16px; line-height: 1.75; color: #222; background: #fafafa; }
+  .WechatHeader { background: #07c160; color: #fff; padding: 12px 24px;
+                  font-weight: 600; }
+  .rich_media {
+    max-width: 720px;
+    margin: 24px auto;
+    background: #fff;
+    padding: 32px;
+    border-radius: 4px;
+  }
+  .rich_media_title { font-size: 1.5em; font-weight: 700;
+                       margin: 0 0 16px; }
+  .rich_media_meta { color: #999; font-size: 13px; padding-bottom: 24px;
+                     border-bottom: 1px solid #ececec; margin-bottom: 24px; }
+  #js_content { font-size: 17px; line-height: 2; }
+  #js_content p { margin: 1em 0; }
+  pre { background: #f7f7f7; padding: 12px; border-radius: 4px;
+        font-family: monospace; }
+  .qrcode_box { background: #fafafa; padding: 16px; text-align: center;
+                margin-top: 24px; border-top: 1px solid #ececec; }
+</style>
+</head>
+<body>
+<header class="WechatHeader">微信公众号</header>
+
+<article class="rich_media">
+  <h1 class="rich_media_title">关于 X 的几点思考</h1>
+  <div class="rich_media_meta">
+    某某某 · 2 小时前 · 阅读 1.2 万
+  </div>
+
+  <!-- HOST_MAIN_SELECTORS["mp.weixin.qq.com"] lists
+       ["#js_content", ".rich_media_content"].
+       #js_content is the canonical id for article body; .rich_media_content
+       is the fallback class also injected by the editor.
+
+       This fixture pins the #js_content path — the more common rendered
+       form. The .rich_media wrapper is the decoy (wraps everything
+       including title + meta + qrcode_box — too wide to be the screenshot
+       target). -->
+  <div id="js_content" class="rich_media_content">
+    <p>X 工具最近发布了 1.0 版本，做了三个月的实际项目以后，谈几点感受。</p>
+
+    <p><strong>一、性能</strong></p>
+
+    <p>实测下来，比上一代提升约 30%。具体测试方式：</p>
+
+    <pre>$ x bench --iterations 1000
+Average: 12.3ms/req</pre>
+
+    <p><strong>二、文档</strong></p>
+
+    <p>文档结构清晰，缺点是中文翻译跟不上。</p>
+
+    <p><strong>三、生态</strong></p>
+
+    <p>生态还在早期，社区插件不多但增长快。</p>
+  </div>
+
+  <!-- Decoy: 二维码 / 关注按钮 区域，selector 不能落到这里。 -->
+  <div class="qrcode_box">
+    <p>长按关注公众号</p>
+  </div>
+</article>
+</body>
+</html>

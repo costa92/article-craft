@@ -1,0 +1,18 @@
+{
+  "schema_version": "1",
+  "platform": "zhihu",
+  "url_pattern": "https://zhihu.com/question/1234567/answer/9876543",
+  "fixture_html": "answer.html",
+  "expected_selector_candidates": [
+    ".Post-RichTextContainer",
+    ".RichContent-inner",
+    ".QuestionRichText",
+    ".AnswerCard"
+  ],
+  "expected_first_match": ".QuestionRichText",
+  "expected_bbox_min": {"width": 200, "height": 60},
+  "expected_bbox_max": {"width": 1600, "height": 5000},
+  "anchor_keywords": [],
+  "is_404_expected": false,
+  "notes": "Zhihu has four selector forms for different page types: .Post-RichTextContainer (column articles), .RichContent-inner (single answer body), .QuestionRichText (question description), .AnswerCard (answer wrapper). The fixture is an answer page; suggest_selector returns the comma-joined list and the test checks that the question's .QuestionRichText is locatable (any of the four candidates would satisfy expected_selector_candidates)."
+}

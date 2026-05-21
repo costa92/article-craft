@@ -1,0 +1,21 @@
+Provenance
+==========
+
+Origin: SYNTHETIC (hand-authored)
+Date:   2026-05-21
+Author: costa (B3 Phase 2 batch 2)
+
+知乎 has 4 distinct page types that each need a different selector:
+
+  .Post-RichTextContainer  专栏文章（zhuanlan.zhihu.com/p/...）
+  .RichContent-inner       答案正文（嵌在 .AnswerCard 内部）
+  .QuestionRichText        问题描述
+  .AnswerCard              答案卡片包装
+
+This fixture exercises an answer-page layout — question above, single
+.AnswerCard below. Adding a separate zhihu/column.html for the专栏
+form is a Phase 2 batch 3 candidate.
+
+Login-walled 知乎 columns (paid 想法 etc.) are a B1 cookie-injection
+concern; the selector path is the same once the page renders, so this
+fixture covers the selector contract regardless.

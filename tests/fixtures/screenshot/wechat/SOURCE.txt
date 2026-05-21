@@ -1,0 +1,22 @@
+Provenance
+==========
+
+Origin: SYNTHETIC (hand-authored)
+Date:   2026-05-21
+Author: costa (B3 Phase 2 batch 2)
+
+mp.weixin.qq.com is the single most cited source for Style H articles
+(see references/writing-styles.md). Screenshot crops that include the
+qrcode follow-button area waste vertical space and look like ads.
+
+HOST_MAIN_SELECTORS["mp.weixin.qq.com"] lists:
+
+  #js_content              the canonical article-body id
+  .rich_media_content      the class form (same element gets both)
+
+This fixture proves the selector binds to the body, NOT to the wider
+.rich_media wrapper (which includes title + meta + footer qrcode) nor
+the .qrcode_box decoy below the body.
+
+Login-walled content is a B1 concern; selectors are identical
+post-render, so this fixture covers the contract for that case too.

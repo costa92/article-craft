@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.6.21] - 2026-05-21 — Screenshot fixtures batch 2: reddit / zhihu / wechat (B3 Phase 2)
+
+### Why
+
+Continues B3 Phase 2 from v1.6.19 (4 → 7 of 15 platforms). The 3 new
+fixtures cover the highest-traffic UGC platforms in `HOST_MAIN_SELECTORS`
+— each had a non-trivial selector contract that without a regression
+net would slip on the next platform redesign.
+
+### What changed
+
+Three new fixture directories under `tests/fixtures/screenshot/`:
+
+| Slug | URL pattern | Target selector | Why |
+|------|-------------|-----------------|-----|
+| `reddit/post` | `https://reddit.com/r/.../comments/...` | `shreddit-post` (modern web-component) | Pin the modern (2023+) Reddit layout. `[data-testid='post-container']` (2020-2023 SPA) and `.Post` (pre-2020) are still in the host map as fallbacks. |
+| `zhihu/answer` | `https://zhihu.com/question/.../answer/...` | `.QuestionRichText` (question above) + `.AnswerCard` containing `.RichContent-inner` | Zhihu has 4 selectors for 4 page types — this fixture is the answer-page form. |
+| `wechat/article` | `https://mp.weixin.qq.com/s/...` | `#js_content` (canonical body id) | Style H's most-cited source. Decoy `.qrcode_box` (follow-button area) must not win — that crop would look like an ad. |
+
+All 3 follow the same synthetic-minimal-HTML + decoy-siblings pattern.
+Auto-discovery picks them up; no test-file edits needed.
+
+### Tests
+
+407 (parametrized: 4 platforms × 2 + 1 sanity) → 424
+(7 platforms × 2 + 1 sanity).
+
+Total: **424 passing** (was 418 — +6 new, no regressions).
+
+### Coverage status
+
+`HOST_MAIN_SELECTORS` has 15 entries. After v1.6.21: **7 covered**
+(github, hn, stackoverflow, x, reddit, zhihu, wechat). Remaining 8:
+twitter (alias of x — selector identical), npmjs, weibo×2,
+xiaohongshu×2, youtube, bilibili, medium, arxiv. Future batch
+candidates.
+
+### Spec
+
+`docs/superpowers/specs/2026-05-20-screenshot-e2e-snapshot-tests.md`
+— Phase 2 in progress 7/15.
+
+---
+
 ## [1.6.20] - 2026-05-21 — OpenAI gpt-image-1 provider (B7 Phase 2) + screenshot-e2e CI fix
 
 ### Why
