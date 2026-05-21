@@ -1,8 +1,8 @@
 # Verify-Claims Flag Validation (B8)
 
-**Status**: design (not implemented — scoped for future multi-phase execution)
+**Status**: Phase 1 ✅ **done v1.6.23** (curated schema for 7 tools — git/docker/kubectl/uv/npm/curl/python3; long flags only; warnings non-blocking); Phases 2-3 queued (subcommand-aware schema; ERROR promotion for specific tools)
 **Date**: 2026-05-20
-**Target version**: TBD — multi-phase (estimated 3 release cycles)
+**Target version**: multi-phase
 **Author**: costa
 **Backlog ref**: B8 in `docs/research/2026-05-20-feature-candidates.md`
 **Predecessor**: v1.4.x `verify_claims.py` (the MVP `command -v TOOL` checker)

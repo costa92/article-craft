@@ -126,6 +126,211 @@ UBIQUITOUS_TOOLS = {
 
 PLACEHOLDERS = {"TOOL", "YOUR_", "EXAMPLE_", "SOMETHING", "X", "Y"}
 
+
+# ─── B8 Phase 1: per-tool flag whitelists ────────────────────────────────
+#
+# Curated (NOT exhaustive) — the goal is to catch typos like `--mesage`
+# instead of `--message`, not to validate every possible flag. Unknown
+# flags emit a WARNING in the report (not an error) so authors using
+# uncommon-but-valid flags just see noise they can ignore.
+#
+# Coverage rule: at minimum, the canonical `--help` + `--version` /
+# `-h` + `-v` plus the 20-50 most common subcommand flags per tool. If
+# a flag here doesn't match the live tool, fix the schema in a follow-up
+# PR — the warning surface is the canary.
+#
+# Long flags only — short flags are too ambiguous (e.g. `-a` means
+# different things to git / docker / curl) to validate without
+# subcommand context, which is out of scope for Phase 1.
+TOOL_FLAG_SCHEMA: dict[str, set[str]] = {
+    "git": {
+        # Global / top-level
+        "--help", "--version", "--git-dir", "--work-tree", "--namespace",
+        "--bare", "--no-replace-objects", "--literal-pathspecs", "--no-pager",
+        # commit / log / diff / show metadata
+        "--message", "--amend", "--no-edit", "--allow-empty", "--allow-empty-message",
+        "--signoff", "--no-signoff", "--no-verify", "--verify",
+        "--author", "--date", "--cleanup", "--squash", "--fixup",
+        # push / pull / fetch
+        "--set-upstream", "--upstream", "--force", "--force-with-lease",
+        "--no-force-with-lease", "--mirror", "--tags", "--no-tags", "--follow-tags",
+        "--prune", "--no-prune", "--push", "--no-push", "--delete",
+        "--all", "--unshallow", "--depth", "--shallow-since", "--shallow-exclude",
+        "--filter", "--single-branch", "--no-single-branch", "--recurse-submodules",
+        # branch / checkout / switch / restore
+        "--track", "--no-track", "--set-upstream-to", "--unset-upstream",
+        "--list", "--remote", "--contains", "--merged", "--no-merged",
+        "--create", "--orphan", "--detach",
+        "--staged", "--worktree", "--source", "--patch",
+        # reset / revert / rebase / merge
+        "--soft", "--hard", "--mixed", "--keep", "--abort", "--continue", "--skip",
+        "--interactive", "--root", "--onto", "--strategy", "--strategy-option",
+        "--no-ff", "--ff-only", "--ff", "--squash", "--no-commit", "--rebase",
+        "--no-rebase",
+        # diff / log formatting
+        "--cached", "--no-color", "--color", "--stat", "--numstat", "--shortstat",
+        "--name-only", "--name-status", "--patch-with-stat", "--summary",
+        "--word-diff", "--no-renames", "--find-renames", "--diff-filter",
+        "--unified", "--no-pager",
+        # log / show
+        "--oneline", "--graph", "--decorate", "--no-decorate", "--all", "--branches",
+        "--tags", "--remotes", "--first-parent", "--no-merges", "--merges",
+        "--since", "--until", "--author", "--committer", "--grep",
+        # diff/show toggles
+        "--check", "--full-index", "--binary", "--exit-code", "--quiet", "--verbose",
+        # clone / init
+        "--branch", "--origin", "--upload-pack", "--template", "--shared", "--reference",
+        # config
+        "--global", "--local", "--system", "--worktree", "--file", "--blob",
+        "--get", "--get-all", "--get-regexp", "--add", "--unset", "--unset-all",
+        "--type", "--null", "--name-only", "--show-origin", "--show-scope",
+        # remote
+        "--add", "--remove", "--set-head", "--add-remote", "--set-url",
+        # tag
+        "--annotate", "--sign", "--no-sign", "--message", "--cleanup", "--force",
+        "--delete", "--list", "--contains", "--no-contains", "--points-at",
+        # generic toggles
+        "--dry-run", "--prune-tags",
+    },
+
+    "docker": {
+        "--help", "--version", "--config", "--debug", "--host", "--log-level",
+        "--tls", "--tlscacert", "--tlscert", "--tlskey", "--tlsverify",
+        # run / exec / build
+        "--rm", "--detach", "--interactive", "--tty", "--name", "--volume",
+        "--mount", "--publish", "--publish-all", "--expose", "--env", "--env-file",
+        "--workdir", "--user", "--entrypoint", "--cmd", "--label", "--label-file",
+        "--network", "--network-alias", "--ip", "--ip6", "--dns", "--dns-search",
+        "--add-host", "--restart", "--privileged", "--cap-add", "--cap-drop",
+        "--security-opt", "--ulimit", "--memory", "--memory-swap", "--cpus",
+        "--cpu-shares", "--cpuset-cpus", "--cpuset-mems", "--shm-size",
+        "--gpus", "--device", "--read-only", "--tmpfs", "--init", "--platform",
+        # build
+        "--file", "--tag", "--target", "--build-arg", "--no-cache", "--pull",
+        "--cache-from", "--cache-to", "--push", "--load", "--output", "--secret",
+        "--ssh", "--progress",
+        # image / push / pull
+        "--all-tags", "--all", "--disable-content-trust", "--quiet",
+        "--digests", "--filter", "--format", "--no-trunc",
+        # compose-like
+        "--project-name", "--file", "--profile", "--env-file", "--scale",
+        "--build", "--no-build", "--remove-orphans", "--abort-on-container-exit",
+        "--exit-code-from", "--timeout",
+        # ps / inspect / logs
+        "--all", "--size", "--latest", "--last", "--no-trunc",
+        "--follow", "--since", "--until", "--tail", "--timestamps",
+        # generic toggles
+        "--dry-run", "--force", "--quiet", "--verbose",
+    },
+
+    "kubectl": {
+        "--help", "--kubeconfig", "--context", "--cluster", "--user", "--namespace",
+        "--server", "--token", "--username", "--password", "--client-certificate",
+        "--client-key", "--certificate-authority", "--insecure-skip-tls-verify",
+        "--cache-dir", "--v", "--vmodule", "--log-flush-frequency",
+        # get / describe / explain
+        "--output", "--watch", "--watch-only", "--no-headers", "--show-labels",
+        "--show-kind", "--all-namespaces", "--field-selector", "--selector",
+        "--label-columns", "--sort-by", "--chunk-size", "--allow-missing-template-keys",
+        # apply / create / delete / patch
+        "--filename", "--recursive", "--kustomize", "--dry-run", "--force",
+        "--prune", "--prune-allowlist", "--prune-whitelist", "--server-side",
+        "--field-manager", "--validate", "--cascade", "--grace-period",
+        "--ignore-not-found", "--now", "--wait", "--timeout",
+        "--from-file", "--from-literal", "--from-env-file", "--type", "--patch",
+        # exec / attach / port-forward / logs / cp
+        "--container", "--stdin", "--tty", "--pod-running-timeout",
+        "--address", "--port", "--container", "--no-preserve",
+        "--follow", "--previous", "--since", "--since-time", "--tail",
+        "--prefix", "--timestamps", "--max-log-requests",
+        # rollout / scale / autoscale
+        "--replicas", "--current-replicas", "--resource-version",
+        "--max", "--min", "--cpu-percent",
+        "--revision", "--to-revision", "--keep-annotations",
+        # config / cluster-info
+        "--minify", "--flatten", "--raw", "--merge",
+        # generic toggles
+        "--dry-run", "--force", "--quiet", "--verbose", "--client", "--short",
+    },
+
+    "uv": {
+        "--help", "--version", "--quiet", "--verbose", "--no-color",
+        "--color", "--native-tls", "--offline", "--cache-dir", "--no-cache",
+        "--config-file", "--directory", "--project",
+        # pip / sync / lock / add / remove
+        "--all-extras", "--extra", "--no-dev", "--dev", "--group",
+        "--editable", "--no-editable", "--upgrade", "--upgrade-package",
+        "--reinstall", "--reinstall-package", "--refresh", "--refresh-package",
+        "--index", "--default-index", "--index-strategy", "--keyring-provider",
+        "--system", "--python", "--no-deps", "--no-binary", "--only-binary",
+        "--prerelease", "--resolution", "--no-build", "--no-build-isolation",
+        "--no-sources", "--frozen", "--locked", "--no-sync",
+        # build / publish
+        "--out-dir", "--sdist", "--wheel", "--check-url",
+        "--repository", "--repository-url", "--username", "--password",
+        "--token",
+        # run
+        "--with", "--with-editable", "--with-requirements",
+        # tool
+        "--from", "--editable", "--upgrade", "--reinstall",
+        # python
+        "--preview", "--no-default-groups",
+        # generic toggles
+        "--dry-run", "--force",
+    },
+
+    "npm": {
+        "--help", "--version", "--global", "--save", "--save-dev", "--save-peer",
+        "--save-optional", "--save-bundle", "--save-prod", "--no-save",
+        "--save-exact", "--no-package-lock", "--package-lock-only",
+        "--legacy-peer-deps", "--strict-peer-deps", "--no-optional",
+        "--include", "--omit", "--workspace", "--workspaces", "--include-workspace-root",
+        "--prefix", "--cache", "--registry", "--scope", "--access",
+        "--tag", "--otp", "--force", "--dry-run", "--ignore-scripts",
+        "--audit", "--no-audit", "--audit-level", "--fund", "--no-fund",
+        "--prefer-offline", "--prefer-online", "--offline",
+        "--production", "--dev", "--depth", "--all", "--long", "--parseable",
+        "--global-style", "--legacy-bundling",
+        "--json", "--silent", "--quiet", "--loglevel", "--verbose", "--timing",
+        # publish / view / search / outdated / audit
+        "--filter", "--workspaces-update", "--install-strategy",
+    },
+
+    "curl": {
+        "--help", "--version", "--verbose", "--silent", "--show-error",
+        "--output", "--remote-name", "--remote-name-all", "--remote-header-name",
+        "--remote-time", "--write-out", "--include", "--head", "--data",
+        "--data-binary", "--data-raw", "--data-urlencode", "--form", "--form-string",
+        "--user", "--user-agent", "--referer", "--header", "--cookie",
+        "--cookie-jar", "--request", "--max-time", "--connect-timeout",
+        "--retry", "--retry-delay", "--retry-max-time", "--retry-connrefused",
+        "--retry-all-errors", "--fail", "--fail-with-body", "--location",
+        "--location-trusted", "--max-redirs", "--proxy", "--proxy-user",
+        "--socks5", "--socks5-hostname", "--insecure", "--cacert", "--capath",
+        "--cert", "--cert-type", "--key", "--key-type", "--ciphers",
+        "--tls-max", "--tlsv1", "--tlsv1.2", "--tlsv1.3", "--ssl-reqd",
+        "--http1.0", "--http1.1", "--http2", "--http2-prior-knowledge",
+        "--http3", "--ipv4", "--ipv6", "--resolve", "--alt-svc",
+        "--range", "--continue-at", "--limit-rate", "--max-filesize",
+        "--upload-file", "--basic", "--digest", "--ntlm", "--negotiate",
+        "--bearer", "--oauth2-bearer",
+        "--no-buffer", "--progress-bar", "--no-progress-meter", "--no-keepalive",
+        "--compressed", "--trace", "--trace-ascii", "--dump-header",
+        "--config", "--parallel", "--parallel-max",
+    },
+
+    "python3": {
+        "--help", "--version", "--module", "--check-hash-based-pycs",
+        "--no-site", "--no-user-site", "--unbuffered", "--inspect", "--isolated",
+        "--optimize", "--quiet", "--verbose", "--bytes-warning",
+        "--ignore-environment", "--debug", "--dont-write-bytecode",
+        "--skip-source-first-line", "--implementation", "--build-backend",
+    },
+}
+
+# Allow flags ending in `=value` — split on `=` before validating.
+_FLAG_RE = re.compile(r"^(--[a-z][a-z0-9-]*)(?:=.*)?$")
+
 # Fragments matching these patterns describe a tool (CLI help output), not actual
 # command invocations. The first token is a noun in a description sentence,
 # not a executable.  These are safe to skip — not real commands.
@@ -181,6 +386,59 @@ def _extract_tool(fragment: str) -> str | None:
     return head
 
 
+def _extract_tool_and_flags(fragment: str) -> tuple[str | None, list[str]]:
+    """Return (tool, [long_flags_used]).
+
+    Skips `sudo` / `env` prefixes the same way ``_extract_tool`` does, so
+    flag attribution lands on the actual command.
+    Only LONG flags (``--name``) are returned — short flags collide too
+    much across tools (e.g. ``-a`` is "all" for git, "addr" for some
+    others) to validate without subcommand context (B8 Phase 2+).
+    """
+    tokens = fragment.split()
+    if not tokens:
+        return None, []
+    # Strip prefixes the same way _extract_tool does.
+    while tokens and tokens[0] in {"sudo", "env"} and len(tokens) > 1:
+        tokens = tokens[1:]
+    if not tokens:
+        return None, []
+    tool = _extract_tool(" ".join(tokens))
+    if tool is None:
+        return None, []
+
+    flags: list[str] = []
+    for tok in tokens[1:]:
+        # Strip URL trailing punctuation that might glue onto a flag
+        # (e.g. `--help.`).
+        tok = tok.rstrip(",;.")
+        m = _FLAG_RE.match(tok)
+        if m:
+            flags.append(m.group(1))
+    return tool, flags
+
+
+def _check_flags(tool: str, flags: list[str]) -> list[str]:
+    """Return the subset of ``flags`` that aren't in the tool's schema.
+
+    Tools not in :data:`TOOL_FLAG_SCHEMA` get an empty list (no validation
+    — Phase 1 scope). De-duplicated and order-preserved.
+    """
+    schema = TOOL_FLAG_SCHEMA.get(tool)
+    if schema is None:
+        return []
+    seen: set[str] = set()
+    unknown: list[str] = []
+    for flag in flags:
+        if flag in schema:
+            continue
+        if flag in seen:
+            continue
+        seen.add(flag)
+        unknown.append(flag)
+    return unknown
+
+
 def _classify(tool: str) -> str:
     if tool in UBIQUITOUS_TOOLS:
         return "ubiquitous"
@@ -192,14 +450,24 @@ def _classify(tool: str) -> str:
 def scan_article(article_path: Path) -> dict:
     text = article_path.read_text(encoding="utf-8", errors="replace")
     seen: dict[str, dict] = {}
+    # Per-tool flag aggregation across all uses in the article. We collect
+    # flags for ANY tool in TOOL_FLAG_SCHEMA, even ubiquitous ones (git
+    # is ubiquitous — its flag schema is the whole point).
+    flag_uses: dict[str, list[tuple[str, str]]] = {}  # tool → [(flag, fragment)]
+
     for block in _iter_shell_blocks(text):
         for fragment in _iter_commands(block):
-            tool = _extract_tool(fragment)
+            tool, flags = _extract_tool_and_flags(fragment)
             if tool is None:
                 continue
             kind = _classify(tool)
             if tool not in seen:
                 seen[tool] = {"kind": kind, "first_fragment": fragment[:80]}
+            if tool in TOOL_FLAG_SCHEMA and flags:
+                flag_uses.setdefault(tool, []).extend(
+                    (f, fragment[:80]) for f in flags
+                )
+
     report = {
         "article": str(article_path),
         "total_tools": len(seen),
@@ -207,6 +475,7 @@ def scan_article(article_path: Path) -> dict:
         "skipped_ubiquitous": [],
         "skipped_placeholder": [],
         "missing": [],
+        "flag_warnings": [],
     }
     for tool, info in sorted(seen.items()):
         if info["kind"] == "placeholder":
@@ -214,12 +483,34 @@ def scan_article(article_path: Path) -> dict:
             continue
         if info["kind"] == "ubiquitous":
             report["skipped_ubiquitous"].append(tool)
-            continue
-        present = shutil.which(tool) is not None
-        entry = {"tool": tool, "present": present, "fragment": info["first_fragment"]}
-        report["checked"].append(entry)
-        if not present:
-            report["missing"].append(tool)
+        else:
+            present = shutil.which(tool) is not None
+            entry = {"tool": tool, "present": present, "fragment": info["first_fragment"]}
+            report["checked"].append(entry)
+            if not present:
+                report["missing"].append(tool)
+
+    # B8 Phase 1: per-tool flag validation. Always runs for tools in the
+    # schema, regardless of ubiquitous / placeholder classification.
+    for tool in sorted(flag_uses.keys()):
+        seen_flags: set[str] = set()
+        deduped: list[tuple[str, str]] = []
+        for flag, frag in flag_uses[tool]:
+            if flag in seen_flags:
+                continue
+            seen_flags.add(flag)
+            deduped.append((flag, frag))
+        unknown = _check_flags(tool, [f for f, _ in deduped])
+        for flag in unknown:
+            fragment = next((frag for f, frag in deduped if f == flag), "")
+            report["flag_warnings"].append(
+                {
+                    "tool": tool,
+                    "flag": flag,
+                    "fragment": fragment,
+                }
+            )
+
     return report
 
 
@@ -247,6 +538,17 @@ def cmd_scan(args) -> int:
             print(f"⚠️  {len(report['missing'])} tool(s) NOT on PATH: {', '.join(report['missing'])}")
             print("   → Options: mark [需要验证] in the article, replace with a real tool, or")
             print("             delete the command if the article's point doesn't need it.")
+        if report.get("flag_warnings"):
+            print()
+            print(f"⚠️  {len(report['flag_warnings'])} unknown flag(s) — possibly typos or "
+                  "schema gaps (info only, won't block):")
+            for w in report["flag_warnings"]:
+                print(f"   ? {w['tool']:10s} {w['flag']:30s}  {w['fragment']}")
+            print("   → If valid, ignore — the schema is curated, not exhaustive.")
+            print("     If a typo, fix the article. Schema gaps: PR welcome.")
+    # Exit code unchanged: only missing-on-PATH tools fail the run.
+    # Flag warnings are informational — they explicitly do NOT fail the
+    # exit code (Phase 1 scope: introduce the signal, don't gate on it).
     return 1 if report["missing"] else 0
 
 

@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.6.22
+version: 1.6.23
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read

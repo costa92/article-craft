@@ -1,6 +1,6 @@
 ---
 name: article-craft:verify-claims
-version: 1.6.22
+version: 1.6.23
 description: "Post-write claim verification — scan article body for shell commands and check they exist on PATH. Runs after images, before review. Companion to the pre-write verify stage (source vetting)."
 allowed-tools:
   - Read
@@ -37,9 +37,19 @@ runs as a dedicated stage.
   utilities (`ls`, `grep`, `awk`, `curl`, `python`, ...).
 - Checks presence via `shutil.which`, no execution of the commands themselves.
 
+**Flag-level validation (B8 Phase 1, v1.6.23+)**: for tools listed in
+`TOOL_FLAG_SCHEMA` (currently git / docker / kubectl / uv / npm / curl /
+python3), any **long** flag (`--name`) used in the article is checked
+against a curated whitelist. Unknown flags emit `flag_warnings` in the
+JSON report — **informational only, never block**. The schema is
+curated (not exhaustive); false positives mean either a typo (fix the
+article) or a schema gap (PR welcome).
+
 Explicitly **out of scope for MVP** (each is a future enhancement, not a bug):
 
-- Flag-level validation (`uv pip install --reinstall` → does `--reinstall` exist?).
+- Short-flag validation (`-a` means different things across tools).
+- Subcommand-aware flag validation (Phase 2+).
+- Live `--help` parsing.
 - API-endpoint reachability.
 - Version-string claims in prose.
 - Python / JS imports inside code blocks.

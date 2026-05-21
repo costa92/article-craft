@@ -1,5 +1,100 @@
 # Changelog
 
+## [1.6.23] - 2026-05-21 — verify-claims flag validation (B8 Phase 1)
+
+### Why
+
+`scripts/verify_claims.py` MVP only checked tool presence via
+`shutil.which`. It would catch `python3 → not on PATH` but happily
+shrug at `git push --mesage "..."` (typo) or `kubectl get --dryyy-run`
+(typo) because the *tool* is present. B8 Phase 1 adds flag-level
+validation for 7 high-frequency tools so authors get a typo-catch
+warning before review.
+
+### What changed
+
+**New schema** in `scripts/verify_claims.py`:
+
+- `TOOL_FLAG_SCHEMA` — a `dict[str, set[str]]` of curated long-flag
+  whitelists for 7 tools: **git / docker / kubectl / uv / npm / curl /
+  python3**. Each set has 20-100 of the most common flags per tool.
+- Schema is **curated, not exhaustive** — designed to catch typos
+  cheaply. Unknown flags emit warnings, never errors (Phase 1 contract).
+
+**New helper functions**:
+
+- `_extract_tool_and_flags(fragment)` — extends the existing
+  `_extract_tool` to also return the long flags used. Strips `sudo` /
+  `env` prefixes the same way, handles `--name=value` form, strips
+  trailing punctuation.
+- `_check_flags(tool, flags)` — returns the de-duplicated subset of
+  flags NOT in the tool's schema. Tools outside the schema return `[]`
+  (no validation).
+
+**Scan integration**:
+
+- `scan_article()` now collects per-tool flag usage across the whole
+  article (incl. ubiquitous tools like git — the flag schema is the
+  point), runs `_check_flags`, and reports each unknown flag with
+  the offending fragment in the new `flag_warnings` JSON array.
+- `cmd_scan()` displays warnings as `⚠️ N unknown flag(s)` block in
+  human output; JSON consumers get them under `flag_warnings`.
+- **Exit code is unchanged** — flag warnings are informational. Only
+  missing-on-PATH still fails the run (Phase 1 contract). This is
+  explicitly pinned in `test_scan_keeps_exit_code_unchanged_with_only_flag_warnings`
+  so a later phase that DOES gate is an explicit behaviour change.
+
+### Long flags only (Phase 1 design)
+
+Short flags (`-a`, `-v`, etc.) are deliberately not validated. They
+collide too much across tools — `-a` is `--all` for git, `--addr` for
+some servers, `--archive` for tar/cp/rsync. Validating without
+subcommand context produces too many false positives. Phase 2 (spec
+§4) will add subcommand-aware schemas, which is the right place to
+re-introduce short-flag checks.
+
+### Documentation
+
+- `skills/verify-claims/SKILL.md` — new "Flag-level validation" block
+  explicitly noting Phase 1's scope (long flags only, warnings only,
+  schema is curated not exhaustive)
+
+### Tests
+
++13 new in `tests/test_verify_claims.py` (`FlagValidationTests` class):
+
+- `_extract_tool_and_flags` long-flags-only + `=value` form + trailing
+  punctuation + sudo prefix attribution (4 tests)
+- `_check_flags` returns empty for unknown tool / unknown subset for
+  known tool / dedupes (3 tests)
+- `scan_article` flag warnings: git typo caught / valid flags clean /
+  cross-tool aggregation / tool-not-in-schema skipped / exit code
+  unchanged (5 tests)
+- `TOOL_FLAG_SCHEMA` pins the curated 7-tool list (1 test — adding a
+  new tool is a conscious schema-expansion decision)
+
+**Total**: 446 passing (was 433 — +13 new, no regressions).
+
+### What this enables
+
+Phase 2 (subcommand-aware): split each tool's flat set into
+`{global: set, subcommands: {name: set}}` and resolve flags against
+the right scope. Catches "valid flag, wrong subcommand" errors
+(e.g. `git checkout --message` — `--message` is valid for git
+generally but not for checkout).
+
+Phase 3 (ERROR promotion for specific tools): once schema confidence
+is high enough (proven against a corpus of articles), promote
+unknown-flag warnings to errors for select tools where the schema is
+provably complete.
+
+### Spec
+
+`docs/superpowers/specs/2026-05-20-verify-claims-flag-validation.md`
+— Phase 1 closed; Phases 2-3 still queued.
+
+---
+
 ## [1.6.22] - 2026-05-21 — Self-hosted Stable Diffusion provider (B7 Phase 3)
 
 ### Why
