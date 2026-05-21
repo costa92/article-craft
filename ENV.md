@@ -28,6 +28,7 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
   "gemini_image_model": "gemini-3-pro-image-preview",
   "gemini_text_model": "gemini-2.0-flash",
   "openai_api_key": "YOUR_OPENAI_API_KEY",
+  "stable_diffusion_endpoint": "http://127.0.0.1:7860",
   "user_name": "",
   "share_card_logo": "",
   "verify_cdn_whitelist": [
@@ -66,6 +67,7 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 |------|------|------|
 | `gemini_api_key` | string | Gemini API Key，用于 fallback / `--enhance` |
 | `openai_api_key` | string | OpenAI API Key（B7 Phase 2 起支持）— 用于 `openai-gpt-image-1`。Minimax / Gemini 都不可用时的兜底链末位。可在 [platform.openai.com](https://platform.openai.com/api-keys) 申请。 |
+| `stable_diffusion_endpoint` | string | 自建 SD 后端 URL（B7 Phase 3 起支持）— 用于 `sd-local` 模型。指向 Automatic1111 webui（默认 `http://127.0.0.1:7860`）。不在默认 chain 里 —— 显式 `image_model: "sd-local"` 才会用。无需 API Key（本地端点）。 |
 
 ### 可选配置
 
@@ -83,6 +85,7 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 - `gemini-3.1-flash-image-preview` — 快速版本
 - `gemini-2.5-flash-image` — 轻量级兜底
 - `openai-gpt-image-1` — OpenAI 兜底（B7 Phase 2 起；需要 `openai_api_key`）
+- `sd-local` — 自建 Stable Diffusion (B7 Phase 3 起；需要 `stable_diffusion_endpoint`)。**不在默认 chain 里**，显式 `image_model: "sd-local"` 才会用。
 
 `filter_chain_by_available_keys` 在生成前会把没有对应 API Key 的模型从链路里剔除，所以即使链路里列了 5 个模型，只配了 OpenAI Key 的用户会直接从 `openai-gpt-image-1` 开始尝试，不会浪费 4 次失败请求。
 

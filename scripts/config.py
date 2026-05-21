@@ -341,10 +341,14 @@ RETRY_CONFIG = {
 
 # Model degradation chain: minimax → pro → 3.1-flash → 2.5-flash → openai
 #
-# OpenAI gpt-image-1 is appended at the end (lowest priority) per
-# B7 Phase 2 spec — Minimax / Gemini stay the headline default. Users
-# who only have OPENAI_API_KEY rely on filter_chain_by_available_keys
-# to prune everything above gpt-image-1.
+# OpenAI gpt-image-1 is appended at the end of the SaaS block (B7 Phase 2).
+# sd-local (self-hosted Stable Diffusion via a1111 — B7 Phase 3) is NOT
+# in the default chain — it requires a running a1111 server which most
+# users don't have. Opt in by either:
+#   1. Setting `image_model: "sd-local"` in env.json (explicit selection)
+#   2. Extending MODEL_FALLBACK_CHAIN locally if you want it as a fallback
+# Default chain stays SaaS-only to avoid surprising "no a1111 found"
+# errors at generation time.
 MODEL_FALLBACK_CHAIN = [
     "minimax-image-01",
     "gemini-3-pro-image-preview",

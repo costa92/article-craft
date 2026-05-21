@@ -1,5 +1,96 @@
 # Changelog
 
+## [1.6.22] - 2026-05-21 — Self-hosted Stable Diffusion provider (B7 Phase 3)
+
+### Why
+
+Phases 1-2 covered SaaS image backends (Minimax + Gemini + OpenAI).
+Phase 3 proves the same protocol handles non-SaaS — a self-hosted
+Stable Diffusion via Automatic1111 webui, no API key, configurable
+endpoint URL. Demonstrates that the `ImageProvider` contract doesn't
+quietly assume "cloud auth-token" shape.
+
+### What changed
+
+**New provider class** `StableDiffusionProvider` in
+`scripts/image_providers.py`:
+
+- `name = "stable-diffusion"`, model `sd-local`
+- POST `<endpoint>/sdapi/v1/txt2img` — the standard a1111 / Forge /
+  sd.next / vlad webui shape
+- Endpoint resolution: `STABLE_DIFFUSION_ENDPOINT` env var (preferred
+  for ephemeral) → `stable_diffusion_endpoint` env.json key →
+  `http://127.0.0.1:7860` default
+- **Opt-in `is_configured()`**: returns True only when the env var
+  OR env.json key is explicitly set. The localhost default fires
+  inside `generate()` so users running a1111 locally get zero-config,
+  but the provider doesn't show in `configured_providers()` / doctor
+  output for users who never opted in.
+- Aspect-ratio → (width, height) mapping with a1111's required
+  multiple-of-8 rounding: `1:1` → 1024², `16:9` → 1280×720,
+  `9:16` → 720×1280, `4:3` → 1152×864, `3:4` → 864×1152.
+  Explicit `width`+`height` beats aspect_ratio.
+- Sensible default sampling params: 25 steps, Euler a, CFG 7.
+- `ConnectionError` from requests is translated to a friendly
+  RuntimeError naming `STABLE_DIFFUSION_ENDPOINT` as the fix —
+  catches the most common SD failure mode (a1111 not running).
+- Handles `data:image/png;base64,` prefix that some a1111 forks add.
+
+**`sd-local` is NOT in `MODEL_FALLBACK_CHAIN` by default**. The
+chain stays SaaS-only to avoid surprising "no a1111 found" errors
+at generation time. Opt-in via `image_model: "sd-local"` in env.json
+or extend `MODEL_FALLBACK_CHAIN` locally for fallback behavior.
+
+**Doctor extension** (`scripts/setup_dependencies.py`):
+
+- `check_stable_diffusion_endpoint()` — `pass` when explicitly set,
+  `warn` (not block) when missing (sd-local isn't in default chain
+  → missing this never blocks the pipeline)
+- Registered in `run_all_checks()`
+
+**Documentation**:
+
+- `env.example.json` — adds `stable_diffusion_endpoint: ""`
+- `ENV.md` — adds SD to recommended config table + available-models
+  block; explains the not-in-default-chain semantics
+
+### Tests
+
++9 new in `tests/test_image_providers.py`:
+
+- Protocol conformance for StableDiffusionProvider
+- Registry resolution (`for_model("sd-local")`)
+- `all_providers()` includes 4 providers now
+- Opt-in `is_configured()` semantics (3 tests: false by default,
+  honors env var, honors env.json key)
+- Generate path: ConnectionError → friendly RuntimeError naming the
+  env var
+- Generate path: HTTP 500 → RuntimeError with status code
+- Generate path: empty `images[]` → NoImageDataError
+- `_sd_default_dimensions` aspect-ratio mapping + multiple-of-8 rounding
+
+**Total**: 433 passing (was 424 — +9 new, no regressions).
+
+### What this enables
+
+Phase 4 (per-provider config namespacing) is the last open piece:
+with 4 providers registered, the `env.json` top-level is getting
+noisy (`minimax_api_key`, `gemini_api_key`, `openai_api_key`,
+`stable_diffusion_endpoint`). Phase 4 will namespace under a single
+`image_providers: { minimax: {...}, ... }` key while preserving
+backward compat with the flat keys.
+
+For users: D2 (English-language output) now has a fully self-hosted
+backend option that doesn't require any SaaS account — useful for
+air-gapped or privacy-sensitive deployments.
+
+### Spec
+
+`docs/superpowers/specs/2026-05-20-multi-provider-image-abstraction.md`
+— Phases 1-3 done; Phase 4 queued.
+
+---
+
 ## [1.6.21] - 2026-05-21 — Screenshot fixtures batch 2: reddit / zhihu / wechat (B3 Phase 2)
 
 ### Why

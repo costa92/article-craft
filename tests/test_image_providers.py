@@ -34,6 +34,7 @@ from image_providers import (  # noqa: E402
     MinimaxProvider,
     NoImageDataError,
     OpenAIImageProvider,
+    StableDiffusionProvider,
     all_providers,
     configured_providers,
     for_model,
@@ -58,6 +59,10 @@ def test_gemini_satisfies_protocol():
 
 def test_openai_satisfies_protocol():
     assert isinstance(OpenAIImageProvider(), ImageProvider)
+
+
+def test_stable_diffusion_satisfies_protocol():
+    assert isinstance(StableDiffusionProvider(), ImageProvider)
 
 
 def test_protocol_rejects_random_object():
@@ -91,6 +96,10 @@ def test_for_model_resolves_openai_gpt_image():
     assert for_model("openai-gpt-image-1").name == "openai"
 
 
+def test_for_model_resolves_sd_local():
+    assert for_model("sd-local").name == "stable-diffusion"
+
+
 def test_for_model_unknown_returns_none():
     assert for_model("openai-dalle-99") is None
     assert for_model("totally-made-up") is None
@@ -101,6 +110,7 @@ def test_all_providers_lists_all_built_ins():
     assert "minimax" in names
     assert "gemini" in names
     assert "openai" in names
+    assert "stable-diffusion" in names
 
 
 def test_register_and_unregister_round_trip():
@@ -166,6 +176,7 @@ def _clear_keys(monkeypatch):
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("STABLE_DIFFUSION_ENDPOINT", raising=False)
     monkeypatch.setattr(config, "_user_config", {})
 
 
@@ -224,6 +235,31 @@ def test_openai_is_configured_from_env_json(monkeypatch):
 def test_openai_not_configured_when_both_empty(monkeypatch):
     _clear_keys(monkeypatch)
     assert OpenAIImageProvider().is_configured() is False
+
+
+def test_stable_diffusion_not_configured_by_default(monkeypatch):
+    """Opt-in semantics: SD only shows in configured_providers() when
+    the user explicitly sets the endpoint. The localhost default fires
+    only inside generate() — keeps configured_providers() / doctor
+    display free of providers the user never opted into."""
+    _clear_keys(monkeypatch)
+    assert StableDiffusionProvider().is_configured() is False
+
+
+def test_stable_diffusion_honors_env_var_endpoint(monkeypatch):
+    _clear_keys(monkeypatch)
+    monkeypatch.setenv("STABLE_DIFFUSION_ENDPOINT", "http://gpu-server.local:7860")
+    assert StableDiffusionProvider().is_configured() is True
+
+
+def test_stable_diffusion_honors_env_json_endpoint(monkeypatch):
+    _clear_keys(monkeypatch)
+    monkeypatch.setattr(
+        config,
+        "_user_config",
+        {"stable_diffusion_endpoint": "http://gpu-server.local:7860"},
+    )
+    assert StableDiffusionProvider().is_configured() is True
 
 
 # --------------------------------------------------------------------- #
@@ -414,6 +450,97 @@ def test_openai_raises_no_image_data_when_response_empty(monkeypatch, tmp_path):
                 "prompt",
                 tmp_path / "out.png",
             )
+
+
+# --------------------------------------------------------------------- #
+# StableDiffusionProvider — generate path
+# --------------------------------------------------------------------- #
+
+
+def test_stable_diffusion_translates_connection_refused(monkeypatch, tmp_path):
+    """When the a1111 server isn't running, the requests ConnectionError
+    is wrapped into a RuntimeError with a hint."""
+    _clear_keys(monkeypatch)
+
+    class FakeConnectionError(Exception):
+        """Mimics requests.exceptions.ConnectionError shape."""
+
+    # Monkey-patch the requests namespace to inject a ConnectionError
+    # exception class we can raise from the mocked post.
+    with mock.patch.object(image_providers, "requests") as mock_requests:
+        mock_requests.exceptions.ConnectionError = FakeConnectionError
+        mock_requests.post.side_effect = FakeConnectionError("Connection refused")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            StableDiffusionProvider().generate(
+                "sd-local",
+                "prompt",
+                tmp_path / "out.png",
+            )
+
+    msg = str(exc_info.value)
+    assert "unreachable" in msg
+    assert "STABLE_DIFFUSION_ENDPOINT" in msg
+
+
+def test_stable_diffusion_raises_runtime_on_http_error(monkeypatch, tmp_path):
+    _clear_keys(monkeypatch)
+
+    class FakeResponse:
+        status_code = 500
+        text = '{"detail":"sampler not loaded"}'
+
+        def json(self):
+            return {"detail": "sampler not loaded"}
+
+    with mock.patch.object(image_providers, "requests") as mock_requests:
+        mock_requests.exceptions.ConnectionError = ConnectionError
+        mock_requests.post.return_value = FakeResponse()
+
+        with pytest.raises(RuntimeError) as exc_info:
+            StableDiffusionProvider().generate(
+                "sd-local",
+                "prompt",
+                tmp_path / "out.png",
+            )
+    assert "500" in str(exc_info.value)
+
+
+def test_stable_diffusion_raises_no_image_data_when_empty(monkeypatch, tmp_path):
+    _clear_keys(monkeypatch)
+
+    class FakeResponse:
+        status_code = 200
+        text = '{"images":[]}'
+
+        def json(self):
+            return {"images": []}
+
+    with mock.patch.object(image_providers, "requests") as mock_requests:
+        mock_requests.exceptions.ConnectionError = ConnectionError
+        mock_requests.post.return_value = FakeResponse()
+
+        with pytest.raises(NoImageDataError):
+            StableDiffusionProvider().generate(
+                "sd-local",
+                "prompt",
+                tmp_path / "out.png",
+            )
+
+
+def test_stable_diffusion_resolves_dimensions_from_aspect_ratio(monkeypatch, tmp_path):
+    """16:9 → 1280x720; 9:16 → 720x1280; 1:1 → 1024x1024."""
+    from image_providers import _sd_default_dimensions
+
+    assert _sd_default_dimensions("16:9", None, None) == (1280, 720)
+    assert _sd_default_dimensions("9:16", None, None) == (720, 1280)
+    assert _sd_default_dimensions("1:1", None, None) == (1024, 1024)
+    # Explicit width×height beats aspect_ratio
+    assert _sd_default_dimensions("16:9", 512, 512) == (512, 512)
+    # Rounding to multiple of 8 (a1111 requirement)
+    assert _sd_default_dimensions(None, 1027, 769) == (1024, 768)
+    # Unknown aspect_ratio → square default
+    assert _sd_default_dimensions("99:1", None, None) == (1024, 1024)
 
 
 def test_openai_strips_provider_prefix_in_request_body(monkeypatch, tmp_path):

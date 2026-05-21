@@ -533,12 +533,180 @@ class OpenAIImageProvider:
 
 
 # --------------------------------------------------------------------- #
+# Built-in: Self-hosted Stable Diffusion via Automatic1111 (B7 Phase 3)
+# --------------------------------------------------------------------- #
+
+
+# Default endpoint — the standard A1111 install. Configurable via
+# STABLE_DIFFUSION_ENDPOINT env var or `stable_diffusion_endpoint`
+# in env.json. This is the load-bearing difference between this
+# provider and the SaaS ones: SaaS keys identify *which provider*,
+# the endpoint identifies *which self-hosted instance*.
+_SD_DEFAULT_ENDPOINT = "http://127.0.0.1:7860"
+_SD_TXT2IMG_PATH = "/sdapi/v1/txt2img"
+
+
+def _sd_endpoint() -> str:
+    """Resolve the SD endpoint URL (env var > env.json > localhost default)."""
+    val = os.environ.get("STABLE_DIFFUSION_ENDPOINT", "").strip()
+    if val:
+        return val.rstrip("/")
+    val = str(_load_env_json().get("stable_diffusion_endpoint", "")).strip()
+    if val:
+        return val.rstrip("/")
+    return _SD_DEFAULT_ENDPOINT
+
+
+def _sd_default_dimensions(
+    aspect_ratio: Optional[str],
+    width: Optional[int],
+    height: Optional[int],
+) -> tuple[int, int]:
+    """Pick (width, height) for an SD request.
+
+    Explicit width×height beats aspect_ratio beats square default.
+    Round to a multiple of 8 (a1111 requirement).
+    """
+    if width and height:
+        return (int(width // 8) * 8, int(height // 8) * 8)
+
+    # Standard 1024-class targets per aspect ratio.
+    ar_map = {
+        "1:1": (1024, 1024),
+        "16:9": (1280, 720),
+        "9:16": (720, 1280),
+        "4:3": (1152, 864),
+        "3:4": (864, 1152),
+        "3:2": (1152, 768),
+        "2:3": (768, 1152),
+    }
+    if aspect_ratio and aspect_ratio in ar_map:
+        return ar_map[aspect_ratio]
+    return (1024, 1024)
+
+
+class StableDiffusionProvider:
+    """Self-hosted Stable Diffusion via the Automatic1111 (a1111) HTTP API.
+
+    POST <endpoint>/sdapi/v1/txt2img — the standard A1111 webui shipped
+    with sd-webui builds. Same shape across most a1111 forks
+    (Forge, sd.next, vlad).
+
+    No API key — local-network endpoint only. The endpoint URL is the
+    main config knob:
+
+        STABLE_DIFFUSION_ENDPOINT  env var (preferred for ephemeral use)
+        stable_diffusion_endpoint  env.json key (preferred for persistent config)
+        http://127.0.0.1:7860      default (the a1111 webui standard)
+
+    is_configured() returns True iff the endpoint URL parses as an http(s)
+    URL. We don't probe the endpoint at startup — that would slow down
+    every doctor / chain-filter call. Generation-time failure is the
+    feedback path.
+
+    Model name in MODEL_FALLBACK_CHAIN is ``sd-local`` — opaque to the
+    pipeline, no SDXL-vs-1.5 distinction at the chain level (the actual
+    checkpoint is selected by whatever model the a1111 server has loaded).
+    """
+
+    name = "stable-diffusion"
+
+    def model_names(self) -> List[str]:
+        return ["sd-local"]
+
+    def is_configured(self) -> bool:
+        # Opt-in semantics: True only when STABLE_DIFFUSION_ENDPOINT or
+        # stable_diffusion_endpoint is explicitly set. The localhost
+        # default fires only at generate() time so users running a1111
+        # locally still get zero-config inside the call path, but
+        # configured_providers() / doctor display don't surface SD to
+        # users who never heard of it.
+        if os.environ.get("STABLE_DIFFUSION_ENDPOINT", "").strip():
+            return True
+        if str(_load_env_json().get("stable_diffusion_endpoint", "")).strip():
+            return True
+        return False
+
+    def generate(
+        self,
+        model: str,
+        prompt: str,
+        output_path: Path,
+        *,
+        aspect_ratio: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        resolution: Optional[str] = None,
+        timeout: Optional[int] = None,
+    ) -> None:
+        if not _REQUESTS_AVAILABLE:
+            raise RuntimeError("requests not installed (stable-diffusion provider needs it)")
+        if not _PIL_AVAILABLE:
+            raise RuntimeError("Pillow not installed (stable-diffusion provider needs it)")
+
+        endpoint = _sd_endpoint()
+        url = endpoint + _SD_TXT2IMG_PATH
+
+        w, h = _sd_default_dimensions(aspect_ratio, width, height)
+
+        # Sensible defaults — a1111 has 30+ knobs, we only set the ones
+        # whose default would surprise (steps=25 instead of a1111's 20,
+        # cfg=7 instead of 7 — same — euler_a instead of whatever's first
+        # in the sampler dropdown).
+        payload = {
+            "prompt": prompt,
+            "negative_prompt": "",
+            "width": w,
+            "height": h,
+            "steps": 25,
+            "sampler_name": "Euler a",
+            "cfg_scale": 7,
+            "batch_size": 1,
+            "n_iter": 1,
+        }
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                timeout=timeout or _DEFAULT_REQUEST_TIMEOUT,
+            )
+        except requests.exceptions.ConnectionError as exc:
+            raise RuntimeError(
+                f"Stable Diffusion endpoint unreachable at {endpoint} "
+                f"(is the a1111 server running? set STABLE_DIFFUSION_ENDPOINT "
+                f"if it's on a different host/port): {exc}"
+            ) from exc
+
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Stable Diffusion API error {response.status_code}: "
+                f"{(response.text or '')[:200]}"
+            )
+
+        data = response.json() if response.text else {}
+        images = data.get("images") if isinstance(data, dict) else None
+        if not images or not isinstance(images, list):
+            raise NoImageDataError("No image data in Stable Diffusion response.")
+
+        # a1111 sometimes prefixes the base64 with `data:image/png;base64,`;
+        # sometimes not. Strip the prefix defensively.
+        b64 = images[0]
+        if isinstance(b64, str) and b64.startswith("data:"):
+            b64 = b64.split(",", 1)[1] if "," in b64 else b64
+
+        image = Image.open(BytesIO(base64.b64decode(b64)))
+        image.save(output_path)
+
+
+# --------------------------------------------------------------------- #
 # Built-in registrations
 # --------------------------------------------------------------------- #
 
 register(MinimaxProvider())
 register(GeminiProvider())
 register(OpenAIImageProvider())
+register(StableDiffusionProvider())
 
 
 __all__ = [
@@ -546,6 +714,7 @@ __all__ = [
     "MinimaxProvider",
     "GeminiProvider",
     "OpenAIImageProvider",
+    "StableDiffusionProvider",
     "NoImageDataError",
     "register",
     "unregister",

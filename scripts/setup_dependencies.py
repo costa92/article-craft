@@ -310,6 +310,42 @@ def check_minimax_api_key() -> dict[str, Any]:
     )
 
 
+def check_stable_diffusion_endpoint() -> dict[str, Any]:
+    """B7 Phase 3: `sd-local` model requires an a1111-compatible endpoint.
+
+    Always 'warn' when missing or pointing at the localhost default with
+    no a1111 server running — sd-local isn't in the default fallback
+    chain, so missing this never blocks the pipeline. The check exists
+    so users explicitly opting in (`image_model: "sd-local"`) get an
+    actionable message early instead of a Connection refused at
+    generation time.
+    """
+    env_val = os.getenv("STABLE_DIFFUSION_ENDPOINT", "").strip()
+    if env_val:
+        return _result(
+            "stable_diffusion_endpoint",
+            "pass",
+            f"STABLE_DIFFUSION_ENDPOINT set: {env_val}",
+        )
+
+    env_json = _load_env_json()
+    val = str(env_json.get("stable_diffusion_endpoint", "")).strip()
+    if val:
+        return _result(
+            "stable_diffusion_endpoint",
+            "pass",
+            f"stable_diffusion_endpoint in env.json: {val}",
+        )
+
+    return _result(
+        "stable_diffusion_endpoint",
+        "warn",
+        "stable_diffusion_endpoint not configured (optional; default localhost:7860)",
+        'Optional: only matters if you opt into image_model: "sd-local" '
+        "or run a self-hosted a1111 webui",
+    )
+
+
 def check_openai_api_key() -> dict[str, Any]:
     """B7 Phase 2: OPENAI_API_KEY is a peer image-provider key — optional.
 
@@ -587,6 +623,7 @@ def run_all_checks(include_network: bool = False) -> list[dict[str, Any]]:
         check_gemini_api_key(),
         check_minimax_api_key(),
         check_openai_api_key(),
+        check_stable_diffusion_endpoint(),
         check_playwright(),
         check_picgo(),
         check_ytdlp(),
