@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.7.4] - 2026-05-22 — Rule 4 tags 强制 (P2 补救 4 篇实测 100% 失败)
+
+### Why
+
+4 篇已发布文章在 Rule 4 上 **100% 失败**：
+
+| 文章 | tags 数量 | 中文 tags 数 |
+|---|---|---|
+| A1 LLM Wiki | 2 | 1 |
+| A2 金鱼脑 | 2 | 1 |
+| A3 NotebookLM | 2 | 1 |
+| A4 Hindsight | 2 | 1 |
+
+要求是 ≥3 tags + ≥3 中文 tag。全英文 tags（如 `[MCP, AI, DevOps]`）让看一看 NLP 算法无法匹配中文兴趣画像 → 长尾推荐池命中率拉低。
+
+根因：article-craft 默认生成的 frontmatter 模板只展示了 3 个 placeholder（tag1/tag2/tag3），LLM 跟写时倾向只填 2 个英文短词。
+
+### Added
+
+- **`skills/write/SKILL.md` Step 3a 升级**：frontmatter 模板从抽象 placeholder 改为带 Rule 4 硬约束 + 中文标签示例：
+  - 硬约束表格：≥3 tags + ≥3 中文 tag
+  - 禁用模式 ❌：`[MCP, AI, DevOps]` / `[Kubernetes, Docker]`
+  - 推荐模式 ✅：`[Kubernetes, Docker, 容器运维, AI工具, 实战教程]` 等 3 套示例
+
+- **`skills/publish/SKILL.md` Step 3.5.0 新增**：发 checklist 之前**自动跑** `review_selfcheck.py --rules 4 --json`：
+  - `passed` → checklist 中 tags 项标 ✅
+  - 不达标 → 标 ⚠️ + 给出基于 title / description 推断的补丁建议
+  - 兜底防护：即使 write 阶段漏了，publish 阶段最后自检一次
+
+- **`skills/publish/SKILL.md` Step 3.5 checklist 新增条目**：「frontmatter tags ≥ 3 个 且 ≥ 3 个中文 tag」作为"看一看 NLP 匹配项"独立分组
+
+- **`tests/test_rule_4_tags_enforcement.py`**：9 个 unit test 覆盖：
+  - write SKILL.md Step 3a 含 Rule 4 硬约束 + 推荐模式 + 禁用示例
+  - publish SKILL.md Step 3.5.0 调用 `--rules 4 --json` + 含 dogfood 引用
+  - 集成测试：2 tags 失败 / 3 中文 tags 通过 / 3 英文 tags 失败
+
+### Why publish 阶段也跑（不只 write）
+
+Defense in depth：write 阶段的约束依靠 LLM 自觉跟模板。如果 LLM 默认偏差再次发生（这本身就是 LLM 写作的常见模式），publish 阶段的自动自检是最后一道关卡。
+
+实操上：write 输出 2 tags → publish step 3.5.0 自动跑 Rule 4 → 检测失败 → 在 checklist 中标黄并给具体建议 → 作者发布前在 frontmatter 手工补 1-2 个中文 tag → 重新跑 publish → 通过。整个流程闭环。
+
+### Tests
+
+- 39 个 unit test 全部通过（含 v1.7.1 / v1.7.2 / v1.7.3 / v1.7.4 所有新规则）
+- 真实 fixture 验证：3 中文 tag → PASS；3 英文 tag → FAIL（Rule 4 行为符合设计）
+
+---
+
 ## [1.7.3] - 2026-05-22 — Style G + opinionated 加强模板（P1 补救 4 篇实测 100% 失败）
 
 ### Why

@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.7.3
+version: 1.7.4
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -205,9 +205,9 @@ title: "文章标题（15-25 字，含核心技术关键词和读者收益）"
 date: YYYY-MM-DD
 author: 作者名
 tags:
-  - tag1
-  - tag2
-  - tag3
+  - 中文标签1     # ≥3 个 tags 且 ≥3 个中文 tag (Rule 4 硬约束)
+  - 中文标签2     # 每个中文 tag 至少含 2 个中文字符
+  - 中文标签3     # 示例: [Kubernetes, Docker, 容器运维, AI工具, 实战教程]
 category: 分类名称
 status: draft
 aliases:
@@ -215,6 +215,27 @@ aliases:
 description: "120 字以内摘要，用作微信文章摘要。必须是有意义的概括，不能照搬标题。"
 ---
 ```
+
+**Rule 4 tags 硬约束（v1.7.4+，基于 4 篇实测全失败的补救）**：
+
+| 要求 | 检测 | 不达标后果 |
+|---|---|---|
+| `tags` 至少 3 个 | `len(tags) >= 3` | 看一看 NLP 标签匹配长尾推荐池命中率拉低 |
+| 中文 tag 至少 3 个 | 每个 tag 含 ≥ 2 个中文字符的数量 ≥ 3 | 公众号读者 99% 中文用户，全英文 tags（如 `[MCP, AI, DevOps]`）让 NLP 算法无法匹配中文兴趣画像 |
+
+**禁用模式**：
+
+- ❌ `tags: [MCP, AI, DevOps]` — 全英文，中文 tag = 0
+- ❌ `tags: [Kubernetes, Docker]` — 仅 2 个 tag
+- ❌ `tags: [AI, K8s, Go]` — 短到无 NLP 信号
+
+**推荐模式**（中英混合 + 长尾）：
+
+- ✅ `tags: [Kubernetes, Docker, 容器运维, AI工具, 实战教程]`
+- ✅ `tags: [LLM, Claude Code, AI写作, article-craft, 调研做法]`
+- ✅ `tags: [Python, uv, 包管理, 工具链迁移, 实战]`
+
+4 篇实测全部因 tags=2、中文 tag=1 命中 Rule 4 失败——这条硬约束在 write 阶段就要满足，不要等 publish 自检后回补。
 
 **Resolving `author`:** at write time, fill the field from
 `config.author_name()` — that resolves env.json `user_name` first, then

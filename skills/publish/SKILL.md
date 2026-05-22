@@ -1,6 +1,6 @@
 ---
 name: article-craft:publish
-version: 1.7.3
+version: 1.7.4
 description: "Place article in knowledge base and optimize for distribution. Use after review to save the article to its final location."
 allowed-tools:
   - Read
@@ -186,6 +186,27 @@ plus a `copied_sidecars` list. Behaviour notes:
 - **《微信公众号推荐运营规范》** developers.weixin.qq.com 官方知识库（A 级官方一手，2024-05-10）
 - **公众号文章推荐功能官方 Q&A 置顶帖** developers.weixin.qq.com（A 级官方一手）
 
+#### Step 3.5.0: 自动跑 Rule 4 tags 自检（v1.7.4+，先于 checklist）
+
+发 checklist 之前，**先自动跑一次 Rule 4 检测**（tags ≥3 + 中文 tags ≥3），如果不通过则在 checklist 中标黄警告并给出建议补丁。
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py \
+  /ABSOLUTE/PATH/article.md --rules 4 --json
+```
+
+解析返回 JSON：
+
+| 状态 | 处理 |
+|---|---|
+| `passed: true` | checklist 中 tags 项标 ✅ "已自动通过" |
+| `passed: false` + tags <3 | checklist 中 tags 项标 ⚠️，建议作者补 1-2 个中文 tag（基于 title + description 推断） |
+| `passed: false` + 中文 tag <3 | checklist 中 tags 项标 ⚠️，建议把英文 tag 改为中文（例如 `MCP` → `MCP工具`、`AI` → `AI工具` 这种带中文锚的形式） |
+
+**为什么提到 publish 阶段也跑**：4 篇实测发现 write 阶段生成的 frontmatter 默认只 2 个 tag，全英文。这是 LLM 的默认偏差。在 publish 阶段最后自检一次是最低成本的兜底防护——如果不达标，作者可以在发布前编辑 frontmatter 补足。
+
+依据：4 篇实测全部命中 Rule 4 失败（tags=2，中文 tag=1）。
+
 publish 完成后、用户实际发布到公众号**前**，必须打印这条 checklist：
 
 ```
@@ -216,6 +237,15 @@ publish 完成后、用户实际发布到公众号**前**，必须打印这条 c
 
   [ ] 单发未分组（不要用「分组群发」功能）
       依据：《推荐运营规范》"分组群发的内容将不会被推荐"
+
+【看一看 NLP 匹配项】tags 不达标会拉低长尾推荐池命中
+
+  [ ] frontmatter tags ≥ 3 个 且 ≥ 3 个中文 tag
+      （Rule 4 自动检查 — Step 3.5.0 已跑过, 见上方警告/建议）
+      依据：4 篇实测全部因 tags=2 / 中文 tag=1 命中 Rule 4 失败
+      建议格式：tags: [Kubernetes, Docker, 容器运维, AI工具, 实战教程]
+      ⚠ 全英文 tags（如 [MCP, AI, DevOps]）让看一看 NLP 算法
+         无法匹配中文兴趣画像 — 必须改成含中文锚的形式
 
 发布后 24h-7 天，去后台「内容分析 → 单篇群发」查看：
   • 推荐曝光 / 推荐阅读 → 是否进了推荐池
