@@ -5,13 +5,17 @@
 > re-state rule bodies or re-type grep patterns — they read this file and
 > run the patterns from it.
 >
-> **Active rule count: 22.** `scripts/review_selfcheck.py` implements
-> `check_rule_1` through `check_rule_22` sequentially (see the dispatcher
+> **Active rule count: 23.** `scripts/review_selfcheck.py` implements
+> `check_rule_1` through `check_rule_23` sequentially (see the dispatcher
 > list at the bottom of that file). Reference entries below cover all
-> 22 plus the `7b` degradation-aware variant of Rule 7.
+> 23 plus the `7b` degradation-aware variant of Rule 7. Rule 21 remains
+> a reserved slot (URL fact-check is now handled by `verify_claims.py`).
 >
-> Rules 18-22 added in v1.7+ based on 2026-05-22 official WeChat research
-> (`.research/official-sources-verification.md` — A/B-tier evidence only).
+> Rules 18-22 added in v1.7+ based on 2026-05-22 first-round official
+> research (`.research/official-sources-verification.md`).
+> Rule 23 added in v1.7.1+ based on 2026-05-22 second-round research
+> (`.research/wechat-distribution-mechanism-2026.md`) — `developers.weixin.qq.com`
+> 《微信公众号推荐运营规范》(A 级) + 微信珊瑚安全 2025-08-31 公告 (B 级).
 
 ## Who enforces what
 
@@ -40,6 +44,7 @@
 | **20 Paragraph dedup**  |   |   | ✓ |
 | **21** *(reserved for future use — formerly URL fact-check, now handled by `verify_claims.py`)* |   |   |   |
 | **22 Personal voice density** |   |   | ✓ (soft warning) |
+| **23 Anti-recommendation blacklist** |   |   | ✓ (error: AIGC reverse decl; warning: marketing headline) |
 
 ## Rule schema
 
@@ -956,6 +961,58 @@ LLM 生成长文时偶尔会发生**上下文跳跃事故**：同一节内容（
 ### Why
 
 调研 §7.4 把"主观判断密度"列为 AI 味识别核心特征——但调研没给具体阈值。4 篇实测显示个人经历密度大体足够（"我"出现 5-33 次/篇），但主观判断（"我推荐/不推荐"）4 篇中 3 篇为 0。这条 Rule 是触发作者对"我自己的判断"的觉察，不是硬约束。
+
+---
+
+## Rule 23: 反推荐特征词黑名单（v1.7.1+，A/B 级官方依据）
+
+**Severity**: 分两级
+- **ERROR**（阻断）：AIGC 反向声明
+- **WARNING**（不阻断）：标题营销词头部
+
+**Auto-fix**: no
+**Escalation**: review Phase 1 ERROR 阻断 publish；WARNING 仅警告
+
+### 检测项 ① AIGC 反向声明（ERROR）
+
+文中出现以下表述触发 error：
+
+| 表述 | 例子 |
+|---|---|
+| 直接否认 AI | "非 AI 生成"、"非 AI 创作"、"非机器生成" |
+| 完全人工声明 | "完全人工撰写"、"纯手写"、"纯手工创作" |
+| 强否定 | "本文完全由人工"、"100% 人工原创" |
+| 弱化否认 | "没有借助 AI"、"未使用 AI 辅助"、"无 AI 参与" |
+
+**为什么阻断**：违反微信珊瑚安全 2025-08-31 公告"不得删除、篡改、伪造或隐匿平台添加的 AI 标识"。article-craft 生成的内容客观上是 AI 辅助，反向声明 = 伪造非 AI 标识。
+
+### 检测项 ② 标题营销词头部（WARNING）
+
+标题（frontmatter `title` 或正文首个 `#`）匹配以下头部触发 warning：
+
+`震惊` / `重磅` / `紧急` / `速看` / `必看` / `爆` / `独家解密` / `内部消息` / `不看后悔` / `错过.*?(后悔|遗憾)` / `(最|超|秒).*?震撼`
+
+**为什么 warning 而非 error**：依据《微信公众号推荐运营规范》"通过捏造或扭曲事实的内容以吸引眼球博取流量"将不被推荐。匹配命中**可能**导致不被推荐，但并非确定（个例可能合理使用，如"重磅功能更新"的真实场景），所以软警告即可。
+
+### 依据
+
+- **微信珊瑚安全 2025-08-31**《关于进一步规范人工智能生成合成内容标识的公告》（B 级，多家媒体引用原文）
+- **《微信公众号推荐运营规范》** developers.weixin.qq.com/community/develop/doc/000cac23600b40d219814a85467809 （A 级官方一手）
+- 完整调研：`.research/wechat-distribution-mechanism-2026.md` 命题 21 / 22
+
+### 触发后修复
+
+**反向声明**：
+1. 删除该句反向声明
+2. 检查 Rule 18 是否已通过（应该已经有 AIGC 显式声明）
+3. 若文章是非 AI 创作（手写历史文章），添加 frontmatter `ai_assisted: false` 跳过 Rule 18，并删除任何 article-craft 自动注入的痕迹
+
+**营销标题**：
+1. 改为知识传递钩子（如"我用半年踩出的 X：3 个反直觉决定"）
+2. 改为经验分享钩子（如"3 个月跑通 X，这是我最后的方案"）
+3. 改为个人观点钩子（如"为什么我不再用 X：3 个真实场景"）
+
+参考 `skills/write/style-guide.md` 的 Title Hook Formulas 章节。
 
 ---
 

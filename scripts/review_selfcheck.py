@@ -59,6 +59,46 @@ FORBIDDEN_CLOSINGS = [
     r'一键三连',
 ]
 
+# Rule 23: 反推荐特征词黑名单（v1.7.1+，A/B 级官方依据）
+#
+# error（阻断）：违反珊瑚安全公告"不得删除/篡改/伪造平台添加的 AI 标识"——
+#   反向声明会被平台识别为伪造非 AI 标识，触发流量限制。
+#
+# warning（不阻断）：违反《微信公众号推荐运营规范》"通过捏造扭曲事实
+#   吸引眼球" / "仅以营销、广告为目的，缺乏实际价值的宣传"——
+#   命中后文章可能不被推荐。
+#
+# 依据：
+#   - 微信珊瑚安全 2025-08-31《关于进一步规范人工智能生成合成内容标识的公告》
+#   - developers.weixin.qq.com《微信公众号推荐运营规范》(2024-05-10)
+#
+AIGC_REVERSE_DECLARATIONS = [
+    # 直接反向声明（违反珊瑚安全公告"伪造标识"）
+    r'非\s*AI\s*生成', r'非\s*AI\s*创作',
+    r'完全\s*人工\s*(撰写|创作|生成|编写)',
+    r'纯\s*手写', r'纯\s*手工\s*(撰写|创作)',
+    r'(本文|全文)\s*(完全|纯|皆|均).*?(由\s*人工|非\s*机器|非\s*AI)',
+    r'非\s*机器\s*生成',
+    r'人工\s*100%', r'100%\s*人工\s*(撰写|创作|原创)',
+    # 弱化版（"无 AI 参与" 措辞）
+    r'(没有|无|未).*?(借助|使用|依赖)\s*AI',
+    r'(没有|无|未).*?AI\s*(辅助|协助|参与)',
+]
+
+# 营销标题党词头（《推荐运营规范》"捏造扭曲事实吸引眼球"软命中）
+MARKETING_HEADLINE_HEADS = [
+    r'^震惊[,，:：!！]?',
+    r'^重磅[,，:：!！]?',
+    r'^紧急[,，:：!！]?',
+    r'^速看[,，:：!！]?',
+    r'^必看[,，:：!！]?',
+    r'^爆[,，:：!！]?',
+    r'^独家解密[,，:：!！]?',
+    r'^内部消息[,，:：!！]?',
+    r'^不看后悔', r'^错过.*?(后悔|遗憾)',
+    r'.*?(最|超|秒).*?震撼',
+]
+
 # Rule 18: AIGC 显式标识合规（GB 45438-2025 + cac.gov.cn 标识办法）
 # 任一匹配即认为有 AIGC 标识
 AIGC_LABEL_PATTERNS = [
@@ -418,8 +458,18 @@ def check_rule_3(content: str, lines: List[str]) -> CheckResult:
     last_text = ' '.join(last_lines)
     violations = []
 
-    # Check 1: 禁用空话/伸手党语气
+    # 提前检测 Style H（爆料自媒体）— Style H 有专属的"⭐点赞、转发、在看一键三连⭐"放行，
+    # 这是 references/writing-styles.md § Style H "公众号三板斧收尾" 定义的合法行为
+    fm = parse_frontmatter(content)
+    style_raw = fm.get("writing_style", "") or ""
+    style_key = style_raw.strip()[:1].upper() if style_raw else ""
+    is_style_h = (style_key == "H")
+
+    # Check 1: 禁用空话/伸手党语气（Style H 例外覆盖整个 FORBIDDEN_CLOSINGS 检查）
     for pattern in FORBIDDEN_CLOSINGS:
+        # Style H 专属放行：'一键三连' 是 Style H 三板斧收尾的合法句式
+        if is_style_h and pattern == r'一键三连':
+            continue
         if re.search(pattern, last_text):
             violations.append(Violation(
                 line=len(lines), text=last_text[:60],
@@ -437,13 +487,10 @@ def check_rule_3(content: str, lines: List[str]) -> CheckResult:
             break
 
     if not cta_found:
-        # 检查是否是 Style H（爆料自媒体）— Style H 有专属的"一键三连"放行
-        fm = parse_frontmatter(content)
-        style_raw = fm.get("writing_style", "") or ""
-        style_key = style_raw.strip()[:1].upper() if style_raw else ""
-        is_style_h = (style_key == "H") or "一键三连" in last_text
+        # Style H 的"一键三连"也算作有 CTA（一键三连=点♡+转发+在看的复合动作）
+        has_implicit_cta = is_style_h and "一键三连" in last_text
 
-        if not is_style_h:
+        if not has_implicit_cta:
             violations.append(Violation(
                 line=len(lines),
                 text="文末未检测到 CTA 引导动作",
@@ -1515,6 +1562,80 @@ def check_rule_22(content: str, lines: List[str]) -> CheckResult:
     )
 
 
+def check_rule_23(content: str, lines: List[str]) -> CheckResult:
+    """Rule 23: 反推荐特征词黑名单（v1.7.1+，A/B 级官方依据）.
+
+    - error: AIGC 反向声明（违反珊瑚安全公告"不得伪造标识"）
+    - warning: 标题营销词头部（违反《推荐运营规范》反推荐特征）
+
+    依据：
+    - 微信珊瑚安全 2025-08-31 公告（B 级官方间接）
+    - 《微信公众号推荐运营规范》developers.weixin.qq.com（A 级官方一手）
+    """
+    body = strip_code_blocks(get_body(content))
+    fm = parse_frontmatter(content)
+
+    violations: List[Violation] = []
+
+    # ① AIGC 反向声明检测（error，阻断）
+    for line_no, line in enumerate(lines, 1):
+        for pattern in AIGC_REVERSE_DECLARATIONS:
+            m = re.search(pattern, line)
+            if m:
+                violations.append(Violation(
+                    line=line_no,
+                    text=f"反向声明: {m.group(0)[:30]}",
+                    suggestion=(
+                        "删除该反向声明。违反微信珊瑚安全公告"
+                        "「不得删除/篡改/伪造平台标识」——"
+                        "article-craft 生成的内容应保留 AIGC 显式标识（Rule 18）"
+                    ),
+                    severity="error",
+                ))
+
+    # ② 标题营销词检测（warning，不阻断）
+    # 标题在 frontmatter title 字段，或 body 第一个 # 行
+    title = fm.get("title", "")
+    if not title:
+        for line in lines:
+            if line.startswith("# ") and not line.startswith("## "):
+                title = line[2:].strip()
+                break
+
+    if title:
+        for pattern in MARKETING_HEADLINE_HEADS:
+            m = re.search(pattern, title)
+            if m:
+                violations.append(Violation(
+                    line=0,
+                    text=f"标题营销词头部: {m.group(0)[:20]}",
+                    suggestion=(
+                        f"标题《{title[:30]}...》命中营销词头部，违反"
+                        "《微信公众号推荐运营规范》「捏造扭曲事实吸引眼球」"
+                        "——可能不被平台推荐。"
+                        "建议改为知识传递/经验分享/个人观点钩子。"
+                    ),
+                    severity="warning",
+                ))
+                break  # 同一标题只报一次
+
+    # 通过条件：无 error 级 violation（warning 不影响 passed）
+    has_error = any(v.severity == "error" for v in violations)
+    error_count = sum(1 for v in violations if v.severity == "error")
+    warning_count = sum(1 for v in violations if v.severity == "warning")
+
+    return CheckResult(
+        rule_id=23, rule_name="反推荐特征词黑名单",
+        passed=not has_error,
+        violations=violations,
+        details=(
+            f"反向声明 {error_count} / 营销词 {warning_count}"
+            if violations
+            else "无反向声明，标题无营销词头部"
+        ),
+    )
+
+
 # ─── Runner ──────────────────────────────────────────────────────
 
 ALL_CHECKS = [
@@ -1525,6 +1646,8 @@ ALL_CHECKS = [
     check_rule_17,
     # v1.7+ WeChat-targeted rules (A/B-tier official-research backed)
     check_rule_18, check_rule_19, check_rule_20, check_rule_22,
+    # v1.7.1+ 反推荐特征词黑名单（推荐运营规范 + 珊瑚安全公告）
+    check_rule_23,
 ]
 
 
@@ -1622,6 +1745,7 @@ _RULE_DISPATCH = {
     17: check_rule_17,
     18: check_rule_18, 19: check_rule_19, 20: check_rule_20,
     22: check_rule_22,  # Rule 21 reserved
+    23: check_rule_23,
 }
 
 # Pre-save GATE for the write skill: blocks save when any of these fail.
