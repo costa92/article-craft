@@ -53,8 +53,38 @@ RED_FLAG_PHRASES = [
 
 FORBIDDEN_CLOSINGS = [
     r'希望本文对你有帮助', r'如果有问题欢迎留言', r'欢迎在评论区分享',
-    r'点个在看', r'转发给朋友', r'你的点赞是我最大的动力',
-    r'如果这篇文章对你有帮助',
+    r'你的点赞是我最大的动力', r'如果这篇文章对你有帮助',
+    # 一键三连（4 动作堆砌通用模板，读者会忽略；Style H 文末"⭐点赞、转发、在看一键三连⭐"
+    # 通过 Style H 专用规则放行，这里只拦其他风格的滥用）
+    r'一键三连',
+]
+
+# Rule 18: AIGC 显式标识合规（GB 45438-2025 + cac.gov.cn 标识办法）
+# 任一匹配即认为有 AIGC 标识
+AIGC_LABEL_PATTERNS = [
+    r'本文.*?AI.*?(辅助|协助|帮助).*?(起稿|创作|生成|写作|改写)',
+    r'AI\s*辅助.*?(起稿|创作|改写)',
+    r'本文由\s*AI\s*(辅助|协助)',
+    r'本文使用\s*AI.*?(工具|辅助).*?(写作|创作)',
+    r'AI[-\s]*(辅助|协助|generated|assisted)',
+]
+
+# Rule 3 修订版（v1.7+）：CTA 引导动作 patterns
+# 文末必须含至少 1 个具体引导动作
+CTA_ACTION_PATTERNS = [
+    # 点♡/在看类
+    r'点(个|一下|了)?[「\"\']?[♡心]',
+    r'(点|加|来个)\s*在看',
+    r'(觉得|对你).*(有用|有帮助|有启发).*(点|推荐)',
+    # 转发类
+    r'(转发|分享|发给|转给).*?(朋友|同事|群|团队)',
+    r'(分享|转发)\s*(到|给|给你的)',
+    # 收藏类
+    r'(建议|先).*?收藏',
+    r'收藏.*?(慢慢|再看|备查|按图索骥)',
+    # 留言类
+    r'(评论区|留言).*?(聊聊|说|告诉|分享|讨论)',
+    r'(你|大家).*?(踩过|遇到|怎么看).*?[?？]',
 ]
 
 TRANSITION_WORDS = r'^(此外|另外|同时|值得注意的是|除此之外)'
@@ -368,40 +398,90 @@ def check_rule_2(content: str, lines: List[str]) -> CheckResult:
 
 
 def check_rule_3(content: str, lines: List[str]) -> CheckResult:
-    """Closing Paragraph: must not use forbidden closings."""
+    """Closing Paragraph (v1.7+ 修订版).
+
+    Two checks:
+    1. 禁用空话/伸手党语气（FORBIDDEN_CLOSINGS）
+    2. **必须含至少 1 个具体 CTA 引导动作**（CTA_ACTION_PATTERNS）— 4 篇实测都缺。
+    """
     body = get_body(content)
-    # Find last non-empty, non-callout paragraph
+    # Find last ~10 non-empty lines (含 callout，因为 CTA 可能在 > 引用块里)
     body_lines = body.strip().split('\n')
     last_lines = []
     for line in reversed(body_lines):
         stripped = line.strip()
-        if stripped and not stripped.startswith('>') and not stripped.startswith('---'):
+        if stripped and not stripped.startswith('---'):
             last_lines.insert(0, stripped)
-            if len(last_lines) >= 3:
+            if len(last_lines) >= 10:
                 break
 
     last_text = ' '.join(last_lines)
     violations = []
+
+    # Check 1: 禁用空话/伸手党语气
     for pattern in FORBIDDEN_CLOSINGS:
         if re.search(pattern, last_text):
             violations.append(Violation(
                 line=len(lines), text=last_text[:60],
-                suggestion=f"替换禁用结尾「{pattern}」为具体的下一步操作"
+                suggestion=f"删掉「{pattern}」这类空话/伸手党语气，替换为具体 CTA（见 references/writing-styles.md § Closing Templates）"
+            ))
+
+    # Check 2: 必须含 CTA 引导动作（v1.7+ 修订版核心）
+    cta_found = False
+    cta_match = ""
+    for pattern in CTA_ACTION_PATTERNS:
+        m = re.search(pattern, last_text)
+        if m:
+            cta_found = True
+            cta_match = m.group()
+            break
+
+    if not cta_found:
+        # 检查是否是 Style H（爆料自媒体）— Style H 有专属的"一键三连"放行
+        fm = parse_frontmatter(content)
+        style_raw = fm.get("writing_style", "") or ""
+        style_key = style_raw.strip()[:1].upper() if style_raw else ""
+        is_style_h = (style_key == "H") or "一键三连" in last_text
+
+        if not is_style_h:
+            violations.append(Violation(
+                line=len(lines),
+                text="文末未检测到 CTA 引导动作",
+                suggestion=(
+                    "文末必须主推 1-2 个具体引导动作（按 wechat_action 选模板）：\n"
+                    "  - heart: 「觉得有用点个♡让更多同行看到」\n"
+                    "  - share: 「把这篇转给那个还在 X 的朋友」\n"
+                    "  - collect: 「先收藏再看，里面 N 个工具慢慢试」\n"
+                    "  - comment: 「你踩过哪些坑？评论区聊聊」\n"
+                    "  详见 references/writing-styles.md § Closing Templates"
+                ),
+                severity="error",
             ))
 
     return CheckResult(
-        rule_id=3, rule_name="结尾禁用词",
+        rule_id=3, rule_name="结尾 CTA + 禁用词",
         passed=len(violations) == 0, violations=violations,
-        details="结尾符合要求" if not violations else f"发现 {len(violations)} 个禁用结尾"
+        details=(
+            f"CTA: {cta_match[:30]}" if cta_found and not violations
+            else f"{len(violations)} 处问题"
+        ),
     )
 
 
 def check_rule_4(content: str, lines: List[str]) -> CheckResult:
-    """Description Field: frontmatter must have description ≤120 chars."""
+    """Description Field + ≥3 中文 tags (v1.7+ 扩展).
+
+    Two checks:
+    1. frontmatter description ≤120 chars
+    2. tags ≥3 个 且 ≥3 个中文标签（看一看 NLP 标签匹配中文读者）
+    """
     fm = parse_frontmatter(content)
     desc = fm.get('description', '')
+    tags = fm.get('tags', []) or []
 
     violations = []
+
+    # Check 1: description
     if not desc:
         violations.append(Violation(
             line=1, text="frontmatter", suggestion="添加 description 字段（≤120 中文字符）"
@@ -412,10 +492,38 @@ def check_rule_4(content: str, lines: List[str]) -> CheckResult:
             suggestion=f"Description 有 {count_chinese(desc)} 字，需缩减到 120 以内"
         ))
 
+    # Check 2: tags（v1.7+ 扩展）
+    if not isinstance(tags, list):
+        violations.append(Violation(
+            line=1, text=f"tags is not a list (got {type(tags).__name__})",
+            suggestion="tags 必须是列表格式 tags: [tag1, tag2, tag3]"
+        ))
+        tags = []
+
+    tag_strs = [str(t) for t in tags if t]
+    if len(tag_strs) < 3:
+        violations.append(Violation(
+            line=1, text=f"tags 仅 {len(tag_strs)} 个",
+            suggestion="tags ≥3 个（看一看 NLP 标签匹配需要足够标签覆盖）"
+        ))
+
+    chinese_tag_count = sum(1 for t in tag_strs if count_chinese(t) >= 2)
+    if chinese_tag_count < 3 and len(tag_strs) >= 3:
+        violations.append(Violation(
+            line=1, text=f"中文标签 {chinese_tag_count} 个（共 {len(tag_strs)} 个标签）",
+            suggestion=(
+                "≥3 个中文标签（公众号读者 99% 中文用户，全英文 tags 如 [MCP, AI, DevOps] "
+                "会让看一看 NLP 算法无法匹配中文兴趣画像）。"
+                "示例：tags: [Kubernetes, Docker, 容器运维, AI工具, 实战教程]"
+            )
+        ))
+
+    desc_msg = f"{count_chinese(desc)} 字" if desc else "缺失"
+    tag_msg = f"{len(tag_strs)} 标签 / {chinese_tag_count} 中文"
     return CheckResult(
-        rule_id=4, rule_name="Description 字段",
+        rule_id=4, rule_name="Description + 中文标签",
         passed=len(violations) == 0, violations=violations,
-        details=f"{count_chinese(desc)} 字" if desc else "缺失"
+        details=f"desc={desc_msg}, tags={tag_msg}"
     )
 
 
@@ -1136,6 +1244,277 @@ def check_rule_17(content: str, lines: List[str]) -> CheckResult:
     )
 
 
+# ─── Rules 18-22 (v1.7+, WeChat-targeted, based on A/B-tier official research) ─
+
+def check_rule_18(content: str, lines: List[str]) -> CheckResult:
+    """Rule 18: AIGC 显式标识（A 级合规，GB 45438-2025 强制国标 2025-09-01 生效）.
+
+    文末必须含 AI 辅助创作声明的小字脚注。任一 AIGC_LABEL_PATTERNS 匹配即通过。
+    """
+    body = get_body(content)
+    found = False
+    matched_text = ""
+    for pattern in AIGC_LABEL_PATTERNS:
+        m = re.search(pattern, body, re.IGNORECASE)
+        if m:
+            found = True
+            matched_text = m.group()
+            break
+
+    violations = []
+    if not found:
+        violations.append(Violation(
+            line=0,
+            text="未检测到 AIGC 显式标识",
+            suggestion=(
+                "文末追加（在 --- 分割线之下）：\n"
+                "  > 本文 AI 辅助起稿 + 人工核实改写。\n"
+                "依据：GB 45438-2025 强制国标 + 网信办《标识办法》(2025-09-01 已生效)\n"
+                "publish 前另需在公众号后台勾选「创作来源 → 内容由 AI 生成」(4 选 1，发布后不可改)"
+            ),
+            severity="error",
+        ))
+
+    return CheckResult(
+        rule_id=18, rule_name="AIGC 显式标识",
+        passed=found, violations=violations,
+        details=(
+            f"已含：{matched_text[:40]}" if found
+            else "缺失（违反 GB 45438-2025 + 网信办标识办法）"
+        ),
+    )
+
+
+# Rule 19 patterns
+TITLE_HOOK_DIGIT = re.compile(r'\d')
+TITLE_HOOK_CONTRAST = re.compile(r'(为什么|不再|颠覆|反|偏偏|居然|竟然|没想到|意外|更|比|超过|输给|败给)')
+TITLE_HOOK_PAIN = re.compile(r'(坑|陷阱|翻车|崩|宕|暴雷|烧钱|裁员|跑路|被.*?坑|注意|警告|避坑)')
+TITLE_HOOK_STORY = re.compile(r'(我|后来|被|发现|踩|从|到|这次|那次|当年|去年|上周)')
+TITLE_HOOK_SUSPENSE = re.compile(r'(为什么|怎么|如何|是不是|到底|究竟)')
+
+TITLE_BLACKLIST = re.compile(r'(震惊|重磅|解密|厉害了|官方通知|紧急|必看|逆天|疯狂|爆炸|爆了)')
+
+
+def _extract_title(content: str) -> str:
+    fm = parse_frontmatter(content)
+    title = fm.get('title', '')
+    if not title:
+        # Fall back to first H1
+        m = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
+        title = m.group(1).strip() if m else ''
+    return title.strip().strip('"\'').strip()
+
+
+def check_rule_19(content: str, lines: List[str]) -> CheckResult:
+    """Rule 19: 标题钩子规则 + 长度约束.
+
+    - 长度 ≤ 28 字（建议）/ ≤ 64 字（硬上限）
+    - 钩子类型至少命中 1（数字 / 反差 / 痛点 / 故事 / 悬念）
+    - 不命中黑名单词（震惊/重磅/解密 等）
+    """
+    title = _extract_title(content)
+    violations = []
+
+    if not title:
+        return CheckResult(
+            rule_id=19, rule_name="标题钩子 + 长度",
+            passed=True, skipped=True, skip_reason="未检测到标题",
+            details="无标题",
+        )
+
+    # 长度（中文字符 + 英文字符各按 1 计）
+    title_len = len(title)
+    if title_len > 64:
+        violations.append(Violation(
+            line=1, text=title[:60],
+            suggestion=f"标题 {title_len} 字超 64 字硬上限，必须缩短",
+            severity="error",
+        ))
+    elif title_len > 28:
+        violations.append(Violation(
+            line=1, text=title[:60],
+            suggestion=f"标题 {title_len} 字超 28 字推荐值（信息流卡片可能折叠），建议缩短",
+            severity="warning",
+        ))
+
+    # 钩子类型
+    hooks_hit = []
+    if TITLE_HOOK_DIGIT.search(title):
+        hooks_hit.append("数字")
+    if TITLE_HOOK_CONTRAST.search(title):
+        hooks_hit.append("反差")
+    if TITLE_HOOK_PAIN.search(title):
+        hooks_hit.append("痛点")
+    if TITLE_HOOK_STORY.search(title):
+        hooks_hit.append("故事")
+    if TITLE_HOOK_SUSPENSE.search(title):
+        hooks_hit.append("悬念")
+
+    if not hooks_hit:
+        violations.append(Violation(
+            line=1, text=title[:60],
+            suggestion=(
+                "标题 0 钩子类型命中。公众号高 CTR 标题至少含 1：\n"
+                "  - 数字（5 分钟 / 10 个 / 100 万次）\n"
+                "  - 反差（为什么我不再 / Rust 比 Go 慢？）\n"
+                "  - 痛点（暴雷 / 翻车 / 坑）\n"
+                "  - 故事（我 / 被裁员后 / 去年踩过）\n"
+                "  - 悬念（为什么 / 怎么 / 到底）"
+            ),
+            severity="warning",
+        ))
+
+    # 黑名单词
+    bl_match = TITLE_BLACKLIST.search(title)
+    if bl_match:
+        violations.append(Violation(
+            line=1, text=title[:60],
+            suggestion=f"标题含黑名单词「{bl_match.group()}」可能被算法判定为标题党降权，建议替换",
+            severity="warning",
+        ))
+
+    passed = not any(v.severity == "error" for v in violations)
+    return CheckResult(
+        rule_id=19, rule_name="标题钩子 + 长度",
+        passed=passed, violations=violations,
+        details=(
+            f"len={title_len}, hooks=[{','.join(hooks_hit) or '无'}]"
+        ),
+    )
+
+
+def _extract_h2_blocks(body: str) -> List[Tuple[str, str]]:
+    """Extract (heading, body_until_next_h2) for each H2."""
+    out = []
+    sections = re.split(r'^(##\s+.+)$', body, flags=re.MULTILINE)
+    # sections looks like ["intro", "## H2 title 1", "body 1", "## H2 title 2", "body 2", ...]
+    i = 1
+    while i < len(sections):
+        heading = sections[i].strip()
+        block = sections[i + 1] if i + 1 < len(sections) else ""
+        # Skip if also matches H3+
+        if heading.startswith('## ') and not heading.startswith('### '):
+            out.append((heading, block.strip()))
+        i += 2
+    return out
+
+
+def _similarity(a: str, b: str) -> float:
+    if not a or not b:
+        return 0.0
+    import difflib
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def check_rule_20(content: str, lines: List[str]) -> CheckResult:
+    """Rule 20: 段落相似度去重 + 模板雷同检测.
+
+    检测两两 H2 段是否过度相似（标题 ≥ 0.85 OR 首句 ≥ 0.85 AND 内容 ≥ 0.7）。
+    防止 LLM 上下文跳跃事故（如「引用是怎么工作的」重复两次）。
+    """
+    body = get_body(content)
+    h2_blocks = _extract_h2_blocks(body)
+
+    violations = []
+    n = len(h2_blocks)
+    for i in range(n):
+        for j in range(i + 1, n):
+            h_i, b_i = h2_blocks[i]
+            h_j, b_j = h2_blocks[j]
+
+            # 去掉 H2 标记后比较
+            t_i = re.sub(r'^##\s+', '', h_i).strip()
+            t_j = re.sub(r'^##\s+', '', h_j).strip()
+
+            title_sim = _similarity(t_i, t_j)
+
+            # 首段（首 80 字符）
+            first_i = b_i[:200].strip()[:80]
+            first_j = b_j[:200].strip()[:80]
+            first_sim = _similarity(first_i, first_j)
+
+            # 内容（整段）
+            content_sim = _similarity(b_i[:500], b_j[:500])
+
+            if title_sim >= 0.85:
+                violations.append(Violation(
+                    line=0,
+                    text=f"H2「{t_i}」与「{t_j}」标题相似度 {title_sim:.2f}",
+                    suggestion=f"两节标题过度相似（≥0.85），可能是 LLM 重复生成事故，请合并或区分",
+                    severity="error",
+                ))
+            elif first_sim >= 0.85 and content_sim >= 0.7:
+                violations.append(Violation(
+                    line=0,
+                    text=f"H2「{t_i}」vs「{t_j}」首段相似 {first_sim:.2f} + 内容 {content_sim:.2f}",
+                    suggestion=f"两节内容高度重复（LLM 上下文跳跃事故），请合并",
+                    severity="error",
+                ))
+
+    return CheckResult(
+        rule_id=20, rule_name="段落相似度去重",
+        passed=len(violations) == 0, violations=violations,
+        details=f"扫描 {n} 个 H2 段，{len(violations)} 处重复" if n > 1 else f"{n} 个 H2，无重复",
+    )
+
+
+# Rule 22 patterns
+PERSONAL_EXPERIENCE_REGEX = re.compile(
+    r'(我(在|曾|的|会|用|选|踩|测|跑|试|觉得|以为|之前|后来|当时|读|查|改|写|删|跑通|没跑通|发觉|意识到|意外|没料到|想|担心|赌|碰|自己))'
+    r'|去年|上周|这次|那次|当年|前几天|前两天'
+    r'|试过|踩过|踩坑|本机实测|实测下来'
+)
+SUBJECTIVE_JUDGMENT_REGEX = re.compile(
+    r'(我推荐|我不推荐|我觉得|我建议|我赌|我选|我会用|我不用|我反对|我支持|我喜欢|我不喜欢|个人觉得|个人推荐|个人不推荐)'
+)
+SPECIFIC_NUMBER_REGEX = re.compile(
+    r'\b\d+(\.\d+)?\s*(分钟|秒|小时|天|周|月|年|次|个|条|GB|MB|KB|ms|s|%|倍|快|慢|节省|减少|提升)\b'
+)
+
+
+def check_rule_22(content: str, lines: List[str]) -> CheckResult:
+    """Rule 22: 个人化注入软检测（warning）.
+
+    - 个人经历关键词 ≥ 2 处
+    - 具体数字（非代码块内）≥ 1 处
+    - 主观判断 ≥ 1 处
+    """
+    body = strip_code_blocks(get_body(content))
+
+    exp_count = len(PERSONAL_EXPERIENCE_REGEX.findall(body))
+    judg_count = len(SUBJECTIVE_JUDGMENT_REGEX.findall(body))
+    num_count = len(SPECIFIC_NUMBER_REGEX.findall(body))
+
+    violations = []
+    if exp_count < 2:
+        violations.append(Violation(
+            line=0,
+            text=f"个人经历关键词 {exp_count} 处",
+            suggestion="补充 ≥ 2 处个人经历（我用 / 去年试过 / 上周踩坑等）",
+            severity="warning",
+        ))
+    if judg_count < 1:
+        violations.append(Violation(
+            line=0,
+            text=f"主观判断 {judg_count} 处",
+            suggestion="补充 ≥ 1 处主观判断（我推荐 X 因为... / 我不用 Y 因为...）",
+            severity="warning",
+        ))
+    if num_count < 1:
+        violations.append(Violation(
+            line=0,
+            text=f"具体数字 {num_count} 处",
+            suggestion="补充 ≥ 1 处具体数字（实测耗时 47ms / 节省 30%）",
+            severity="warning",
+        ))
+
+    return CheckResult(
+        rule_id=22, rule_name="个人化注入",
+        passed=len(violations) == 0, violations=violations,
+        details=f"经历 {exp_count} / 判断 {judg_count} / 数字 {num_count}",
+    )
+
+
 # ─── Runner ──────────────────────────────────────────────────────
 
 ALL_CHECKS = [
@@ -1144,6 +1523,8 @@ ALL_CHECKS = [
     check_rule_9, check_rule_10, check_rule_11, check_rule_12,
     check_rule_13, check_rule_14, check_rule_15, check_rule_16,
     check_rule_17,
+    # v1.7+ WeChat-targeted rules (A/B-tier official-research backed)
+    check_rule_18, check_rule_19, check_rule_20, check_rule_22,
 ]
 
 
@@ -1239,6 +1620,8 @@ _RULE_DISPATCH = {
     9: check_rule_9, 10: check_rule_10, 11: check_rule_11, 12: check_rule_12,
     13: check_rule_13, 14: check_rule_14, 15: check_rule_15, 16: check_rule_16,
     17: check_rule_17,
+    18: check_rule_18, 19: check_rule_19, 20: check_rule_20,
+    22: check_rule_22,  # Rule 21 reserved
 }
 
 # Pre-save GATE for the write skill: blocks save when any of these fail.

@@ -35,9 +35,39 @@ import json
 import re
 import shutil
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 SHELL_LANGS = {"bash", "sh", "shell", "zsh"}
+
+# ─── B9 (v1.7+): GitHub URL 真实性校验 ────────────────────────────────
+#
+# 4 月草稿事故："Top 10 AI DevOps MCP Servers" 文章里出现了 AI 幻觉链接
+# `aws-lab/aws-mcp-server`（真实是 `awslabs/mcp`）、`Flux瞻新世纪/flux-mcp-server`
+# （仓库名混入中文，明显幻觉）。Rule P1-17/P1-18 把这两类拦下来。
+#
+# 检查路径：从文章 markdown 中提取所有 `github.com/<org>/<repo>` URL：
+#   1. 仓库路径包含 CJK 字符 → 直接 block（明显 AI 幻觉，零成本检测）
+#   2. HEAD 请求验证仓库是否存在（5 秒超时，404 → block）
+
+# https://github.com/<org>/<repo> 或 github.com/<org>/<repo>，含 inline link 和裸 URL
+_GITHUB_URL_RE = re.compile(
+    r"https?://(?:www\.)?github\.com/([A-Za-z0-9_.\-一-鿿]+)/([A-Za-z0-9_.\-一-鿿]+)(?:/[^\s)\]\"']*)?",
+    re.IGNORECASE,
+)
+
+# CJK Unicode block — 任意 CJK 字符出现在 org/repo 即视为 AI 幻觉
+_CJK_RE = re.compile(r"[一-鿿]")
+
+# 跳过：trailing 标点 + GitHub Pages / Wiki / Issues 等子页面（不影响仓库存在性判断）
+def _normalize_github_path(org: str, repo: str) -> tuple[str, str]:
+    org = org.strip().rstrip(".,;:!?)")
+    repo = repo.strip().rstrip(".,;:!?)")
+    # repo 可能带 `.git` 后缀（如 `git clone` URL）
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    return org, repo
 
 # Commands that don't need PATH resolution — shell built-ins, common standard
 # utilities that are effectively always present, and article-craft-internal
@@ -447,7 +477,96 @@ def _classify(tool: str) -> str:
     return "candidate"
 
 
-def scan_article(article_path: Path) -> dict:
+def _check_github_url(org: str, repo: str, timeout: float = 5.0) -> tuple[bool, str]:
+    """HEAD check whether a GitHub repo exists. Returns (exists, reason).
+
+    Uses urllib (stdlib) to avoid adding requests dependency. GitHub redirects
+    HEAD on `github.com/<org>/<repo>` to canonical URL; 200 / 301 / 302 → exists.
+    404 → does not exist. Network/timeout errors are reported but don't block
+    (don't crash review on flaky network).
+    """
+    url = f"https://github.com/{org}/{repo}"
+    req = urllib.request.Request(
+        url,
+        method="HEAD",
+        headers={"User-Agent": "article-craft/verify-claims/1.7"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return (200 <= resp.status < 400), f"HTTP {resp.status}"
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return False, "404 Not Found (仓库不存在 / 可能是 AI 幻觉链接)"
+        # 403 / 429 等可能是 rate limit，不当作不存在
+        return True, f"HTTP {e.code} (assume exists — not 404)"
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        return True, f"network error: {type(e).__name__} (skipped check)"
+
+
+def scan_github_urls(text: str, skip_network: bool = False) -> dict:
+    """Scan all github.com URLs in text. Returns structured report.
+
+    Two checks:
+    - **CJK in path**: 仓库 org/repo 含中文 → 直接 block（零成本，明显 AI 幻觉）
+    - **HEAD 存在性**: 404 → block；其他 HTTP 错误（网络/限流）不 block
+
+    `skip_network=True` 用于离线场景或测试，只做 CJK 检查。
+    """
+    seen: dict[tuple[str, str], dict] = {}
+    for m in _GITHUB_URL_RE.finditer(text):
+        org, repo = _normalize_github_path(m.group(1), m.group(2))
+        if not org or not repo:
+            continue
+        key = (org.lower(), repo.lower())
+        if key in seen:
+            continue
+        seen[key] = {"org": org, "repo": repo, "full_match": m.group(0)[:80]}
+
+    cjk_violations = []
+    network_violations = []
+    network_warnings = []
+    checked_ok = []
+
+    for (org, repo), info in sorted(seen.items()):
+        # Check 1: CJK in org/repo
+        if _CJK_RE.search(org) or _CJK_RE.search(repo):
+            cjk_violations.append({
+                "org": info["org"], "repo": info["repo"],
+                "fragment": info["full_match"],
+                "reason": "仓库名含中文字符（明显 AI 幻觉，零成本检测）",
+            })
+            continue  # CJK 已经 block，不必走 HEAD
+
+        # Check 2: HEAD 真实性
+        if skip_network:
+            checked_ok.append({"org": info["org"], "repo": info["repo"], "checked": False})
+            continue
+
+        exists, reason = _check_github_url(info["org"], info["repo"])
+        if not exists:
+            network_violations.append({
+                "org": info["org"], "repo": info["repo"],
+                "fragment": info["full_match"],
+                "reason": reason,
+            })
+        elif "skipped" in reason or "assume exists" in reason:
+            network_warnings.append({
+                "org": info["org"], "repo": info["repo"],
+                "reason": reason,
+            })
+        else:
+            checked_ok.append({"org": info["org"], "repo": info["repo"], "checked": True})
+
+    return {
+        "total_urls": len(seen),
+        "cjk_block": cjk_violations,
+        "url_404": network_violations,
+        "network_warnings": network_warnings,
+        "checked_ok": checked_ok,
+    }
+
+
+def scan_article(article_path: Path, skip_network: bool = False) -> dict:
     text = article_path.read_text(encoding="utf-8", errors="replace")
     seen: dict[str, dict] = {}
     # Per-tool flag aggregation across all uses in the article. We collect
@@ -476,6 +595,7 @@ def scan_article(article_path: Path) -> dict:
         "skipped_placeholder": [],
         "missing": [],
         "flag_warnings": [],
+        "github_urls": scan_github_urls(text, skip_network=skip_network),
     }
     for tool, info in sorted(seen.items()):
         if info["kind"] == "placeholder":
@@ -519,7 +639,7 @@ def cmd_scan(args) -> int:
     if not article.exists():
         sys.stderr.write(f"error: article not found: {article}\n")
         return 2
-    report = scan_article(article)
+    report = scan_article(article, skip_network=args.skip_network)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -546,10 +666,39 @@ def cmd_scan(args) -> int:
                 print(f"   ? {w['tool']:10s} {w['flag']:30s}  {w['fragment']}")
             print("   → If valid, ignore — the schema is curated, not exhaustive.")
             print("     If a typo, fix the article. Schema gaps: PR welcome.")
-    # Exit code unchanged: only missing-on-PATH tools fail the run.
-    # Flag warnings are informational — they explicitly do NOT fail the
-    # exit code (Phase 1 scope: introduce the signal, don't gate on it).
-    return 1 if report["missing"] else 0
+
+        # B9 (v1.7+): GitHub URL 真实性 + CJK 幻觉检测
+        gh = report.get("github_urls", {})
+        if gh.get("total_urls", 0) > 0:
+            print()
+            print(f"🔗 GitHub URL 检查：{gh['total_urls']} 个 URL")
+            print(f"   ✅ 通过：{len(gh.get('checked_ok', []))}")
+            print(f"   ❌ CJK 幻觉：{len(gh.get('cjk_block', []))}")
+            print(f"   ❌ 404 不存在：{len(gh.get('url_404', []))}")
+            print(f"   ⚠ 网络警告（不阻断）：{len(gh.get('network_warnings', []))}")
+
+            for v in gh.get("cjk_block", []):
+                print(f"   ❌ [CJK] {v['org']}/{v['repo']}")
+                print(f"      → {v['reason']}")
+                print(f"      fragment: {v['fragment']}")
+            for v in gh.get("url_404", []):
+                print(f"   ❌ [404] {v['org']}/{v['repo']}")
+                print(f"      → {v['reason']}")
+                print(f"      fragment: {v['fragment']}")
+
+    # Exit code:
+    # - missing-on-PATH tools → 1（保留原行为）
+    # - CJK 幻觉链接 → 1（block，B9）
+    # - 404 GitHub URL → 1（block，B9）
+    # - 网络警告 / flag warnings → 不影响 exit code
+    gh = report.get("github_urls", {})
+    if (
+        report["missing"]
+        or gh.get("cjk_block")
+        or gh.get("url_404")
+    ):
+        return 1
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -559,6 +708,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("scan", help="scan article for shell commands and check PATH")
     sp.add_argument("--article", required=True, help="absolute path to article.md")
     sp.add_argument("--json", action="store_true", help="emit JSON instead of human report")
+    sp.add_argument(
+        "--skip-network",
+        action="store_true",
+        help="skip GitHub URL HEAD checks (offline / test mode). CJK 检查仍生效。",
+    )
     sp.set_defaults(func=cmd_scan)
     return p
 

@@ -1,6 +1,6 @@
 ---
 name: article-craft:requirements
-version: 1.6.24
+version: 1.7.0
 description: "Enhanced requirements gathering with intelligent inference + source trust detection — topic analysis, intent detection, ambiguity resolution, and context-aware suggestions. Uses multi-signal matching and collaborative confirmation."
 allowed-tools:
   - Read
@@ -79,6 +79,25 @@ When multiple signals conflict, resolve with priority rules:
 | "Docker 深度教程" (C + tutorial) | Depth wins: deep-dive |
 | "uv vs pnpm 对比" (D + tutorial) | Comparison wins: comparison |
 | "Go 源码分析" (C + beginner signal) | Analysis wins: deep-dive, audience=advanced |
+
+### Layer 4.5: WeChat Action Inference (NEW, v1.7+)
+
+Infer the primary CTA action (`wechat_action`) based on style + intent. This is the field the write skill uses to select closing-CTA template from `references/writing-styles.md` § Closing Templates.
+
+| Style / Intent | Default wechat_action | Why |
+|---|---|---|
+| Style A (教程) / B (经验分享) "N 个 XX" 型 | `collect` | 工具/命令清单读者会想收藏慢慢试 |
+| Style B (经验分享) 非清单型 | `heart` | 经验分享适合点♡ / 在看 |
+| Style C (深度长文) | `heart` | 深度内容适合点♡推荐 |
+| Style D (评测对比) / E (资讯快报) | `share` | 选型/资讯转发价值最高 |
+| Style F (项目复盘) | `comment` | 复盘话题开放讨论 |
+| Style G (观点输出) | `comment` | 观点议题鼓励留言反馈 |
+| Style H (爆料自媒体) | `share` | 爆料适合转发扩散 |
+| Default | `heart` | 兜底 |
+
+**Note**: User can override via frontmatter `wechat_action: <value>`. If frontmatter has explicit value, use that; otherwise inference applies.
+
+**Why only one action**: Algorithm权重 + 实测 — 公众号读者对"一键三连"会全部忽略，单一引导转化率更高（详见 `wechat-push-mechanism-2026.md` §5.2，B 级实测经验）。
 
 ### Layer 5: Source Trust Detection (NEW)
 
@@ -250,6 +269,7 @@ After inference + confirmation, output structured context for downstream skills:
     - "教程" → style A
     - "部署" → depth tutorial
     - intent "tutorial" → audience default intermediate
+- wechat_action: heart  # CTA primary action: heart/share/collect/comment (Layer 4.5)
 - _trusted_sources:
     - url: https://docs.astral.sh/uv/
       tier: T0

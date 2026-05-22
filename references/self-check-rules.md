@@ -5,10 +5,13 @@
 > re-state rule bodies or re-type grep patterns — they read this file and
 > run the patterns from it.
 >
-> **Active rule count: 17.** `scripts/review_selfcheck.py` implements
-> `check_rule_1` through `check_rule_17` sequentially (see the dispatcher
+> **Active rule count: 22.** `scripts/review_selfcheck.py` implements
+> `check_rule_1` through `check_rule_22` sequentially (see the dispatcher
 > list at the bottom of that file). Reference entries below cover all
-> 17 plus the `7b` degradation-aware variant of Rule 7.
+> 22 plus the `7b` degradation-aware variant of Rule 7.
+>
+> Rules 18-22 added in v1.7+ based on 2026-05-22 official WeChat research
+> (`.research/official-sources-verification.md` — A/B-tier evidence only).
 
 ## Who enforces what
 
@@ -16,8 +19,8 @@
 |------|:---:|:---:|:---:|
 | 1 Red-flag words        | ✓ | ✓ | ✓ |
 | 2 Hook length           | ✓ | ✓ | ✓ |
-| 3 Closing paragraph     |   | ✓ | ✓ |
-| 4 Description field     |   | ✓ | ✓ |
+| 3 Closing paragraph (CTA required) |   | ✓ | ✓ |
+| 4 Description field + ≥3 zh tags   |   | ✓ | ✓ |
 | 5 Anti-AI structure     |   | ✓ | ✓ |
 | 6 Chapter depth         | ✓ |   | ✓ |
 | 7 Duplicate images      |   |   | ✓ |
@@ -32,6 +35,11 @@
 | 15 Orphan PROMPT lines  |   | ✓ | ✓ |
 | 16 PROMPT CJK render    | ✓ |   | ✓ |
 | 17 Register naturalness |   |   | ✓ (tone-aware) |
+| **18 AIGC label**       |   | ✓ (auto-append footer) | ✓ |
+| **19 Title hook**       |   |   | ✓ |
+| **20 Paragraph dedup**  |   |   | ✓ |
+| **21** *(reserved for future use — formerly URL fact-check, now handled by `verify_claims.py`)* |   |   |   |
+| **22 Personal voice density** |   |   | ✓ (soft warning) |
 
 ## Rule schema
 
@@ -768,6 +776,186 @@ the lexical level, but the structural / opinion / cadence dimensions
 require author judgement.
 
 **Examples:** see `skills/write/style-guide.md` § Tone: <tier>.
+
+---
+
+## Rule 18: AIGC 显式标识（A 级合规，强制）
+
+**Severity**: FAIL
+**Auto-fix**: yes（自动追加文末小字脚注）
+**Escalation**: lint 自动追加；review Phase 1 阻断；write 阶段不强制（允许 writer 先写正文，由 lint/review 兜底）。
+
+### 法律依据（A 级官方一手）
+
+- **GB 45438-2025** 网络安全技术 人工智能生成合成内容标识方法（强制性国标，2025-09-01 生效）
+  - 官方原文：[openstd.samr.gov.cn](https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=F32EA2A561F1886CD8D606513512D547&refer=outter)
+  - 要求**显式 + 隐式**双标识
+- **网信办《人工智能生成合成内容标识办法》14 条**（2025-09-01 生效）
+  - 官方原文：[cac.gov.cn](https://www.cac.gov.cn/2025-03/14/c_1743654684782215.htm)
+  - 第十条禁止删除、篡改、伪造或隐匿标识
+
+### 显式标识形式
+
+article-craft 默认采用**A 方案**（文末小字脚注 + 公众号后台勾选）：
+
+**文末必须含**（精确匹配以下任一变体）：
+
+- `本文 AI 辅助起稿 + 人工核实改写`
+- `本文 AI 辅助创作`
+- `本文由 AI 辅助生成`
+- `本文使用 AI 工具辅助写作`
+- `AI 辅助起稿`
+
+**正则模式**：
+
+```
+本文.*?AI.*?(辅助|协助|帮助).*?(起稿|创作|生成|写作|改写)
+|AI 辅助.*?(起稿|创作|改写)
+```
+
+格式建议（写在文末 `---` 分割线之下，作为脚注）：
+
+```markdown
+---
+
+> 本文 AI 辅助起稿 + 人工核实改写。
+```
+
+### 后台勾选（publish skill 提醒）
+
+publish skill 在发布前必须打印提醒：
+
+```
+⚠ 发布前请在公众号后台勾选「创作来源 → 内容由 AI 生成」（4 选 1 单选，发布后不可改）。
+  这是 GB 45438-2025 强制要求的隐式标识（功能名："创作来源"，B 级官方间接证据）。
+```
+
+### Auto-fix
+
+lint 时如未检测到 AIGC 标识：自动在文末追加（在最后一行 `---` 之后或文档末尾）：
+
+```markdown
+
+---
+
+> 本文 AI 辅助起稿 + 人工核实改写。
+```
+
+### Why
+
+GB 45438-2025 + 网信办标识办法是 A 级官方法规，2025-09-01 已生效。**违反即违法**，不是行业经验。article-craft 作为 AI 辅助创作工具，必须强制 AIGC 标识。
+
+---
+
+## Rule 19: 标题钩子规则 + 长度约束
+
+**Severity**: FAIL
+**Auto-fix**: no（标题改写需作者判断）
+**Escalation**: review Phase 1 警告（不阻断 publish，但显著扣分）。
+
+### Title 长度
+
+- **硬上限**：64 字（微信公众平台技术上限，业界实测，B 级证据）
+- **推荐 ≤ 28 字**：信息流卡片显示更完整（业界实测，无官方文档）
+
+超 28 字 → warning；超 64 字 → FAIL。
+
+### Title 钩子类型（必须命中至少 1）
+
+公众号高 CTR 标题的三大类公式（业界实证，B 级）：
+
+| 钩子类型 | 信号 | 示例 |
+|---------|------|------|
+| **数字钩子** | 数字 + 工具/动作 | `5 分钟用 Docker 部署 Web 应用` / `10 个 Cursor 隐藏快捷键` |
+| **反差钩子** | 颠覆 / 反认知 / 反转 | `为什么我不再用 TypeScript` / `Rust 比 Go 慢？我跑了 100 万次` |
+| **痛点钩子** | 痛点 + 后果 + 方案 | `用 ChatGPT 写代码的人注意！这 3 个陷阱让项目暴雷` |
+| **故事钩子** | 场景 + 反常 + 悬念 | `被字节裁员后，我用一个开源项目月入 5 万` |
+| **悬念钩子** | "为什么"、"怎么"、"竟然" | `为什么我们 etcd 翻车那次让 K8s 集群宕了 3 小时` |
+
+**0 命中 → warning**（不 FAIL，因为某些题材确实没法挂钩子，但要求作者警觉）。
+
+### 黑名单词（标题党降权风险）
+
+```
+震惊|重磅|解密|厉害了|XX死了|XX崩了|官方通知|紧急|必看|逆天|疯狂|爆炸
+```
+
+含黑名单词 → warning（不 FAIL，部分场景如"XX 崩了"是真实事故描述）。
+
+### Detection
+
+```bash
+# 标题长度（取 frontmatter title 字段或 H1）
+python3 -c "
+import re, sys, yaml
+content = open(sys.argv[1]).read()
+fm_match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+if fm_match:
+    fm = yaml.safe_load(fm_match.group(1)) or {}
+    title = fm.get('title', '')
+else:
+    h1 = re.search(r'^# (.+)$', content, re.MULTILINE)
+    title = h1.group(1) if h1 else ''
+print(f'len={len(title)} title={title}')
+" article.md
+```
+
+### Why
+
+- ≤28 字：来自调研报告 §1.4 业界实测（信息流卡片折叠保护）
+- 钩子公式：来自调研报告 §4.1（高 CTR 标题三大模式，B 级业界经验）
+- 黑名单词：来自调研报告 §1.6（微信 2024-05 公告"严查标题党"，A 级官方公告 + 业界经验补充）
+
+---
+
+## Rule 20: 段落相似度去重 + 模板雷同检测
+
+**Severity**: FAIL
+**Auto-fix**: no（重复段落删除需作者判断保留哪一份）
+**Escalation**: review Phase 1 阻断。
+
+### 触发场景
+
+LLM 生成长文时偶尔会发生**上下文跳跃事故**：同一节内容（H2 标题相同或语义相近 + 首段类似 + 块内容高度相似）出现两次。文章 3「NotebookLM 有了知识图谱」实测就有「引用是怎么工作的」段落重复两次的事故（详见 `.research/published-articles-analysis.md`）。
+
+### Detection
+
+对文章里所有 `## ` 标题段执行两两相似度比对：
+
+1. **H2 标题相似度**：用 `difflib.SequenceMatcher.ratio()`
+2. **首段相似度**：H2 下第一段首句相似度
+3. **块内容相似度**：H2 整段内容相似度
+
+任一对 H2 段满足：
+- 标题 ≥ 0.85 **OR** 首句 ≥ 0.85 **AND** 内容 ≥ 0.7 → 视为重复，FAIL
+
+### Why
+
+文章 3 事故是真实 LLM 生成 bug，非合规问题。这条 Rule 是工程质量改进，与 WeChat 算法无关，但能防止 article-craft 输出明显的 LLM 上下文事故。
+
+---
+
+## Rule 22: 个人化注入软检测（warning）
+
+**Severity**: WARNING（不 FAIL，软警告）
+**Auto-fix**: no
+**Escalation**: review Phase 1 warning，不阻断 publish。
+
+### 触发阈值
+
+每篇文章应满足：
+
+| 维度 | 阈值 | 检测 |
+|------|------|------|
+| 个人经历关键词 | ≥ 2 处 | grep "我"(含跟动词的复合) / "去年" / "上周" / "试过" / "踩过" / "踩坑" |
+| 具体数字（非代码块） | ≥ 1 处 | 实测耗时、版本号、行数、报错码等 |
+| 主观判断 | ≥ 1 处 | "我推荐" / "我不推荐" / "我觉得" / "我赌" / "我选" |
+
+**注意**：调研报告中 ≥ 3 处分散是过度推论（仅 4 篇样本），改为 ≥ 2 处 + ≥ 1 处具体数字 + ≥ 1 处主观判断的组合，分布更现实。
+
+### Why
+
+调研 §7.4 把"主观判断密度"列为 AI 味识别核心特征——但调研没给具体阈值。4 篇实测显示个人经历密度大体足够（"我"出现 5-33 次/篇），但主观判断（"我推荐/不推荐"）4 篇中 3 篇为 0。这条 Rule 是触发作者对"我自己的判断"的觉察，不是硬约束。
 
 ---
 

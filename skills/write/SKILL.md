@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.6.24
+version: 1.7.0
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -135,6 +135,40 @@ Follow these steps in order. Each step is mandatory unless marked optional.
 3. **Determine the writing style** using the auto-judgment rules in the styles reference (or user specification)
 4. Internalize the selected style's rules: opening pattern, section structure, image rhythm, tone, closing pattern
 
+### Step 1.5: Generate 3 Title Candidates (v1.7+, variant A/B for WeChat)
+
+After determining style + topic, **generate 3 title candidates** representing different hook types, then use `AskUserQuestion` to let the user pick. This is a variant A/B testing mechanism — WeChat 公众平台 doesn't support native A/B testing, so we surface hook diversity at write time.
+
+**Each candidate must命中 a different hook type** from Rule 19:
+
+| Candidate | Hook Type | Example |
+|---|---|---|
+| **A** | 数字钩子 + 工具名 | `5 分钟用 Docker 部署你的第一个 Web 应用` |
+| **B** | 反差/悬念钩子 | `为什么我不再用 docker-compose（实测后的反思）` |
+| **C** | 痛点/故事钩子 | `踩了 3 次坑后，我用 Docker 重写了部署流程` |
+
+**所有候选标题必须满足**：
+- 长度 ≤ 28 字（推荐）/ ≤ 64 字（硬上限）
+- 不含黑名单词（震惊/重磅/解密 等）
+- 至少 1 个钩子类型命中（数字/反差/痛点/故事/悬念）
+
+**AskUserQuestion 格式**：
+
+```
+Question: "选择文章标题（3 个候选，分别走不同钩子路径）"
+Options:
+  - A: <数字钩子标题>  — 适合教程/工具清单（CTR 稳定）
+  - B: <反差钩子标题>  — 适合观点/经验（点击率高但筛选读者）
+  - C: <痛点钩子标题>  — 适合避坑/故事型（情绪驱动）
+  - Other: 用户手工输入
+```
+
+将用户选中的标题写入 frontmatter `title:` 字段。
+
+**例外**：
+- 当 `wechat_target: false` 显式设置（纯 blog 输出），跳过此步骤，直接用单一标题
+- Style H (爆料自媒体) 必须命中 H 的戏剧化标题公式（"刚刚"/"突袭"/"硬刚"），3 候选都走戏剧化变体即可
+
 ### Step 2: Determine Save Path
 
 1. If a `save_path` was provided by the requirements skill, use that directly. **Skip the rest of this step.**
@@ -195,6 +229,15 @@ auto-skip because they detect "missing required field".
 
 **Required fields**: title, date, author, tags, category, status, description.
 **Optional fields**: aliases.
+**WeChat fields** (v1.7+, optional but recommended for WeChat-targeted articles):
+```yaml
+wechat_action: heart  # CTA primary action: heart|share|collect|comment
+                      # heart    — 点♡/在看（默认；干货分享类）
+                      # share    — 转发到群/朋友圈（评测/资讯）
+                      # collect  — 收藏（清单/工具/命令大全）
+                      # comment  — 留言互动（观点/复盘）
+```
+inherits from requirements skill's Layer 4.5 inference, or user-specified.
 **Series fields** (auto-injected when writing as part of a series):
 ```yaml
 series: "系列名称"
@@ -576,29 +619,64 @@ See the [official documentation](https://example.com/docs) for details.
 
 快速参考：
 - **A 教程**：具体下一步操作（一条命令）
-- **B 分享**："写在最后" + 情绪升华 + 互动号召
+- **B 分享**："写在最后" + 情绪升华
 - **C 深度**：总结要点 + 延伸阅读
 - **D 评测**：场景化推荐表格 + 个人选择
 - **E 资讯**：值不值得升级 + 官方链接
 - **F 复盘**：做对了/做错了/重来会怎么做
-- **G 观点**：重申立场 + 承认局限 + 期待讨论
+- **G 观点**：重申立场 + 承认局限
 
-**所有风格禁止的结尾：**
-- "希望本文对你有帮助"（Style B 的口语变体"希望能有点帮助。。"例外）
-- 无上下文的模板化互动"如果有问题欢迎留言"
-
-**系列文章结尾追加**（仅当 series context 存在时）：
-
-在正常 closing paragraph 之后，追加下一篇预告：
+**末段固定结构（v1.7+，所有风格通用）：**
 
 ```markdown
+[一句话总结 / 金句 — 复述文章核心价值，1 行]
+
+[CTA — 按 frontmatter `wechat_action` 从 references/writing-styles.md § Closing Templates 选模板，1-2 行]
+
+[下一步 / 系列预告 / 延伸阅读 — 1-2 行]
+
+---
+
+> 本文 AI 辅助起稿 + 人工核实改写。  ← AIGC 显式标识（Rule 18，必加）
+```
+
+**CTA 模板选择**：读 frontmatter `wechat_action` 字段，到 `references/writing-styles.md` § Closing Templates 找对应模板：
+- `heart` → 点♡/在看话术
+- `share` → 转发话术
+- `collect` → 收藏话术
+- `comment` → 留言话术
+
+**一篇只主推 1-2 个动作**——"一键三连"读者会全部忽略（Rule 3 修订版强制）。
+
+**禁用结尾（Rule 3 修订版强制）**：
+- ❌ "希望本文对你有帮助" / "如果有问题欢迎留言"
+- ❌ "点赞、转发、在看、收藏一键三连"
+- ❌ "你的点赞是我最大的动力"
+- ❌ 完全无 CTA（4/4 实测都没引导 = 主动放弃算法权重）
+
+**系列文章结尾结构**（仅当 series context 存在时）：
+
+CTA 必须在系列预告之上（视觉首位），按以下顺序：
+
+```markdown
+[一句话总结]
+
+[CTA 1-2 行] ← 视觉首位，永远优先
+
 ---
 
 > [!tip] 📚 下一篇预告
 > 《下一篇标题》— 下一篇的核心内容简介（1-2 句）。
+
+[系列导航 1 行]
+
+---
+
+> 本文 AI 辅助起稿 + 人工核实改写。
 ```
 
-- 最后一篇：改为系列回顾 + 合集链接
+- 最后一篇：预告改为系列回顾 + 合集链接
+- 详见 `skills/series/SKILL.md` § 末段排版规则（P1-19 强制）
 
 ### Step 4: Apply Anti-AI Structure Rules + ASCII Diagram Auto-Detection
 

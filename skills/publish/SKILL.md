@@ -1,6 +1,6 @@
 ---
 name: article-craft:publish
-version: 1.6.24
+version: 1.7.0
 description: "Place article in knowledge base and optimize for distribution. Use after review to save the article to its final location."
 allowed-tools:
   - Read
@@ -177,6 +177,31 @@ plus a `copied_sidecars` list. Behaviour notes:
 - **Never copied**: `.article-craft-state.json` — that file is
   per-pipeline-run and the orchestrator deletes it on publish success (v1.4.2
   cleanup rule). The script's `SIDECAR_FILES` list deliberately excludes it.
+
+### Step 3.5: AIGC 后台勾选提醒（v1.7+，A 级合规）
+
+依据：**GB 45438-2025** 强制国标 + 网信办《标识办法》14 条（2025-09-01 已生效）。
+
+publish 完成后、用户实际发布到公众号**前**，必须打印这条提醒：
+
+```
+─────────────────────────────────────────────────────────────
+⚠ AIGC 合规提醒（GB 45438-2025 强制要求）
+
+发布到公众号前，请在公众号后台勾选：
+  「创作来源 → 内容由 AI 生成」（4 选 1 单选）
+
+  ⚠ 重要：发布后不可修改、不可删除。请在首次发布前确认。
+
+  这是 GB 45438-2025 + 微信珊瑚安全公告要求的隐式标识。
+  文末小字脚注（"本文 AI 辅助起稿..."）由 Rule 18 自动检查，
+  后台勾选必须人工执行（微信公众平台没有 API）。
+─────────────────────────────────────────────────────────────
+```
+
+**实施方式**：在 Step 5 完成摘要之后追加这段输出。即使是 `--output` 显式指定目录的 Mode A，也要打印——AIGC 合规与文件路径无关，是发布动作本身的约束。
+
+**例外**：如果 review skill 已确认文章 `wechat_target: false`（明确非公众号场景，如纯 blog 输出），可以跳过此提醒。
 
 ### Step 4: WeChat Distribution (optional)
 

@@ -1,5 +1,65 @@
 # Changelog
 
+## [1.7.0] - 2026-05-22 — WeChat 公众号生态适配（A 级合规 + 5 条新 Rule + 双封面 + CTA 模板库）
+
+### Why
+
+2026-05-22 用户反馈 article-craft 产出文章发布到微信公众号阅读量低。经过四轮调研验证：
+
+1. **官方渠道严格调研**（`.research/official-sources-verification.md`）确认了 7 条 A 级 + 3 条 B 级官方一手事实，**推翻了 10 条无官方来源的伪事实**（包括"算法权重 40/30/20/10"、"30 天新号保护期"、"AI 率 <20% 安全"、"行业打开率 0.89%"等被前期诊断当 fact 用的核心数字）
+2. **4 篇实际发布文章诊断**（`.research/published-articles-analysis.md`）暴露 3 个真瓶颈：CTA 100% 缺失、AIGC 标识 100% 缺失、标题命中钩子公式 0/4
+3. **独立审计**（`.research/diagnosis-audit.md`）剔除恐慌驱动的过度推论（如"系列发文 = 自动化批量发布信号" — 无任何官方证据支持）
+
+本版本只基于 A/B 级官方证据 + 4 篇实证瓶颈做改造，14 项变更覆盖合规 + 标题 + CTA + 工程质量四块。
+
+### Added
+
+- **Rule 18: AIGC 显式标识检查**（A 级合规）— GB 45438-2025 强制国标 2025-09-01 已生效，网信办《标识办法》14 条同步生效。文末必须含 "本文 AI 辅助起稿 + 人工核实改写" 或等效声明。`scripts/review_selfcheck.py` 实现 `check_rule_18` + auto-fix（lint 自动追加文末脚注）。`skills/publish/SKILL.md` Step 3.5 加发布前提醒用户在公众号后台勾选「创作来源 → 内容由 AI 生成」（4 选 1，**发布后不可改**）。
+- **Rule 19: 标题钩子 + 长度约束** — 标题 ≤28 字（业界实测）/ ≤64 字（硬上限）+ 至少 1 个钩子类型命中（数字 / 反差 / 痛点 / 故事 / 悬念）+ 黑名单词检测（震惊 / 重磅 / 解密等标题党降权风险）。
+- **Rule 20: 段落相似度去重** — fuzzy match H2 标题（≥0.85）或首句相似（≥0.85）+ 内容相似度（≥0.7）→ block，防止 LLM 上下文跳跃事故（文章 3 实测有「引用是怎么工作的」段落重复两次）。
+- **Rule 22: 个人化注入软警告** — 个人经历 ≥ 2 处 + 具体数字 ≥ 1 处 + 主观判断 ≥ 1 处。基于 4 篇实测分布校准的阈值（不是凭空 ≥3 处）。
+- **`wechat_action` frontmatter 字段**（heart / share / collect / comment）— `skills/requirements/SKILL.md` Layer 4.5 按 Style + Intent 自动推断；`skills/write/SKILL.md` 文末按 wechat_action 选 CTA 模板。
+- **CTA 模板库**（`references/writing-styles.md` § Closing Templates）— 4 类引导动作各配 2 个具体话术，禁用"一键三连"和"希望本文有帮助"等空话。
+- **3 个候选标题机制**（`skills/write/SKILL.md` Step 1.5）— write skill 生成 3 个候选标题（数字 / 反差 / 痛点钩子各一个），AskUserQuestion 让用户选，作为 WeChat 不支持原生 A/B 测试的变通方案。
+- **GitHub URL 真实性 + CJK 幻觉检测**（`scripts/verify_claims.py`）— 扫描文章所有 `github.com/<org>/<repo>` URL：仓库名含中文 → 直接 block（明显 AI 幻觉，零成本）；HEAD 请求 404 → block（4 月草稿事故里的 `aws-lab/aws-mcp-server` 实测被拦下）；网络/限流错误不阻断。新增 `--skip-network` flag 离线模式。
+- **CTA + 系列预告位置规则**（`skills/series/SKILL.md` Step 3）— 系列文章末尾结构强制 CTA 在系列预告之上（视觉首位），4 篇实测有 3/4 篇被预告挤掉 CTA。
+- **share_card 双封面**（`scripts/share_card.py`）— 新增 `wechat-double` 特殊值，自动展开为 `wechat-cover`（900×383, 2.35:1 头条封面）+ `wechat-share`（1080×1080, 1:1 分享方图）。`wechat-share` 改为 1:1（v1.6.x 是 1.25:1）。
+- **8 维 review 评分（v1.7+）**（`skills/review/SKILL.md`）— 在原 7 维基础上新增"看一看友好度"维度（标签丰富度 + 独家信号 + 中段钩子 + 金句密度 + 关键词密度，**全定性，不用伪算法权重**）。Threshold 从 55/70 → 63/80（等价比例）。
+
+### Changed
+
+- **Rule 3（结尾段落）从"全禁互动引导"改为"必须含 1-2 个具体 CTA"** — 这是 v1.6.x 的反向优化：4 篇实测 4/4 都缺 CTA = 主动放弃公众号生态的关键算法权重。新版强制至少 1 个 CTA 动作 + 仍禁"希望本文有帮助" / "一键三连" / 伸手党语气。Style H "⭐点赞、转发、在看一键三连⭐"通过 Style 检测放行。
+- **Rule 4（Description 字段）扩展中文标签强制** — tags ≥ 3 个且 ≥ 3 个中文标签（公众号读者 99% 中文用户，全英文 tags 会让看一看 NLP 算法无法匹配中文兴趣画像）。
+
+### Compliance
+
+- **GB 45438-2025 强制国标**（2025-09-01 生效）+ **网信办《人工智能生成合成内容标识办法》14 条**（同步生效）双合规：Rule 18 强制文末 AIGC 脚注 + publish skill 提醒后台勾选。这是 A 级官方一手要求，不是行业经验。
+- **微信《运营规范》"非真人自动化创作"条款**（微信团队 2026-04-09 对媒体确认）— article-craft 的"用户发起 + AI 辅助 + 用户审核 + 用户发布"姿态**不命中**违规条款（条款针对"完全替代真人 + 矩阵号 + 程序托管批量发布"），微信官方明确表态"鼓励合理使用工具辅助创作"。前期诊断的"封号风险高"评估被官方调研推翻。
+
+### Removed（基于官方调研推翻的伪事实，避免污染未来）
+
+前期诊断引用的多条"事实"在官方渠道找不到来源，本版本不再使用：
+
+- ❌ "算法权重 40/30/20/10"（CSDN 个人博客虚构，循环引用无源头 → 8 维评分不再使用任何算法权重数字）
+- ❌ "30 天新号保护期" / "完播率 1.3 倍流量加成" / "AI 率 <20% 安全"（无官方来源 → 不做基于这些数字的工程）
+- ❌ "行业打开率 0.89%" / "尾部 <0.3%"（一手发布方不可考 → 不做 KPI 校准基线）
+- ❌ "AI 率检测 API + >30% block publish"（基于伪事实 → 不引入第三方 AI 检测依赖）
+- ❌ "系列发文 = 自动化批量发布信号"（恐慌驱动 → 不强制系列发文随机化）
+- ❌ "AI 自声明禁用 P0"（4/4 实际产出未出现，伪问题）
+
+详见 `.research/official-sources-verification.md` 与 `.research/diagnosis-audit.md`。
+
+### Sources（A/B 级官方一手）
+
+- GB 45438-2025: <https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=F32EA2A561F1886CD8D606513512D547&refer=outter>
+- 网信办《标识办法》: <https://www.cac.gov.cn/2025-03/14/c_1743654684782215.htm>
+- 微信运营规范 2026-04-09 团队回应（21 经济）: <https://www.21jingji.com/article/20260409/herald/85296dd9f3152bdbc88af96167989bcd.html>
+- RALM 论文（仅作用于"看一看"频道，非订阅号信息流）: <https://arxiv.org/abs/1906.05022>
+- 完读率官方定义（livia 答复）: <https://developers.weixin.qq.com/community/develop/doc/000a8857660538166ecf9b8f751800>
+- 原创门槛 300 字（明月清风答复）: <https://developers.weixin.qq.com/community/develop/doc/0006ecc2f98b88fa138adfd0d51800>
+
+---
+
 ## [1.6.24] - 2026-05-21 — pipeline GATE alignment + youtube transcript robustness
 
 ### Why

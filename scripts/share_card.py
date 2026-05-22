@@ -34,8 +34,11 @@ except ImportError:
 
 PLATFORMS = {
     # 平台名: (宽度, 高度, 标题字号, 描述字号, 描述行数)
-    "wechat-cover":    (900,  383, 36, 16, 2),   # 公众号封面
-    "wechat-share":    (500,  400, 28, 14, 2),   # 微信分享
+    # 公众号封面与分享卡片（v1.7+ 双封面规则；尺寸为业界实测，无官方书面文档）
+    "wechat-cover":         (900,  383, 36, 16, 2),    # 头条封面 ≈2.35:1
+    "wechat-share":         (1080, 1080, 64, 24, 3),   # 分享 1:1（v1.7+ 改为方形）
+    "wechat-share-square":  (1080, 1080, 64, 24, 3),   # alias of wechat-share
+    # 其他平台
     "xiaohongshu":     (1080, 1440, 48, 20, 3),  # 小红书竖图
     "xiaohongshu-sq":  (1080, 1080, 44, 18, 3),  # 小红书方图
     "twitter":         (1200, 628,  42, 18, 2),  # Twitter/X
@@ -45,6 +48,10 @@ PLATFORMS = {
     "zhihu":           (1200, 600,  42, 18, 2),   # 知乎
     "twitter-card":    (1200, 628,  42, 18, 2),   # Twitter Card (alias)
 }
+
+# v1.7+ 公众号双封面预设组
+# 用法: --platform wechat-double 自动生成头条 + 分享两张
+WECHAT_DOUBLE_PLATFORMS = ["wechat-cover", "wechat-share"]
 
 # 预设色板
 COLOR_PRESETS = {
@@ -392,11 +399,23 @@ def batch_generate(title: str, description: str, tags: list,
     批量生成多张分享卡片。
 
     Args:
-        platforms: list of platform names (None = all platforms)
+        platforms: list of platform names (None = all platforms).
+                   v1.7+ 特殊值 "wechat-double" 自动展开为 ["wechat-cover", "wechat-share"]。
     """
 
     if platforms is None:
         platforms = list(PLATFORMS.keys())
+
+    # v1.7+ wechat-double 自动展开为头条 + 分享双封面
+    expanded = []
+    for p in platforms:
+        if p == "wechat-double":
+            expanded.extend(WECHAT_DOUBLE_PLATFORMS)
+        else:
+            expanded.append(p)
+    # 去重保序
+    seen = set()
+    platforms = [p for p in expanded if not (p in seen or seen.add(p))]
 
     results = []
     for platform in platforms:
@@ -451,7 +470,10 @@ def main():
     parser.add_argument("--tags", nargs="*", default=[], help="标签（最多 5 个）")
     parser.add_argument("--author", "-a", default="月影", help="作者名")
     parser.add_argument("--platforms", "-p", default="",
-                        help=f"平台，逗号分隔。可选: {', '.join(PLATFORMS.keys())}")
+                        help=(
+                            f"平台，逗号分隔。可选: {', '.join(PLATFORMS.keys())}。"
+                            "特殊值 `wechat-double` 自动生成头条 + 分享双封面（v1.7+）。"
+                        ))
     parser.add_argument("--color", "-c", default="tech-blue",
                         help=f"配色方案。可选: {', '.join(COLOR_PRESETS.keys())}")
     parser.add_argument("--output", "-o", default="", help="输出目录")

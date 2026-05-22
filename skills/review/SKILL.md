@@ -1,6 +1,6 @@
 ---
 name: article-craft:review
-version: 1.6.24
+version: 1.7.0
 description: "Quality gate for articles — canonical self-check rules + built-in content scoring. All-in-one review without external dependencies."
 allowed-tools:
   - Read
@@ -149,41 +149,61 @@ exactly what's weak and where, let them pick the fix. If they want review to
 also edit, they invoke `/article-craft:review` with a targeted hint (e.g. the
 "AI 痕迹" dimension) or re-run `/article-craft:write` on specific sections.
 
-#### 7-Dimension Scoring (Embedded)
+#### 8-Dimension Scoring (Embedded, v1.7+)
 
-Score each dimension 0-10, total 70. Threshold: **55/70**.
+Score each dimension 0-10, total **80**. Threshold: **63/80** (= 55/70 等价比例放大)。
 
 | # | Dimension | Weight | Scoring Criteria |
 |---|-----------|--------|----------------|
-| 1 | **AI 痕迹** | 10 | 多样化段落结构、个人视角、开场变化 |
-| 2 | **标题与 Hook** | 10 | 标题公式符合、Hook 痛点清晰、100字内 |
-| 3 | **内容深度** | 10 | 每章 ≥2 代码块、技术细节充分 |
-| 4 | **结构可读** | 10 | 段落长度合理、过渡自然、层次清晰 |
-| 5 | **代码质量** | 10 | 可运行、有注释、错误处理 |
-| 6 | **结尾行动力** | 10 | 具体下一步行动、非模板化结尾 |
+| 1 | **AI 痕迹** | 10 | 多样化段落结构、个人视角、开场变化、Rule 17 警告聚合 |
+| 2 | **标题与 Hook** | 10 | 标题公式符合（命中 ≥1 钩子类型，Rule 19）、≤28 字、Hook ≤100 字 |
+| 3 | **内容深度** | 10 | 每章 ≥N 代码块（style-aware，Rule 6）、技术细节充分 |
+| 4 | **结构可读** | 10 | 段落长度合理、过渡自然、层次清晰、Rule 20 段落去重通过 |
+| 5 | **代码质量** | 10 | 可运行、有注释、错误处理；verify-claims 通过（无 PATH 缺失、无 GitHub 404/CJK 幻觉） |
+| 6 | **结尾 CTA** | 10 | **必含 1-2 个具体 CTA 引导动作**（Rule 3 修订版强制）；含 AIGC 标识（Rule 18） |
 | 7 | **图片配置** | 10 | 节奏图匹配、内容相关、非装饰 |
+| 8 | **看一看友好度（v1.7+）** | 10 | 见下方评分项 |
+
+#### 第 8 维：看一看友好度评分（v1.7+）
+
+> **不使用任何"算法权重 40/30/20/10"伪数字**——这些数字在官方调研中被推翻（详见 `.research/official-sources-verification.md` 命题 10）。本维度只评定性维度，基于实际产出数据 + 业界经验。
+
+评分项（满分 10）：
+
+| 子项 | 满分 | 评分依据 |
+|------|-----|---------|
+| 标签丰富度 | 2 | tags ≥ 3 个 + ≥ 3 个中文标签（Rule 4 扩展） |
+| 独家信号 | 3 | 个人经历 ≥ 2 处 + 具体数字 ≥ 1 处 + 主观判断 ≥ 1 处（Rule 22） |
+| 中段钩子 | 2 | 40-60% 位置有"看完这里你会发现/我前几个月就栽过..."等二级钩子 |
+| 金句密度 | 2 | 70-100% 位置有可被截取分享的金句（1-2 行精炼判断） |
+| 关键词密度 | 1 | 核心垂直关键词在正文出现 3-5 次（帮 NLP 打标） |
+
+**禁用项**：
+- ❌ 凭"算法权重 40/30/20/10"做硬阈值（伪数字，详见调研报告）
+- ❌ 用"行业打开率 0.89%"做评分基准（一手发布方不可考）
+- ❌ "30 天新号保护期" / "完播率 1.3 倍加成"等无官方依据的量化指标
 
 #### Scoring Execution
 
 1. Read the article.
 2. For each dimension, assign a 0–10 score and a one-line justification citing
    specific line numbers or section headings where the deduction came from.
-3. Sum to a `/70` total.
+3. Sum to a `/80` total（v1.7+ 加入"看一看友好度"维度后为 80 分制）。
 4. Build a per-dimension feedback list. For every dimension scoring `<7/10`, emit:
    - **What failed** (one line, concrete — e.g. "Section 「为什么选 uv」 has only 1 code block, Rule 6 wants ≥2")
    - **Where to fix** (file:line or section heading — actionable)
    - **Suggested action** (e.g. "re-run /article-craft:write on this section with depth=deep", or "replace 综上所述 in L47")
 
 5. **Return verdict based on score, not auto-edit:**
-   - `score >= 55` → return **PASS** with full scorecard
-   - `score < 55` → return **NEEDS_REVISION** with scorecard + actionable feedback list + AskUserQuestion
+   - `score >= 63` → return **PASS** with full scorecard
+   - `score < 63` → return **NEEDS_REVISION** with scorecard + actionable feedback list + AskUserQuestion
 
 #### NEEDS_REVISION prompt
 
 Use AskUserQuestion with these options:
 
 ```
-Question: "Article scored {score}/70 (threshold: 55/70). Phase 2 is diagnostic
+Question: "Article scored {score}/80 (threshold: 63/80). Phase 2 is diagnostic
            — pick how to proceed:"
 Options:
   - Publish anyway — accept current score and continue to publish stage

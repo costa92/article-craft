@@ -1,6 +1,6 @@
 ---
 name: article-craft:series
-version: 1.6.24
+version: 1.7.0
 description: "Plan, manage, generate, and audit article series — shared style, auto-navigation, progress tracking, knowledge coverage analysis. Use when creating, continuing, or auditing a multi-part series."
 allowed-tools:
   - Read
@@ -199,14 +199,36 @@ series_total: 5
 > 上一篇：[Go 环境搭建与第一个程序](./01_go_environment_setup.md)
 ```
 
-**文章结尾（在 closing paragraph 之后）：**
+**文章结尾结构（v1.7+，CTA 必须在预告之上）：**
+
 ```markdown
+[一句话总结 / 金句 — 复述本篇核心价值，1 行]
+
+[CTA 1-2 行] ← **视觉首位，永远优先于预告**
+
 ---
 
 > [!tip] 📚 下一篇预告
 > 《Go 并发编程：goroutine 与 channel》— 下一篇我们讲 Go 最强大的特性：
 > 用 goroutine 和 channel 实现高并发，不需要锁。
+
+[系列导航 1 行 — 可选]
+
+---
+
+> 本文 AI 辅助起稿 + 人工核实改写。  ← AIGC 显式标识（Rule 18 强制）
 ```
+
+**为什么 CTA 必须在预告之上（P1-19 强制规则）：**
+
+4 篇实测发现 3/4 篇的文章末尾被「下一篇预告」占据了视觉首位，**CTA 被挤掉或完全缺失**。读者刷到底部时优先看到的应该是 CTA（点♡/转发/收藏/留言），预告是次要信息——这是公众号生态对算法权重的直接优化（参考 `references/writing-styles.md` § Closing Templates）。
+
+**CTA 选择**：读 frontmatter `wechat_action`（heart/share/collect/comment），到 `references/writing-styles.md` § Closing Templates 找对应模板，不要凭记忆造句。
+
+**禁止**：
+- ❌ 「下一篇预告」放在第一位（视觉首位被预告占据）
+- ❌ 完全没有 CTA（4 篇实测 4/4 都缺，是真实瓶颈）
+- ❌ 「一键三连」式 4 动作堆砌
 
 #### Step 4: 更新 series.md
 
