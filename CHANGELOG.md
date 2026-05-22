@@ -1,5 +1,56 @@
 # Changelog
 
+## [1.7.2] - 2026-05-22 — Rule 24 虚构数字检测 + Rule 23 bug 修复
+
+### Why
+
+Dogfooding pipeline 跑一篇 LAT.md 评论文章时发现两个真问题：
+
+1. **Rule 23 实装 bug**：第一版代码 `body = strip_code_blocks(...)` 算出来后**没用**，违规检测循环仍迭代原始 `lines`——讨论 Rule 23 本身的文章（含规则反例的 ```text 块）被规则自己误报。
+2. **22 条规则没有一条检测"虚构数字"**：LLM 写文章倾向"自信地编数字"让文章看起来更可信。第一轮微信调研推翻 10 条 CSDN 循环引用伪事实，但 v1.7.1 没有规则检测这种模式——这是 LLM 写作最大失败模式之一。
+
+### Added
+
+- **Rule 24: 虚构数字检测**（v1.7.2+，warning，不阻断）—— `scripts/review_selfcheck.py:check_rule_24`：
+  - 扫描正文（非代码块、非 frontmatter）的"数字 + 单位"声明
+  - 6 种豁免：backtick / markdown link / frontmatter `verified_numbers` / 前置 hedge（约/我估计/可能）/ 后置 hedge（左右/上下）/ 年份
+  - Warning-only：FP 率天然高，目的是提醒作者人工核对，不机械阻断 publish
+  - 高密度 (> 5 个) 在 `details` 字段标注
+  - 详细文档：`references/self-check-rules.md` Rule 24
+
+- **`tests/test_rule_24_fabricated_numbers.py`**：14 个 unit test，覆盖：
+  - 4 种 bare claim 触发场景（百分比/时间/数量、warning-level 不阻断）
+  - 6 种豁免机制各 1 测试
+  - hedge 在中文流式句子里的灵活间距
+  - 句子级 hedge 范围（逗号分隔的子句不互相豁免）
+  - 高密度 marker
+
+- **`tests/test_rule_23_code_block_exempt.py`**：8 个 unit test，覆盖 Rule 23 bug fix 的 code-block 豁免行为 + 几个 boundary cases
+
+### Fixed
+
+- **Rule 23 strip_code_blocks bug** (`scripts/review_selfcheck.py:check_rule_23`)：
+  - 用 `code_lines` 集合标记所有处于 fenced block 内的行号
+  - 违规检测循环遇到 code-block 内的行直接 `continue`
+  - 修复前：讨论 Rule 23 本身的文章因 ```text 块里的反例字串被误报
+  - 修复后：dogfood pipeline 上跑实测正常
+
+### Changed
+
+- **`references/self-check-rules.md`**：active rule count 23 → 24，新增 Rule 24 完整定义（检测项 + 6 种豁免 + 修复 4 选 1）
+- **Rule 23 doc**：实现注意 footer 说明 strip_code_blocks bug fix 历史
+
+### Why warning 而非 error（Rule 24 设计决策）
+
+虚构数字检测的天然 FP 率高——同样写"30%"，可能是 LLM 编的、也可能是作者自己测的。Rule 24 不能机械阻断 publish，只能提醒作者"这里有未标注的数字，请核对"。
+
+### Tests
+
+- Rule 24 + Rule 23 unit tests 共 22 个全部 pass
+- Dogfooding 验证：LAT.md 文章修前 Rule 24 报 51 个 warning，修后报 9 个（剩余均为可保留的边界 case）
+
+---
+
 ## [1.7.1] - 2026-05-22 — 第二轮官方调研增量（推荐运营规范 A 级 + Rule 23 反推荐黑名单）
 
 ### Why

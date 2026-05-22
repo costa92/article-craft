@@ -99,6 +99,57 @@ MARKETING_HEADLINE_HEADS = [
     r'.*?(最|超|秒).*?震撼',
 ]
 
+# Rule 24: 虚构具体数字检测（v1.7.2+，warning，不阻断）
+#
+# 动机：LLM 写文章时倾向"自信地编数字"让文章看起来更可信。
+# 第一轮微信调研推翻 10 条来自 CSDN 的循环引用数字（40/30/20/10、
+# 30 天保护期、1.3 倍加成、0.89% 等），但 22 条规则没有一条检测
+# "AI 自己编的数字"。Rule 23 抓反向声明，Rule 22 数主观判断密度，
+# 都不验证数字真伪。这条规则补这个盲区。
+#
+# 检测策略：扫描正文（非代码块、非 frontmatter）的"数字 + 单位"，
+# 不命中下列豁免条件 → 标 warning：
+#   1. 被 backtick `..` 包围
+#   2. 同段落含 markdown link [..](http..)
+#   3. 数字在 frontmatter verified_numbers 白名单
+#   4. 限定词前缀（"约/大概/估计/粗估/我赌/我猜/几/某/不到/超过"）
+#
+# 仅 warning 不阻断 — FP 率天然高，目的是提醒作者人工核对，
+# 不是机械阻断。
+NUMERIC_CLAIM_PATTERN = re.compile(
+    # 数字（含小数、范围、百分比、加减号）+ 单位
+    r'(?<![`\w\.])'  # 前置不是 backtick / 字母数字 / .
+    r'(\d+(?:\.\d+)?(?:\s*[-~–]\s*\d+(?:\.\d+)?)?)'  # 数字或范围
+    r'\s*'
+    r'(%|倍|分钟|小时|天|周|月|年|秒|毫秒|ms|MB|GB|KB|TB|'
+    r'tokens?|美元|\$|元|人|起|条|次|篇|个|文件|行|轮|组|'
+    r'倍?数|tps|qps|rps)',
+    re.IGNORECASE,
+)
+
+# 数字前的限定词（命中则视为非"声明事实"，豁免）
+HEDGE_PREFIXES = [
+    # 直接 hedge 词，允许后跟 0-5 字的连接词（"可能就 30%"）
+    r'(约|大概|估计|粗估|大致|大约|可能|预计|应该|差不多|接近|至少|最多|超过|不到|不下于|有时|偶尔|每?周?可能就|大约就)[^。\n]{0,5}\d',
+    r'(我?(?:估计|猜|赌|觉得|认为|敢断言))[^。\n]*\d',
+    r'(基线|目标|预期|理想|阈值)[^。\n]*\d',  # 目标值不是事实声明
+    r'<?\s*\d+(?:\.\d+)?\s*[%%]\s*?(?:以内|以上|以下)',  # X% 以内/以上 = 范围声明
+    r'(几|十几|数|某|个把|若干)\s*(起|条|次|个|篇|文件|行)',  # 中文模糊量词
+    # backtick 包裹的内容里出现数字 — 例如 `Style G threshold=1`、`v1.7.2`
+    r'`[^`]*\d[^`]*`',
+]
+
+# 数字后的限定词（"20 分钟左右"等）
+HEDGE_POSTFIXES = [
+    r'^\s*(左右|上下|前后|出头|出点|多一些|少一些|或更多|或更少|不到|开外)',
+]
+
+# 不算虚构数字的特殊模式（年份、版本号等）
+EXCLUDED_PATTERNS = [
+    r'^(19|20)\d{2}\s*年',     # 年份 19xx/20xx 年
+    r'^\d+\s*年(?:代)?$',         # 80 年代 / 2025 年
+]
+
 # Rule 18: AIGC 显式标识合规（GB 45438-2025 + cac.gov.cn 标识办法）
 # 任一匹配即认为有 AIGC 标识
 AIGC_LABEL_PATTERNS = [
@@ -1571,14 +1622,29 @@ def check_rule_23(content: str, lines: List[str]) -> CheckResult:
     依据：
     - 微信珊瑚安全 2025-08-31 公告（B 级官方间接）
     - 《微信公众号推荐运营规范》developers.weixin.qq.com（A 级官方一手）
+
+    实现注意：code-block 内的反向声明字串（用于规则文档化的反例）必须豁免，
+    否则讨论 Rule 23 本身的文章无法绕过规则。修复前版本误扫了 ```text 块。
     """
-    body = strip_code_blocks(get_body(content))
     fm = parse_frontmatter(content)
+
+    # 标记所有处于 fenced code block 内的行号（包括 fence 自身）
+    code_lines: set = set()
+    in_code = False
+    for i, line in enumerate(content.split("\n"), 1):
+        if line.strip().startswith("```"):
+            in_code = not in_code
+            code_lines.add(i)
+            continue
+        if in_code:
+            code_lines.add(i)
 
     violations: List[Violation] = []
 
-    # ① AIGC 反向声明检测（error，阻断）
+    # ① AIGC 反向声明检测（error，阻断）—— 跳过 code-block 内的行
     for line_no, line in enumerate(lines, 1):
+        if line_no in code_lines:
+            continue
         for pattern in AIGC_REVERSE_DECLARATIONS:
             m = re.search(pattern, line)
             if m:
@@ -1636,6 +1702,129 @@ def check_rule_23(content: str, lines: List[str]) -> CheckResult:
     )
 
 
+def check_rule_24(content: str, lines: List[str]) -> CheckResult:
+    """Rule 24: 虚构具体数字检测（v1.7.2+，warning，不阻断）.
+
+    扫描正文（非代码块、非 frontmatter）的"数字 + 单位"声明，
+    未命中豁免条件的标 warning，提醒作者核对来源。
+
+    豁免条件：
+      1. 被 backtick `..` 包围（认为是代码/引用）
+      2. 同段落含 markdown link [..](http..)（认为有出处）
+      3. 数字在 frontmatter verified_numbers 白名单
+      4. 限定词前缀（约/估计/我猜/我赌/基线/目标 等）
+
+    设计意图：第一轮微信调研推翻 10 条 CSDN 循环引用伪事实，
+    article-craft v1.7.1 没有规则检测 "AI 自己编的数字"——这是
+    LLM 写作的最大失败模式之一。这条规则补这个盲区。
+
+    设计取舍：FP 率天然高，所以严格 warning 不阻断。目的是提醒
+    作者人工核对，不是机械拦截。
+    """
+    body_content = get_body(content)
+    fm = parse_frontmatter(content)
+    verified = set(str(x) for x in fm.get("verified_numbers", []))
+
+    # 标记 fenced code block 行号（含 fence 自身）
+    code_lines: set = set()
+    in_code = False
+    for i, line in enumerate(content.split("\n"), 1):
+        if line.strip().startswith("```"):
+            in_code = not in_code
+            code_lines.add(i)
+            continue
+        if in_code:
+            code_lines.add(i)
+
+    violations: List[Violation] = []
+    seen_per_line: set = set()  # 同行同数字只报一次
+
+    for line_no, line in enumerate(lines, 1):
+        if line_no in code_lines:
+            continue
+        # 跳过 frontmatter 行（粗略：前 20 行内的 yaml）
+        if line_no <= 20 and re.match(r'^\s*\w+:\s', line):
+            continue
+
+        # 整行是否在 markdown link 内（粗略豁免：有 (http..) 出现）
+        has_link_in_line = bool(re.search(r'\]\(https?://', line))
+
+        for m in NUMERIC_CLAIM_PATTERN.finditer(line):
+            num_str, unit = m.group(1), m.group(2)
+            full_match = m.group(0)
+
+            # 豁免 1: backtick 包围
+            start = m.start()
+            backtick_before = line.rfind('`', 0, start)
+            backtick_after = line.find('`', m.end())
+            if backtick_before >= 0 and backtick_after > start:
+                # 检查 backtick_before 和 backtick_after 之间是否只有 1 个 `
+                between = line[backtick_before:backtick_after + 1]
+                if between.count('`') == 2:
+                    continue
+
+            # 豁免 2: 同行有 markdown link
+            if has_link_in_line:
+                continue
+
+            # 豁免 3: frontmatter 白名单
+            if num_str in verified or f"{num_str}{unit}" in verified:
+                continue
+
+            # 豁免 4: 限定词前缀（句子级）
+            sentence_ends = '。!！?？，,\n'
+            sent_start = start
+            while sent_start > 0 and line[sent_start - 1] not in sentence_ends:
+                sent_start -= 1
+            sent_end = m.end()
+            while sent_end < len(line) and line[sent_end] not in sentence_ends:
+                sent_end += 1
+            sentence = line[sent_start:sent_end]
+            if any(re.search(pat, sentence) for pat in HEDGE_PREFIXES):
+                continue
+
+            # 豁免 5: 后置限定词（"20 分钟左右"）
+            following = line[m.end():m.end() + 8]
+            if any(re.match(pat, following) for pat in HEDGE_POSTFIXES):
+                continue
+
+            # 豁免 6: 排除年份、版本号等特殊模式
+            if any(re.match(pat, full_match) for pat in EXCLUDED_PATTERNS):
+                continue
+
+            # 同行同数字+单位只报一次
+            key = (line_no, num_str, unit)
+            if key in seen_per_line:
+                continue
+            seen_per_line.add(key)
+
+            violations.append(Violation(
+                line=line_no,
+                text=f"未标注来源: {full_match[:30]}",
+                suggestion=(
+                    f"数字「{full_match}」缺少出处。三选一修复：(a) 加 "
+                    f"`{full_match}` 让它出现在代码块/引用中；(b) 同段落加 "
+                    f"[来源](url) 链接；(c) 加限定词「约/估计/我赌」表明这是判断不是事实；"
+                    f"或在 frontmatter verified_numbers: ['{num_str}{unit}'] 白名单显式声明"
+                ),
+                severity="warning",
+            ))
+
+    # 阈值：>5 个未标注数字视为高密度警告（仍不阻断）
+    high_density = len(violations) > 5
+
+    return CheckResult(
+        rule_id=24, rule_name="虚构数字检测",
+        passed=True,  # 永远 passed（warning 级）
+        violations=violations,
+        details=(
+            f"{len(violations)} 个未标注数字声明" + (" (高密度)" if high_density else "")
+            if violations
+            else "无未标注具体数字"
+        ),
+    )
+
+
 # ─── Runner ──────────────────────────────────────────────────────
 
 ALL_CHECKS = [
@@ -1648,6 +1837,8 @@ ALL_CHECKS = [
     check_rule_18, check_rule_19, check_rule_20, check_rule_22,
     # v1.7.1+ 反推荐特征词黑名单（推荐运营规范 + 珊瑚安全公告）
     check_rule_23,
+    # v1.7.2+ 虚构数字检测（warning, 防 LLM 自信编造数字）
+    check_rule_24,
 ]
 
 
@@ -1746,6 +1937,7 @@ _RULE_DISPATCH = {
     18: check_rule_18, 19: check_rule_19, 20: check_rule_20,
     22: check_rule_22,  # Rule 21 reserved
     23: check_rule_23,
+    24: check_rule_24,
 }
 
 # Pre-save GATE for the write skill: blocks save when any of these fail.

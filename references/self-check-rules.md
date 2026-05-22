@@ -5,10 +5,10 @@
 > re-state rule bodies or re-type grep patterns — they read this file and
 > run the patterns from it.
 >
-> **Active rule count: 23.** `scripts/review_selfcheck.py` implements
-> `check_rule_1` through `check_rule_23` sequentially (see the dispatcher
+> **Active rule count: 24.** `scripts/review_selfcheck.py` implements
+> `check_rule_1` through `check_rule_24` sequentially (see the dispatcher
 > list at the bottom of that file). Reference entries below cover all
-> 23 plus the `7b` degradation-aware variant of Rule 7. Rule 21 remains
+> 24 plus the `7b` degradation-aware variant of Rule 7. Rule 21 remains
 > a reserved slot (URL fact-check is now handled by `verify_claims.py`).
 >
 > Rules 18-22 added in v1.7+ based on first-round official-source research:
@@ -17,6 +17,10 @@
 > Rule 23 added in v1.7.1+ based on `developers.weixin.qq.com`
 > 《微信公众号推荐运营规范》(A 级，2024-05-10) + 微信珊瑚安全 2025-08-31
 > 《关于进一步规范人工智能生成合成内容标识的公告》(B 级官方间接).
+> Rule 24 added in v1.7.2+ — fills the blind spot exposed during dogfooding
+> the LAT.md article: LLM-authored text confidently invents specific numbers
+> that no other rule was catching. Warning-level by design — flags for
+> author review, doesn't block publish.
 
 ## Who enforces what
 
@@ -46,6 +50,7 @@
 | **21** *(reserved for future use — formerly URL fact-check, now handled by `verify_claims.py`)* |   |   |   |
 | **22 Personal voice density** |   |   | ✓ (soft warning) |
 | **23 Anti-recommendation blacklist** |   |   | ✓ (error: AIGC reverse decl; warning: marketing headline) |
+| **24 Fabricated-number detection** |   |   | ✓ (warning: unverified 数字 + 单位 claims) |
 
 ## Rule schema
 
@@ -1014,6 +1019,61 @@ LLM 生成长文时偶尔会发生**上下文跳跃事故**：同一节内容（
 3. 改为个人观点钩子（如"为什么我不再用 X：3 个真实场景"）
 
 参考 `skills/write/style-guide.md` 的 Title Hook Formulas 章节。
+
+---
+
+## Rule 24: 虚构数字检测（v1.7.2+，warning，不阻断）
+
+**Severity**: WARNING（不阻断，仅警告）
+**Auto-fix**: no（需作者人工核对来源）
+**Escalation**: review Phase 1 warning，不阻断 publish。
+
+### 检测项
+
+扫描正文（非代码块、非 frontmatter）的"数字 + 单位"声明：
+
+| 单位类别 | 例子 |
+|---|---|
+| 百分比 | `30%`、`80%` |
+| 倍数 | `1.3 倍`、`10-20 倍` |
+| 时间 | `20 分钟`、`6 周`、`200ms` |
+| 金额 | `$15/M tokens`、`100 美元` |
+| 数量 | `7 起`、`12 篇`、`500 文件` |
+| 性能 | `50K tokens`、`200 tps` |
+
+未命中下列豁免条件之一即标 warning。
+
+### 6 种豁免机制
+
+| 豁免 | 条件 | 例子 |
+|---|---|---|
+| 1. backtick 包围 | 数字被反引号包住 | `30%` |
+| 2. markdown link | 同行含 `[..](http..)` | "按 [pricing](https://...) 是 $15/M" |
+| 3. frontmatter 白名单 | `verified_numbers: ['22条', '14个']` | "有 22 条规则" |
+| 4. 前置 hedge（句子内）| 约/大概/我估计/我赌/可能 等 + 数字（≤5 字间隔）| "我估计大概 30% 的项目" |
+| 5. 后置 hedge | 数字+单位 后紧跟 左右/上下/前后 等 | "20 分钟左右" |
+| 6. 年份 / 中文模糊量词 | `2026 年`、"几起"、"数个" | "2026 年发布" |
+
+### Why warning 而非 error
+
+虚构数字检测的天然 FP 率高——同样写"30%"，可能是 LLM 编的、也可能是作者自己测的。**Rule 24 不能机械阻断 publish**，只能提醒作者"这里有未标注的数字，请核对"。
+
+### Why exists
+
+第一轮微信调研推翻了 10 条 CSDN 循环引用的伪事实（`40/30/20/10` 权重、`30 天保护期`、`1.3 倍加成`、`0.89% 打开率` 等），但 v1.7.1 没有一条规则检测"AI 自己编的数字"——Rule 22 数主观判断密度，Rule 23 抓反向声明，都不验证数字真伪。
+
+发现这个盲区是 dogfooding LAT.md 文章时——文章鼓吹"凭什么相信一个数据"，自己却塞了 15+ 个无出处数字。这是 LLM 写作的最大失败模式：**自信地编数字让文章看起来更可信**。Rule 24 是给作者的 sanity check，让 AI 写作流程能拦下"听起来合理的瞎编"。
+
+### 修复 4 选 1
+
+数字 X 被 Rule 24 命中后，作者可选：
+
+| 选项 | 操作 |
+|---|---|
+| (a) 加 backtick | 把数字包进反引号：`X` |
+| (b) 加 link | 同段落给出 `[来源](url)` |
+| (c) 加 hedge | 改为"约 X" / "我估计 X" / "X 左右" |
+| (d) 白名单 | frontmatter 加 `verified_numbers: ['X']` 显式标记已核实 |
 
 ---
 
