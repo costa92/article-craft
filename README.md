@@ -3,11 +3,13 @@
 [![Plugin Layout Smoke](https://github.com/costa92/article-craft/actions/workflows/smoke.yml/badge.svg)](https://github.com/costa92/article-craft/actions/workflows/smoke.yml)
 [![Screenshot E2E](https://github.com/costa92/article-craft/actions/workflows/screenshot-e2e.yml/badge.svg)](https://github.com/costa92/article-craft/actions/workflows/screenshot-e2e.yml)
 
-Modular article generation plugin for Claude Code — 13 composable skills plus orchestrator for the full article lifecycle.
+Modular article generation plugin for Claude Code — 13 composable skills plus orchestrator for the full article lifecycle. **WeChat distribution-aware** (v1.7.x): built from 4 real published articles where 8 self-check rules failed 100% of the time, hardened with A/B-tier official-source evidence chain.
 
 ## What it does
 
 Start writing and article-craft orchestrates the complete pipeline: requirements gathering, source verification, evidence collection for Style H, article writing, screenshot capture with Playwright validation, AI image generation, post-write claim verification, quality review with image count checks, and knowledge base publishing.
+
+**For WeChat 公众号 authors** (v1.7.x default mode): article-craft enforces 6 distribution-critical rules covering AIGC compliance (GB 45438-2025), recommendation-pool qualification (《微信公众号推荐运营规范》), Style G + opinionated tone substance, and tag NLP matching. See [WeChat 适配 (v1.7.x)](#wechat-适配-v17x) section below for empirical validation data.
 
 ## Installation
 
@@ -73,6 +75,62 @@ This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and
 ```
 requirements → verify → [evidence if Style H] → write → screenshot → share_card? → images → verify-claims → review → publish
 ```
+
+## WeChat 适配 (v1.7.x)
+
+5 incremental releases over 5 days, driven by **4 real WeChat articles** (CostaLong account, 2026-05-09 to 2026-05-21) that all underperformed in reach. Pulled them from `mp.weixin.qq.com`, ran them against `review_selfcheck.py`, found **8 rules with 100% failure rate**:
+
+| Rule | Failure root cause |
+|---|---|
+| Rule 18 | No AIGC label → 平台主动加标识 → 流量限制 (GB 45438-2025) |
+| Rule 3 | No CTA → 不进朋友推荐池 (2025-03 微信扩测) |
+| Rule 4 | tags < 3 中文 → 看一看 NLP 匹配受限 |
+| Rule 5 | Anti-AI structure fails → 连续 3 段缺锚点 |
+| Rule 6 | Shallow chapters → 浅层章节缺代码块 |
+| Rule 17 | opinionated 退化为中立技术教程 (强观点 0) |
+| Rule 22 | Personal voice density → 主观判断 0 |
+| Rule 24 | LLM fabricated numbers → 自信编造伪事实 |
+
+### What v1.7.x ships
+
+| Release | Adds | Anchors to |
+|---|---|---|
+| **v1.7.0** | Rule 18 (AIGC) + Rule 19 (title hook) + Rule 20 (paragraph dedup) + Rule 22 (personal voice) + CTA enforcement + double cover (`wechat-double`) | GB 45438-2025 (A 级) + 网信办《标识办法》(A 级) |
+| **v1.7.1** | Rule 23 (anti-recommendation blacklist) + publish step 3.5 (6-item checklist) | 微信珊瑚安全 2025-08-31 公告 (B 级) + 《微信公众号推荐运营规范》(A 级) |
+| **v1.7.2** | Rule 24 (fabricated-number detection, warning-only) + Rule 23 code-block exemption bugfix | Internal dogfooding (LAT.md 评论文章触发) |
+| **v1.7.3** | `style-guide.md` Style G + opinionated 加强模板: 4 fill-in-the-blank tables (个人经历 / 主观判断 / 强观点 / 具体锚点) | Empirical 4-article 100% Rule 17/22 failure data |
+| **v1.7.4** | Rule 4 enforcement (write step 3a hard constraint + publish step 3.5.0 auto-check) | Empirical 4-article 100% Rule 4 failure data |
+
+### Empirical validation (v1.7.4 dogfood)
+
+| Article | Pass rate (v1.7.2 review) |
+|---|---|
+| A1 LLM Wiki | 14/23 (60.9%) |
+| A2 金鱼脑 | 15/23 (65.2%) |
+| A3 NotebookLM | 14/23 (60.9%) |
+| A4 Hindsight | 15/23 (65.2%) |
+| **Average** | **14.5/23 (63.0%)** |
+| **v1.7.4 dogfood article** | **23/23 (100%)** |
+
+**8/8 fail-on-all-4 rules flipped to PASS** in the dogfood article — the augmentation > gating design philosophy works on n=1. Field validation window: 4-6 weeks before deciding if v1.7.5 needs to add Rules 5/17/22 to `WRITE_GATE_RULES` as plan B.
+
+### Design philosophy: augmentation > gating
+
+Considered adding Rules 5/17/22 to `WRITE_GATE_RULES` but rejected for 3 reasons:
+1. Violates write skill's existing separation of concerns
+2. Rules 5/17/22 have 8-12% FP rate empirically — gating causes writing loops
+3. LLM forced through gates "凑规则" rather than internalizing — Rule 17 might trigger but the writing remains hollow
+
+Instead, the prompt augmentation in `skills/write/style-guide.md` `### Style G + opinionated 加强模板` feeds 句式表 directly into the LLM's writing context. This is the same principle as TypeScript types — the constraint shapes the work upstream, rather than gatekeeping at the end.
+
+### Evidence chain convention
+
+Every v1.7.x rule traces to an A-tier or B-tier official source. The full evidence chain lives in two research files:
+
+- `.research/official-sources-verification.md` — round 1, 20 propositions classified A/B/C
+- `.research/wechat-distribution-mechanism-2026.md` — round 2, 9 incremental propositions
+
+When adding new rules: each rule → 1 commit → commit message links ≥1 first-party URL. See `references/self-check-rules.md` Rule 18-24 sections for individual rule definitions and the source chain for each.
 
 ## Architecture Overview
 
@@ -174,9 +232,9 @@ In practice, `skills/` decides **what should happen next**, while `scripts/` is 
 
 **verify-claims** — Post-write shell-command validation. Scans code blocks in the completed article and checks the referenced tools exist on PATH before review.
 
-**review** — Quality gate with 17 self-check rules + 7-dimension scoring (≥55/70 to pass). Self-contained — no external scoring dependency. Includes image-count validation by word count.
+**review** — Quality gate with **23 self-check rules + 8-dimension scoring** (≥63/80 to pass, v1.7+). Self-contained — no external scoring dependency. Includes image-count validation by word count. Rules 18-24 (v1.7.x) cover WeChat-specific compliance, recommendation-pool qualification, anti-LLM systematic failure modes (fabricated numbers, AIGC reverse declarations).
 
-**publish** — Auto-detects Obsidian knowledge base, matches subdirectory, optionally runs WeChat SEO optimization.
+**publish** — Auto-detects Obsidian knowledge base, matches subdirectory. Step 3.5 prints a 7-item human checklist enforcing WeChat backend operations (创作来源 4 选 1 / 原创声明 / 允许推荐 / 不分组群发 / tag 自动检测 / AIGC compliance / no reverse declarations). Optionally runs WeChat SEO optimization.
 
 ## Standalone Commands
 
