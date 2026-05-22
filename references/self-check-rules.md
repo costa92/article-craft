@@ -11,11 +11,12 @@
 > 23 plus the `7b` degradation-aware variant of Rule 7. Rule 21 remains
 > a reserved slot (URL fact-check is now handled by `verify_claims.py`).
 >
-> Rules 18-22 added in v1.7+ based on 2026-05-22 first-round official
-> research (`.research/official-sources-verification.md`).
-> Rule 23 added in v1.7.1+ based on 2026-05-22 second-round research
-> (`.research/wechat-distribution-mechanism-2026.md`) — `developers.weixin.qq.com`
-> 《微信公众号推荐运营规范》(A 级) + 微信珊瑚安全 2025-08-31 公告 (B 级).
+> Rules 18-22 added in v1.7+ based on first-round official-source research:
+> GB 45438-2025 强制国标 + 网信办《标识办法》(cac.gov.cn) + microweixin.qq.com
+> 公开课 + developers.weixin.qq.com 官方运营专员答复.
+> Rule 23 added in v1.7.1+ based on `developers.weixin.qq.com`
+> 《微信公众号推荐运营规范》(A 级，2024-05-10) + 微信珊瑚安全 2025-08-31
+> 《关于进一步规范人工智能生成合成内容标识的公告》(B 级官方间接).
 
 ## Who enforces what
 
@@ -921,7 +922,7 @@ print(f'len={len(title)} title={title}')
 
 ### 触发场景
 
-LLM 生成长文时偶尔会发生**上下文跳跃事故**：同一节内容（H2 标题相同或语义相近 + 首段类似 + 块内容高度相似）出现两次。文章 3「NotebookLM 有了知识图谱」实测就有「引用是怎么工作的」段落重复两次的事故（详见 `.research/published-articles-analysis.md`）。
+LLM 生成长文时偶尔会发生**上下文跳跃事故**：同一节内容（H2 标题相同或语义相近 + 首段类似 + 块内容高度相似）出现两次。实测 4000+ 字长文有概率触发同 H2 标题或同首句的重复段落。
 
 ### Detection
 
@@ -996,9 +997,9 @@ LLM 生成长文时偶尔会发生**上下文跳跃事故**：同一节内容（
 
 ### 依据
 
-- **微信珊瑚安全 2025-08-31**《关于进一步规范人工智能生成合成内容标识的公告》（B 级，多家媒体引用原文）
-- **《微信公众号推荐运营规范》** developers.weixin.qq.com/community/develop/doc/000cac23600b40d219814a85467809 （A 级官方一手）
-- 完整调研：`.research/wechat-distribution-mechanism-2026.md` 命题 21 / 22
+- **微信珊瑚安全 2025-08-31**《关于进一步规范人工智能生成合成内容标识的公告》（B 级，多家媒体引用原文：财联社 cls.cn/detail/2131444、光明网 m.gmw.cn/2025-08/31/content_1304131434.htm、腾讯新闻 news.qq.com/rain/a/20250831A02WGT00）
+- **《微信公众号推荐运营规范》** developers.weixin.qq.com/community/develop/doc/000cac23600b40d219814a85467809 （A 级官方一手，2024-05-10）
+- **公众号文章推荐功能官方 Q&A** developers.weixin.qq.com/community/develop/doc/0000a4c99dccb8f21d816ffe661009 （A 级官方一手置顶帖）
 
 ### 触发后修复
 
