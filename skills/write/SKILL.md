@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.7.2
+version: 1.7.3
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -253,11 +253,20 @@ After loading the base style guide, read `tone:` from frontmatter (it was set in
 
 - `tone: neutral`     → append `## Tone: neutral` section
 - `tone: casual`      → append `## Tone: casual` section
-- `tone: opinionated` → append `## Tone: opinionated` section
+- `tone: opinionated` → append `## Tone: opinionated` section + `### Style G + opinionated 加强模板` section (v1.7.3+)
 
 If no `tone:` in frontmatter, default to `neutral`.
 
 Each tone section contains: register guidance, sample paragraphs at the chosen tier, and replacement-map examples. The writer should follow the sample register, not just consume the rules verbatim.
+
+**v1.7.3+ Style G + opinionated 加强约束**：当 `tone: opinionated`（Style G/H 的默认值）时，**额外加载**`style-guide.md` 的 `### Style G + opinionated 加强模板` 章节——这是基于 4 篇实测文章 100% 失败 Rule 17/22 的针对性补救，包含：
+
+- **个人经历句式表**（≥ 2 处）：时间锚 / 项目锚 / 失败锚 / 选择锚 / 数字锚
+- **主观判断句式表**（≥ 1 处）：我推荐 X 因为 Y / 我不用 Y 因为 Z 等
+- **强观点句式表**（≥ 1 处）：我赌 / 我敢断言 / 别学 / 这玩意儿就是 等（命中 `STRONG_OPINION_PATTERNS`）
+- **具体锚点句式**（每章节 ≥ 1 处）：命令 / 数字 / 路径 / 报错码
+
+写作时把这些表打开作为填空模板，每章节 / 整篇至少命中 1 次相应表。如果 review 阶段 Rule 17/22 仍报 0，**说明加强模板没被实际消费**——回到 Step 3 重写，不是修小。
 
 #### 3b. Title + Cover Image Placeholder
 

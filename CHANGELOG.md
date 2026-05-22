@@ -1,5 +1,72 @@
 # Changelog
 
+## [1.7.3] - 2026-05-22 — Style G + opinionated 加强模板（P1 补救 4 篇实测 100% 失败）
+
+### Why
+
+dogfooding 跑 v1.7.2 review_selfcheck 在 4 篇已发布微信文章上发现：
+
+```
+4 篇文章在 Rule 17 强观点 + Rule 22 主观判断上 100% 失败:
+  A1 LLM Wiki      强观点 0  /  主观判断 0
+  A2 金鱼脑         强观点 0  /  主观判断 0  /  个人锚点 0
+  A3 NotebookLM    强观点 0  /  主观判断 0
+  A4 Hindsight     强观点 0  /  主观判断 0
+```
+
+这不是单篇运气问题——是**写作模板缺失导致的系统性偏差**。v1.7.2 的
+tone-aware prompt augmentation（`## Tone: opinionated`）只给了抽象 rules
+（"强观点 sentences 必须 ≥ 1"），没给可填空的句式表，LLM 写到结尾退化
+成中立技术教程。
+
+### Added
+
+- **`skills/write/style-guide.md` 新增 `### Style G + opinionated 加强模板`** —
+  在 `## Tone: opinionated` 之后追加可填空的写作模板：
+  - **个人经历句式表**（≥ 2 处，Rule 22 检查项）：时间锚 / 项目锚 / 失败锚 / 选择锚 / 数字锚
+  - **主观判断句式表**（≥ 1 处，Rule 22 检查项）：我推荐 X 因为 Y / 我不用 Y 因为 Z / 我觉得 X 就是 Y 等
+  - **强观点句式表**（≥ 1 处，Rule 17 检查项）：我赌 / 我敢断言 / 别学 / 这玩意儿就是 等（命中 `STRONG_OPINION_PATTERNS`）
+  - **具体锚点句式**（每章节 ≥ 1 处，Rule 5 检查项）：命令 / 数字 / 路径 / 报错码
+  - **4 篇实测对照表**：写作时贴在屏幕上的具体失败案例（贴的是真实失败数据，不是抽象 rules）
+  - **A2 金鱼脑 before/after 改写示例**：展示如何把"中立技术教程腔"改写为含个人锚点
+
+- **`skills/write/SKILL.md` Step 3a.5 升级**：当 `tone: opinionated` 时，
+  **额外加载** `### Style G + opinionated 加强模板` 章节作为 prompt augmentation
+
+- **`tests/test_style_guide_p1.py`**：8 个 unit test：
+  - style-guide 结构（必含 4 句式表 + 4 篇对照表 + "100% 失败" 警告）
+  - `STRONG_OPINION_PATTERNS` 与文档不漂移（文档里的强观点例子必须实际匹配
+    `scripts/config.py` 里的 regex）
+  - write SKILL.md Step 3a.5 引用新章节
+
+### Why 没把 Rule 5/17/22 加入 write pre-save GATE
+
+考虑过把 review-only 规则 (5/17/22) 加入 write 的 `WRITE_GATE_RULES`，让保存
+前必须过。最终没做的原因：
+
+1. write SKILL.md 现有职责分工明确："内容质量规则由 review skill 的 Phase 1
+   统一执行,write 不再重复做"——加 gate 违反此约定
+2. Rule 5/17/22 误报率比 Rule 6/11/13/16 略高，加 gate 会导致频繁循环
+3. 改 prompt augmentation 的杠杆点 ROI 更高——LLM 写作时就吸收模板，而不是
+   写完后被规则打回
+
+v1.7.3 选择 **augmentation > gating**：让模板在写作时已经在 prompt 里，
+而不是写完后被规则反复打回。如果效果不达预期，v1.7.4 再考虑加 gate。
+
+### Tests
+
+- 30 个 unit test 全部通过（含 v1.7.1 Rule 23 / v1.7.2 Rule 24 / v1.7.3 P1）
+- 4 篇 P0 patched markdown 仍保持 P0 修复效果（Rule 18 + Rule 3 PASS）
+- Rule 17/22 在已发布的旧文章上仍报失败——这是**预期**，P1 改进只针对未来文章
+
+### Note
+
+P1 模板的真实效果验证窗口期至少 4-6 周（需要作者用 v1.7.3 写 2-3 篇文章观察
+review 阶段 Rule 17/22 通过率变化）。如果通过率未明显上升，v1.7.4 启动 gate
+路径。
+
+---
+
 ## [1.7.2] - 2026-05-22 — Rule 24 虚构数字检测 + Rule 23 bug 修复
 
 ### Why
