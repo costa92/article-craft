@@ -1,5 +1,60 @@
 # Changelog
 
+## [1.7.6] - 2026-05-27 — S8 AI 教程封面 preset + D1 Background 注入轴架构修复
+
+### Why
+
+用户要新增「AI 教程封面风」视觉风格（黑底科技网格 + 悬浮白卡 + 高对比黑白 + cyan 强调 + Notion/Figma/B 站 AI 知识博主氛围），落到 S8。落地过程中通过 7 轮 dogfood（v1–v7, 28 张实测图）发现并修复了一个潜伏的架构问题：
+
+**核心发现 (v6 → v7 对照实验)**
+
+`scripts/generate_and_upload_images.py` 的 `_style_variants_for_preset()` 返回 `background` 字段，但 `vary_prompt_for_position()` 自动注入的 7 个轴（Camera / Composition / Visual treatment / Palette / Material / Lighting / Scale）**不含 Background**——`background` 在所有 7 个 preset 里都是死字段。
+
+实战影响：S8 的 background token 是整套风格的核心锚点（"dark black background with subtle tech grid, multiple floating white diagram cards as the dominant visual structure"）。作者写 naive 内容 prompt（"A RAG pipeline showing ..."）触发 S8 路由后，模型只拿到 `Palette: B&W with cyan accent` 一个弱信号，**0/4 产出 S8 美学**（白底 + S7 信息图 + 满屏 gibberish 文字标签）。
+
+D1 修复后，同一组 base prompt **4/4 全部回归黑底 + cyan**，其中 2/4 完整复现 S8 卡片结构（剩余 2/4 偏离是内容语义抢首位注意力，作者侧已在 image-guide.md 写作规则中告诫）。
+
+### Added
+
+- **S8 AI 教程封面 preset** (`scripts/generate_and_upload_images.py` `VISUAL_STYLE_PRESETS`)：
+  - 16 个 trigger 关键词：transformer / llm / large language model / neural network / attention mechanism / self-attention / embedding / fine-tune / fine-tuning / rag / retrieval-augmented / ai agent / llm agent / prompt engineering / ai tutorial / knowledge card
+  - palette **单变体**锁 cyan（v4 实测双变体 cyan/yellow 轮转导致 4 图整组 accent 不一致）
+  - background 强 anchor: `"dark black background with subtle tech grid, multiple floating white diagram cards with rounded corners and soft shadows as the dominant visual structure"`
+  - treatment 双变体: `diagrammatic with stronger visual hierarchy` + `bold contrast with crisp outlines and accent blocks`（v3 实测 `editorial and narrative` 让 rhythm 图脱锚到赛博朋克场景，已去除）
+- **`DESIGN_LOGIC_RULES` 首位 AI 规则**：`primary_goal: "teach AI/LLM concept"` 放在 `explain structure` 之前，确保 "Transformer architecture diagram" 优先命中 S8 而非 S2（命中顺序很关键，pythonic 实测验证）
+
+- **`skills/images/image-guide.md` 新增 S8 段**：
+  - 完整风格约束模板 + Transformer 封面示例 PROMPT
+  - **⚠️ 避坑 box（v1.7.6 实测）4 条**：
+    - 不要用文字暗示词（`notebook annotations` / `handwritten notes` / `sticky notes` → 改 `hand-drawn doodle marks` / `arrow scribbles` / `geometric shape sketches`）
+    - rhythm 图必须用结构化措辞（含 ❌/✅ 对照表 3 行）
+    - 模型选择建议（minimax 多卡场景下 ~30% 假文字漏出，封面零容忍用 gemini-2.5-flash-image）
+    - palette article-wide 锁 cyan（作者要换 accent 需显式 `Palette: ...` 覆盖）
+  - 风格 × 文章类型推荐矩阵新行：A 教程（AI/LLM 主题）+ AI 知识博主向 → S8
+  - 设计逻辑表新行：讲 AI/LLM 概念 → S8
+
+### Fixed
+
+- **D1: `vary_prompt_for_position()` 新增第 8 个注入轴 `Background:`**：
+  - 同 palette/material 等的 `"X:" not in base_prompt.lower()` skip 模式
+  - 修复了所有 7 个 preset 的 background 死字段问题（S1-S7 也顺带受益，之前同样不被注入）
+  - **v6 vs v7 对照实测**：同一组 naive RAG / fine-tune / embedding / ai agent prompt，D1 前 0/4 产出 S8，D1 后 4/4 黑底 + cyan + 卡片结构
+
+### Tests
+
+- 7 轮 dogfood（v1–v7, 28 张实测图）逐轮发现并闭环：
+  - v1：单图基础验证（minimax 默认）—— S8 视觉成立，但有 gibberish 文字 + yellow 溢色
+  - v2：去掉 `notebook annotations` text-priming 词 + 强化 `single cyan only` —— 单图干净
+  - v3：4 张 dogfood —— 暴露 idx 1 脱锚（赛博朋克头颅）+ cyan/yellow 翻烧饼
+  - v4：A+B+C 三联修（palette 单锁 + treatment 去 editorial + 结构化 base prompt）—— 4/4 S8 家族，但 idx 1 出现可读 "KNOWLEDGE"
+  - v5：B' 修（locked token 里 "knowledge cards" → "diagram cards"）—— 4/4 干净 + 无可读单词
+  - v6：naive 作者用法（不写 S8 风格 stem，只写内容）—— **暴露 background 死字段架构盲点，0/4 S8**
+  - v7：D1 修复后同一组 naive prompt —— **4/4 回归 S8**
+- Python selector 自检 7 个 probe prompt 全部正确路由（transformer / ai tutorial / RAG → S8；benchmark → 数据可视化；microservices → 等距）
+- `py_compile` 通过
+
+---
+
 ## [1.7.5] - 2026-05-22 — publish step 3.5 A/B 路径（「点亮原创」vs「创作来源-AI 生成」gray zone）
 
 ### Why

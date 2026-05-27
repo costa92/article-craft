@@ -365,17 +365,62 @@ Soft [blue] [purple] [yellow] [green] accents
 <!-- PROMPT: Modern clean infographic style, soft white background, cartoon-style characters with vector connectors, professional icon-based layout. Soft blue purple yellow green accents. A central cartoon AI brain character with multiple extending arms, each arm connected by dotted vector lines to a different colored icon: blue database, purple cloud API, green file folder, orange terminal, yellow web browser -->
 ```
 
+#### S8: AI 教程封面 (AI Tutorial Cover)
+
+适用：A 教程（AI/LLM 主题）、C 深度（模型原理 / Transformer / RAG / Agent）、AI 知识博主向
+特点：黑底科技网格 + 悬浮白色知识卡片，高对比黑白配色 + 单一强调色，
+Notion 页面 / Figma 演示排版氛围，B 站科技教程封面感
+
+> ⚠️ **避坑（v1.7.6 实测，4 张图 dogfood）**
+>
+> 1. **不要用文字暗示词**：`notebook annotations` / `handwritten notes` / `sticky notes` 会让
+>    模型在 "no text" 硬约束下硬塞 gibberish letters。用 `hand-drawn doodle marks` /
+>    `arrow scribbles` / `geometric shape sketches` 替代——保留涂鸦质感，去掉文字暗示。
+>
+> 2. **rhythm 图必须用结构化措辞，禁止叙事化措辞**。模型在 editorial treatment 注入下，
+>    叙事化 prompt 会脱锚成赛博朋克场景。
+>
+>    | ❌ 叙事化（会脱锚） | ✅ 结构化（保留 S8 卡片结构） |
+>    |---|---|
+>    | "input arrow splits into 8 parallel attention heads" | "8 small white cards arranged in a horizontal row, each card showing a different small dot-grid pattern" |
+>    | "Q matrix multiplied with K then V" | "three vertically stacked white cards labeled with abstract column-shape icons (no letters), connected by thin arrows" |
+>    | "data flows through encoder-decoder transformation" | "stacked white cards in two columns, dotted lines connecting left column to right column" |
+>
+>    **公式**：先说几张卡 / 怎么排列 / 卡上是什么图形，再说概念是什么。
+>
+> 3. **模型选择**：本地实测 minimax-image-01 在多卡场景下假文字漏出概率 ~30%。
+>    对假文字零容忍的封面用 `--model gemini-2.5-flash-image` 更稳；rhythm 图可
+>    继续 minimax（成本低、构图更大胆）。
+>
+> 4. **palette 已 article-wide 锁 cyan**（v1.7.6 preset 改单变体）。想用 yellow 等其他
+>    accent，作者需在 base prompt 显式写 `Palette: high-contrast black and white with [color] accent`，
+>    脚本检测到 `Palette:` 字面会跳过注入。
+
+```
+风格约束: AI tutorial cover style, dark black background with subtle tech grid,
+floating white diagram cards with rounded corners and soft shadows,
+high-contrast black and white palette with single [accent color] only,
+no other accent colors, Notion-page layout aesthetic, Figma-style presentation.
+The cards contain only graphical icons and shape diagrams, never any letters or words.
+```
+
+**封面示例：**
+```
+<!-- PROMPT: AI tutorial cover style, dark black background with subtle tech grid pattern, floating white diagram cards with rounded corners and soft shadows, high-contrast black and white palette with single cyan accent only, no other accent colors. A central Transformer architecture diagram displayed inside a large white card showing encoder-decoder stacks with stacked blocks, surrounded by smaller satellite cards illustrating multi-head attention split into parallel heads, sinusoidal positional encoding wave shapes, and a feed-forward block, all connected by thin dotted lines and small hand-drawn doodle marks, arrow scribbles, and simple geometric shape sketches. The cards contain only graphical icons and shape diagrams, never any letters or words -->
+```
+
 ### 风格 × 文章类型推荐矩阵
 
 | 文章风格 | 首选视觉 | 备选视觉 | 封面氛围 |
 |---------|---------|---------|---------|
-| A 教程 | S1 极简扁平 | S7 信息图 | 清晰、可信、专业 |
+| A 教程 | S1 极简扁平 | S7 信息图 / S8 AI 教程封面（AI 主题） | 清晰、可信、专业 |
 | B 分享 | S4 手绘线描 | S6 概念场景 | 亲切、轻松、真实 |
-| C 深度 | S7 信息图 | S2 等距透视 | 严谨、深度、工程感 |
+| C 深度 | S7 信息图 | S2 等距透视 / S8 AI 教程封面（模型/算法主题） | 严谨、深度、工程感 |
 | D 评测 | S5 数据可视化 | S1 极简扁平 | 客观、对比、数据驱动 |
 | E 资讯 | S1 极简扁平 | S2 等距透视 | 简洁、快速、信息密度 |
 | F 复盘 | S5 数据可视化 | S4 手绘线描 | 反思、对比、before/after |
 | G 观点 | S6 概念场景 | S3 渐变科技 | 有态度、引发思考 |
+| AI 知识博主向 | S8 AI 教程封面 | S7 信息图 | 黑底白卡、Notion 感、科普博主 |
 
 ### 设计逻辑
 
@@ -388,6 +433,7 @@ Soft [blue] [purple] [yellow] [green] accents
 | 表达概念 | S6 / S3 |
 | 讲流程 | S7 / S1 |
 | 强调人味 | S4 |
+| 讲 AI/LLM 概念（Transformer / 注意力 / RAG / Agent） | S8 |
 | 泛用兜底 | S1 |
 
 每张图最终都会再经过位置轮转，补上镜头、构图、配色、材质、光线和尺度变化。

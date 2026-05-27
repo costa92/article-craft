@@ -1,6 +1,6 @@
 ---
 name: article-craft:share-card
-version: 1.7.5
+version: 1.7.6
 description: "Generate platform-optimized social share cards (cover/feed/post images) from article frontmatter. 10 platform presets, 7 color schemes."
 allowed-tools:
   - Read

@@ -1379,6 +1379,48 @@ VISUAL_STYLE_PRESETS = {
         "lighting": ("high-key illumination", "soft daylight"),
         "scale": ("wide contextual scale", "mixed-scale composition"),
     },
+    "ai tutorial cover style": {
+        "triggers": (
+            "transformer",
+            "llm",
+            "large language model",
+            "neural network",
+            "attention mechanism",
+            "self-attention",
+            "embedding",
+            "fine-tune",
+            "fine-tuning",
+            "rag",
+            "retrieval-augmented",
+            "ai agent",
+            "llm agent",
+            "prompt engineering",
+            "ai tutorial",
+            "knowledge card",
+        ),
+        # Single-variant palette (v1.7.6 dogfood finding): 4-image batches
+        # with cyan/yellow alternation looked incoherent. Lock cyan article-wide.
+        # Cross-article variety is up to the author overriding via Palette: in
+        # the base PROMPT.
+        "palette": ("high-contrast black and white with cyan accent",),
+        # Reinforced locked token: explicitly call cards the dominant visual
+        # structure so rhythm images (with editorial/narrative treatment
+        # rotation) don't drift to cinematic non-card scenes.
+        #
+        # "diagram cards" (not "knowledge cards") — v1.7.6 dogfood v4 showed
+        # Minimax rendering "KNOWLEDGE" as literal text on cards when
+        # "knowledge" repeated in locked token. "diagram" doesn't get rendered.
+        "background": "dark black background with subtle tech grid, multiple floating white diagram cards with rounded corners and soft shadows as the dominant visual structure",
+        # Drop "editorial and narrative with one dominant focal object" — under
+        # this preset it pushed Minimax toward dramatic non-card compositions.
+        # Both remaining treatments preserve the card-grid structure.
+        "treatment": (
+            "diagrammatic with stronger visual hierarchy",
+            "bold contrast with crisp outlines and accent blocks",
+        ),
+        "lighting": ("high-key illumination", "diffused studio light"),
+        "scale": ("medium-scale balanced objects", "wide contextual scale"),
+    },
 }
 
 DEFAULT_VISUAL_STYLE = {
@@ -1391,6 +1433,28 @@ DEFAULT_VISUAL_STYLE = {
 }
 
 DESIGN_LOGIC_RULES = (
+    {
+        "primary_goal": "teach AI/LLM concept",
+        "triggers": (
+            "transformer",
+            "llm",
+            "large language model",
+            "neural network",
+            "attention mechanism",
+            "self-attention",
+            "embedding",
+            "fine-tune",
+            "fine-tuning",
+            "rag",
+            "retrieval-augmented",
+            "ai agent",
+            "llm agent",
+            "prompt engineering",
+            "ai tutorial",
+            "knowledge card",
+        ),
+        "preset": "ai tutorial cover style",
+    },
     {
         "primary_goal": "explain structure",
         "triggers": ("architecture", "diagram", "flow", "pipeline", "system", "infrastructure"),
@@ -1538,6 +1602,16 @@ def vary_prompt_for_position(
         parts.append(f"Lighting: {lighting}")
     if "scale:" not in base_prompt.lower():
         parts.append(f"Scale: {scale}")
+    # Background was an orphan field in the preset until v1.7.6 dogfood —
+    # `style["background"]` was computed but never injected, so styles with
+    # a strong background anchor (notably S8 AI tutorial cover with
+    # "dark black grid + floating white diagram cards") collapsed into
+    # generic illustrations when the author wrote sparse PROMPTs without
+    # manually copying the style stem. Inject as the 8th axis with the same
+    # "skip if author specified" guard the other axes use.
+    background = style.get("background") or ""
+    if background and "background:" not in base_prompt.lower():
+        parts.append(f"Background: {background}")
     return ". ".join(parts) + "."
 
 
