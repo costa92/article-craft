@@ -395,6 +395,29 @@ Notion 页面 / Figma 演示排版氛围，B 站科技教程封面感
 > 4. **palette 已 article-wide 锁 cyan**（v1.7.6 preset 改单变体）。想用 yellow 等其他
 >    accent，作者需在 base prompt 显式写 `Palette: high-contrast black and white with [color] accent`，
 >    脚本检测到 `Palette:` 字面会跳过注入。
+>
+> 5. **每张图的 PROMPT 必须以完整 S8 风格 stem 开头**（v1.7.6 端到端实测发现，必备保护）。
+>    脚本会自动在 prompt 末尾注入 `Background:` 锁感觉，但末尾位置注意力权重低 —
+>    实测 cover（结构锚点强）通常能扛住，rhythm 图（空间布局相对弱）经常脱锚成
+>    teal 雾气 / 白底高亮 / 渐变科技。**对照实验**：
+>
+>    | 场景 | base prompt 写法 | 4 图 S8 成功率 |
+>    |---|---|---|
+>    | v5 实测 | 每图开头都抄完整 S8 stem | 4/4 ✅ |
+>    | v7 实测 | naive 内容描述（零 stem） | 4/4 黑底 cyan 最低线，但卡片结构 2/4 |
+>    | v1.7.6 端到端 | base 含 "white diagram cards" 关键词无完整 stem | 1/3 强 S8，2/3 漂移 |
+>
+>    **可直接 copy 到每个 PROMPT 开头的 stem**（粘贴后接本图具体内容）：
+>
+>    ```
+>    AI tutorial cover style, dark black background with subtle tech grid,
+>    multiple floating white diagram cards with rounded corners and soft shadows
+>    as the dominant visual structure, high-contrast black and white palette
+>    with single cyan accent only, no other accent colors.
+>    ```
+>
+>    然后写本图具体内容：`[X 张卡片排成 Y 模式], [每张卡上是什么图形],
+>    [卡之间怎么连], [收尾 no text 硬约束]`。
 
 ```
 风格约束: AI tutorial cover style, dark black background with subtle tech grid,
