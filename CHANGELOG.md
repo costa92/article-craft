@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.7.7] - 2026-05-29 — 修复 datetime.utcnow() 弃用警告
+
+### Why
+
+用户安装 1.7.6 后运行 review 阶段，`review_selfcheck.py` 产生
+`DeprecationWarning: datetime.datetime.utcnow() is deprecated`。该 API 在
+Python 3.12+ 已弃用并计划移除。属于警告级（功能正常），但污染 review 输出。
+
+### Fixed
+
+- `scripts/review_selfcheck.py:1187`（tone-calibration jsonl 时间戳）与
+  `scripts/publish_plan.py:46`（备份文件名时间戳）：`datetime.utcnow()`
+  → `datetime.now(timezone.utc)`。输出格式逐字节一致（review_selfcheck
+  保留 `...Z` 后缀，publish_plan 保留 `YYYYMMDDhhmmss`）。全仓库已无其他
+  `utcnow()` 调用；504 tests pass。
+
 ## [1.7.6] - 2026-05-27 — S8 AI 教程封面 preset + D1 Background 注入轴架构修复
 
 ### Why
