@@ -253,15 +253,7 @@ python3 "$SCRIPT" --from-file /tmp/verify-results.txt
 
 > screenshot_tool.py 会优先读取此缓存（路径 `~/.cache/article-craft/verify-cache.json`），避免对同一 URL 重复发起 HEAD 请求。
 
-**Cache TTL (configurable)**:
-
-| Mode | Default TTL | Rationale |
-|---|---|---|
-| Standard single-article run | **1 hour** | Single session won't cross boundary; freshness matters more |
-| `--series FILE` | **24 hours** | Auto-extended so all articles in a multi-hour series share vetting |
-| Custom | via `~/.claude/env.json` key `verify_cache_ttl_seconds` | Overrides both defaults; useful for CI / batch runs |
-
-Behavior: `VerificationCache` in `scripts/config.py` reads `verify_cache_ttl_seconds` from env.json at load time. If unset, it falls back to 3600 (1h). Orchestrator detects `--series` and temporarily sets `VERIFY_CACHE_TTL_SECONDS=86400` in the environment for the duration of the run.
+**Cache TTL**: fixed **1 hour**. The cache file (`~/.cache/article-craft/verify-cache.json`) is written by `scripts/write_verify_cache.py` (`CACHE_TTL = 3600`) and read by `scripts/screenshot_tool.py` (`CACHE_TTL_SECONDS = 3600`); entries older than 1h are treated as stale and re-verified. The path honors `ARTICLE_CRAFT_CACHE_DIR` via `config.cache_dir()`. There is no env-configurable TTL today — a single article run never crosses the 1h boundary, so per-run override hasn't been needed.
 
 ---
 
