@@ -1,6 +1,6 @@
 ---
 name: article-craft:verify
-version: 1.7.8
+version: 1.8.0
 description: "Batch verify links, commands, and tool features with source trust tiers. Uses T0-T5 trust classification to focus verification effort."
 allowed-tools:
   - Read

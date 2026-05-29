@@ -1,6 +1,6 @@
 # WeChat-Native Body Form: 正交 body-form 轴
 
-**Status**: design
+**Status**: implemented (v1.8.0)
 **Date**: 2026-05-29
 **Target version**: article-craft v1.8.0
 **Author**: costa

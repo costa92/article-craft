@@ -69,6 +69,30 @@ and seeds future threshold tuning. Opt out via `ARTICLE_CRAFT_TONE_CALIBRATION=f
 Spec: `docs/superpowers/specs/2026-05-07-tone-system-design.md`.
 Plan: `docs/superpowers/plans/2026-05-07-tone-system.md`.
 
+### Body-form axis (v1.8.0)
+
+A second orthogonal axis alongside tone: `body_form` decides 正文形态 —
+`wechat-native` (default, mobile-shaped 公众号 body: short paragraphs, no
+Obsidian callouts, ≤ `##`/`###` headings, image rhythm, single throughline)
+vs `long-form` (today's blog body: callouts allowed, deep sections — the
+KB/blog archive copy). It is independent of *style* (A–H content identity)
+and *depth* (字数): a `wechat-native + deep` article is long but mobile-shaped.
+
+Resolution precedence (mirrors tone): `--body-form` CLI > frontmatter
+`body_form:` > legacy `wechat_target: false` alias > default `wechat-native`.
+The canonical resolver is `config.resolve_body_form()`. **`wechat_target` is
+no longer dead** — `wechat_target: false` is the back-compat spelling for
+`body_form: long-form`. requirements emits `body_form` into article
+frontmatter; write injects the matching `## Body Form` section from
+`style-guide.md` and renders callouts only under `long-form`;
+`check_rule_6` lowers its per-section threshold by 1 for `wechat-native`;
+review adds a **soft** Phase-2 form-consistency signal (no new write gate —
+augmentation > gating). Default is always `wechat-native`; `long-form` is
+opt-in only (never auto-inferred from depth/教程 keywords).
+
+Spec: `docs/superpowers/specs/2026-05-29-wechat-native-body-form-design.md`.
+Plan: `docs/superpowers/plans/2026-05-29-wechat-native-body-form.md`.
+
 ### WeChat distribution rules (v1.7.x)
 
 5 incremental releases (v1.7.0–v1.7.4) shipped over 5 days, driven by

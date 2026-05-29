@@ -1,6 +1,6 @@
 ---
 name: article-craft:review
-version: 1.7.8
+version: 1.8.0
 description: "Quality gate for articles — canonical self-check rules + built-in content scoring. All-in-one review without external dependencies."
 allowed-tools:
   - Read
