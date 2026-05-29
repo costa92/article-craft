@@ -779,6 +779,15 @@ def check_rule_6(content: str, lines: List[str]) -> CheckResult:
     style_key = style_raw.strip()[:1].upper() if style_raw else ""
     base_threshold = STYLE_CODE_BLOCK_THRESHOLD.get(style_key, DEFAULT_CODE_BLOCK_THRESHOLD)
 
+    # Body-form-aware: wechat-native sections are punchier and fewer, so they
+    # need one fewer code block per section (min 1). long-form keeps the full
+    # style threshold. Missing field degrades to wechat-native (the default).
+    body_form_raw = (frontmatter.get("body_form", "") or "").strip()
+    if frontmatter.get("wechat_target") in (False, "false", "False"):
+        body_form_raw = "long-form"
+    if body_form_raw != "long-form":  # wechat-native or unset (default)
+        base_threshold = max(1, base_threshold - 1)
+
     # Keywords indicating intro/motivation chapters that naturally have fewer code blocks
     intro_keywords = re.compile(r'为什么|挑战|争议|背景|动机|现实|痛点|局限|需要|缺什么|之后')
 
@@ -810,7 +819,7 @@ def check_rule_6(content: str, lines: List[str]) -> CheckResult:
     return CheckResult(
         rule_id=6, rule_name="章节深度",
         passed=len(violations) == 0, violations=violations,
-        details=f"{len(violations)} 个浅层章节 (style={style_key or '?'}, threshold={base_threshold})"
+        details=f"{len(violations)} 个浅层章节 (style={style_key or '?'}, body_form={'long-form' if body_form_raw == 'long-form' else 'wechat-native'}, threshold={base_threshold})"
     )
 
 

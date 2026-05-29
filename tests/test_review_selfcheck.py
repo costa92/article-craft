@@ -159,6 +159,59 @@ description: "demo"
 
         self.assertTrue(result.passed, result.details)
 
+    def test_rule6_wechat_native_lowers_threshold(self):
+        # Style D threshold is 2. A section with 1 code block FAILS
+        # under long-form but PASSES under wechat-native (native lowers by 1,
+        # so effective threshold = max(1, 2-1) = 1).
+        article = (
+            "---\n"
+            "title: demo\n"
+            'description: "demo"\n'
+            "writing_style: D\n"
+            "body_form: wechat-native\n"
+            "---\n"
+            "\n"
+            "# 标题\n"
+            "\n"
+            "## 实战一节\n"
+            "\n"
+            "这一节有实际内容，超过两百字的正文用来触发深度检查。"
+            + "占" * 200
+            + "\n"
+            "\n"
+            "```python\n"
+            'print("only one block")\n'
+            "```\n"
+        )
+        result = review_selfcheck.check_rule_6(article, article.splitlines())
+        self.assertTrue(result.passed, result.details)
+
+    def test_rule6_long_form_keeps_threshold(self):
+        # Style D threshold is 2. With body_form=long-form the threshold stays
+        # at 2, so a section with only 1 code block should FAIL.
+        article = (
+            "---\n"
+            "title: demo\n"
+            'description: "demo"\n'
+            "writing_style: D\n"
+            "body_form: long-form\n"
+            "---\n"
+            "\n"
+            "# 标题\n"
+            "\n"
+            "## 实战一节\n"
+            "\n"
+            "这一节有实际内容，超过两百字的正文用来触发深度检查。"
+            + "占" * 200
+            + "\n"
+            "\n"
+            "```python\n"
+            'print("only one block")\n'
+            "```\n"
+        )
+        result = review_selfcheck.check_rule_6(article, article.splitlines())
+        self.assertFalse(result.passed, result.details)
+
 
 class CLIRuleSelectionTests(unittest.TestCase):
     """Tests for the --rules / --write-gate / --gate-only CLI surface.

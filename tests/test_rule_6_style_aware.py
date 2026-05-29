@@ -40,10 +40,11 @@ def _make_section(heading: str, n_code_blocks: int) -> str:
     return f"## {heading}\n\n{filler}\n{blocks}\n"
 
 
-def _article(style_token: str, sections: list[tuple[str, int]]) -> str:
+def _article(style_token: str, sections: list[tuple[str, int]], body_form: str = "") -> str:
     """Assemble a fake article: frontmatter (with writing_style) + sections."""
     fm_line = f"writing_style: {style_token}\n" if style_token else ""
-    fm = "---\n" + "title: demo\ndescription: \"demo\"\n" + fm_line + "---\n\n# 标题\n\n"
+    bf_line = f"body_form: {body_form}\n" if body_form else ""
+    fm = "---\n" + "title: demo\ndescription: \"demo\"\n" + fm_line + bf_line + "---\n\n# 标题\n\n"
     body = "\n".join(_make_section(h, n) for h, n in sections)
     return fm + body
 
@@ -73,7 +74,7 @@ class Rule6StyleAwareTests(unittest.TestCase):
 
     def test_style_a_fails_with_one_code_block_per_section(self):
         """Style A (教程) → threshold 3, so 1 block per section should FAIL."""
-        article = _article("A", [("步骤一", 1), ("步骤二", 1)])
+        article = _article("A", [("步骤一", 1), ("步骤二", 1)], body_form="long-form")
         result = review_selfcheck.check_rule_6(article, article.splitlines())
         self.assertFalse(
             result.passed,
@@ -92,28 +93,28 @@ class Rule6StyleAwareTests(unittest.TestCase):
 
     def test_style_c_requires_five_code_blocks(self):
         """Style C (深度) → threshold 5, so 2 blocks should fail."""
-        article = _article("C", [("深度一", 2)])
+        article = _article("C", [("深度一", 2)], body_form="long-form")
         result = review_selfcheck.check_rule_6(article, article.splitlines())
         self.assertFalse(result.passed, result.details)
         joined = " ".join(v.suggestion for v in result.violations)
         self.assertIn("5", joined)
 
     def test_no_writing_style_defaults_to_two(self):
-        """Missing writing_style → falls back to threshold 2."""
-        article = _article("", [("章节一", 1)])
+        """Missing writing_style + long-form → falls back to threshold 2."""
+        article = _article("", [("章节一", 1)], body_form="long-form")
         result = review_selfcheck.check_rule_6(article, article.splitlines())
         self.assertFalse(
             result.passed,
             f"No writing_style + 1 code block should fail (default threshold 2); got: {result.details}",
         )
         # Two blocks → pass under default
-        article_ok = _article("", [("章节一", 2)])
+        article_ok = _article("", [("章节一", 2)], body_form="long-form")
         result_ok = review_selfcheck.check_rule_6(article_ok, article_ok.splitlines())
         self.assertTrue(result_ok.passed, result_ok.details)
 
     def test_unknown_writing_style_defaults_to_two(self):
-        """Unknown style letter (Z) → falls back to threshold 2."""
-        article = _article("Z 未知", [("章节一", 1)])
+        """Unknown style letter (Z) + long-form → falls back to threshold 2."""
+        article = _article("Z 未知", [("章节一", 1)], body_form="long-form")
         result = review_selfcheck.check_rule_6(article, article.splitlines())
         self.assertFalse(result.passed, result.details)
 
