@@ -46,6 +46,7 @@ Five modes, selected at invocation:
 - **Topic** (optional): If provided as argument, skip requirements skill
 - **Mode flag**: `--quick` or `--draft` (default: standard)
 - **Tone flag** (optional): `--tone={neutral,casual,opinionated}` — Override tone tier. Cascade: this flag wins; then frontmatter `tone:`; then writing-style default (`STYLE_TO_TONE_DEFAULT` in `scripts/config.py`). Invalid values fail the orchestrator with an explicit error — do not silently degrade. Pass through to the requirements skill.
+- **Body-form flag** (optional): `--body-form={wechat-native,long-form}` (or `--long-form`). Cascade: this flag > frontmatter `body_form:` > legacy `wechat_target:false` > default `wechat-native`. Pass through to requirements.
 - **File path** (optional): If an existing article.md is provided, skip to the next unfinished stage
 - **Upgrade flag**: `--upgrade` with a file path — upgrade a draft/quick article to standard
 - **Series flag**: `--series SERIES_FILE` — write the next planned article in the series (reads topic, audience, depth, visual style from series.md)
@@ -146,6 +147,7 @@ Parse the invocation arguments:
 - `--quick` → quick mode (requirements + write + screenshot + images)
 - `--draft` → draft mode (requirements + write only)
 - Detect `--tone=<value>`. If `<value>` not in `{neutral,casual,opinionated}`, abort with a user-facing error: "Invalid tone: <value>. Allowed: neutral, casual, opinionated." Otherwise pass it through to the `requirements` skill call as `--tone=<value>`.
+- Detect `--body-form=<value>` (also accept the bare `--long-form` shorthand for `--body-form=long-form`). If `<value>` not in `{wechat-native,long-form}`, abort with: "Invalid body-form: <value>. Allowed: wechat-native, long-form." Otherwise pass it through to the `requirements` skill as `--body-form=<value>`. If absent, requirements applies the default (`wechat-native`).
 - If a file path to an existing `.md` file is provided → skip requirements/verify/write,
   start from images skill
 
@@ -159,6 +161,7 @@ Pipeline Status:
     └─ multi-layer inference (5 layers)
     └─ trusted sources: T0-T5 classification
     └─ writing style: A/B/C/D/E/F/G/H
+    └─ body form: wechat-native (default) / long-form
   verify:       pending
     └─ focus: T3-T5 sources, skip T0-T1 links
   evidence:     pending   # Style H 必跑，其它 skipped
