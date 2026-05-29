@@ -1057,7 +1057,7 @@ def check_rule_14(content: str, lines: List[str]) -> CheckResult:
                         violations.append(Violation(
                             line=code_start + 1,
                             text=f"```{code_lang} 块含 ASCII 图: {preview}",
-                            suggestion="转换为 <!-- IMAGE: name - desc (ratio) --> 占位符"
+                            suggestion="流程图/架构图转 <!-- IMAGE: name - desc (ratio) --> 占位符；目录树（├──/└──）改用 Markdown 列表"
                         ))
                 in_code = False
                 code_lines = []

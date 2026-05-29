@@ -167,6 +167,7 @@ Options:
 
 **例外**：
 - 当 `body_form: long-form`（含 legacy `wechat_target: false` 别名）时，跳过此步骤，直接用单一标题
+- 当 requirements 由 orchestrator 预解析、或在非交互场景运行（autonomous / scheduled / `--series` 批量）时，**跳过 AskUserQuestion**，直接选用推荐的数字钩子标题（A 候选）写入 `title:`——中途交互会打断自动化运行（见 orchestrator 的 no-interactive-prompt 原则）
 - Style H (爆料自媒体) 必须命中 H 的戏剧化标题公式（"刚刚"/"突袭"/"硬刚"），3 候选都走戏剧化变体即可
 
 ### Step 2: Determine Save Path
@@ -894,6 +895,10 @@ sentences. Re-run the count; loop up to 2 times. If you still can't
 reach min after 2 expansion rounds, save as-is and note in the handoff
 output (Step 7) that word count fell short — the orchestrator can
 decide whether to push back.
+
+> **校准提示**：上面的计数只统计正文 CJK 字符（不含代码块、frontmatter、占位符），所以
+> 代码密集的章节"看着长、实际短"。一轮扩写 2-3 节 × 每节 100-300 字 ≈ +300-900 字；
+> 先用这个估算缺口要补几节，避免一轮补太少又触发第二轮 loop。
 
 **If over max**: usually fine, but if >1.5× max, look for restated
 points or filler ("总的来说" / "综上") and trim.
