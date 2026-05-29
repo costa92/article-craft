@@ -229,6 +229,8 @@ resolved_tone = resolve_tone(
 Write the resolved value into article frontmatter as `tone: <value>` so
 downstream skills (write / review / lint) can read it.
 
+Write the resolved value into article frontmatter as `body_form: <value>` (default `wechat-native`) so downstream skills (write / review / publish) can read it.
+
 **Why no user question**: writing-style is always determined by this point
 (Step 1–4 guarantee it), so `STYLE_TO_TONE_DEFAULT` always resolves a valid tone,
 even when CLI flag and frontmatter are both empty. The three-source-empty

@@ -17,8 +17,9 @@ class BodyFormStyleGuideTests(TestCase):
         self.assertIn("## Body Form: wechat-native", self.text)
 
     def test_documents_callout_ban(self):
-        # The native form must explicitly forbid Obsidian callouts.
-        self.assertRegex(self.text, r"Body Form: wechat-native[\s\S]*?callout")
+        # The native form must explicitly forbid Obsidian callouts (the ban row,
+        # not the long-form "callouts allowed" intro sentence).
+        self.assertRegex(self.text, r"Callouts.*\*\*banned\*\*")
 
     def test_documents_long_form(self):
         self.assertIn("long-form", self.text)
