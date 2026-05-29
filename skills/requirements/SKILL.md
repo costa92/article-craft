@@ -99,6 +99,21 @@ Infer the primary CTA action (`wechat_action`) based on style + intent. This is 
 
 **Why only one action**: Algorithm权重 + 实测 — 公众号读者对"一键三连"会全部忽略，单一引导转化率更高（详见 `wechat-push-mechanism-2026.md` §5.2，B 级实测经验）。
 
+### Layer 4.6: Body Form (NEW, v1.8+)
+
+`body_form` decides正文形态, **orthogonal to style and depth**. Default is
+**`wechat-native`** for every request — 公众号 is the primary target, so a
+generic "写一篇关于 X" gets a mobile-shaped body (the content *style* still
+resolves to A/tutorial, only the *form* is native).
+
+Emit `long-form` **only** on an explicit signal — never auto-inferred from
+depth/教程 keywords (that is the blog bias we are removing):
+- `--body-form long-form` CLI flag (passed through by the orchestrator), or
+- frontmatter `body_form: long-form`, or
+- legacy frontmatter `wechat_target: false` (back-compat alias).
+
+The canonical resolver is `config.resolve_body_form()`.
+
 ### Layer 5: Source Trust Detection (NEW)
 
 **Automatically detect trusted sources for the topic** to help verify step:
@@ -270,6 +285,7 @@ After inference + confirmation, output structured context for downstream skills:
     - "部署" → depth tutorial
     - intent "tutorial" → audience default intermediate
 - wechat_action: heart  # CTA primary action: heart/share/collect/comment (Layer 4.5)
+- body_form: wechat-native  # 正文形态: wechat-native (默认) | long-form (KB/博客长文)
 - _trusted_sources:
     - url: https://docs.astral.sh/uv/
       tier: T0
