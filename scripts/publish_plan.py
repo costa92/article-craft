@@ -8,7 +8,7 @@ import hashlib
 import json
 import shutil
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +43,7 @@ def _file_sha256(path: Path) -> str:
 
 
 def _timestamped_name(path: Path) -> Path:
-    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     return path.with_name(f"{path.stem}_{stamp}{path.suffix}")
 
 

@@ -19,7 +19,7 @@ import os
 import hashlib
 import yaml
 import statistics
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Union
 from dataclasses import dataclass, field, asdict
@@ -1184,7 +1184,7 @@ def _maybe_log_tone_calibration(
     cache_dir.mkdir(parents=True, exist_ok=True)
     sha = hashlib.sha256(article_content.encode("utf-8")).hexdigest()
     record = {
-        "ts": datetime.utcnow().isoformat() + "Z",
+        "ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "article": sha,
         "writing_style": writing_style,
         "tone_resolved": tone,
