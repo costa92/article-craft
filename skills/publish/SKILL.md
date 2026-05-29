@@ -286,7 +286,7 @@ zone — 官方从未明确表态二者是否互斥(developers.weixin.qq.com 多
 
 **实施方式**：在 Step 5 完成摘要之后追加这段输出。即使是 `--output` 显式指定目录的 Mode A，也要打印——这些约束与文件路径无关，是发布动作本身的硬约束。
 
-**例外**：如果 review skill 已确认文章 `wechat_target: false`（明确非公众号场景，如纯 blog 输出），可以跳过此 checklist。
+**例外**：如果文章 `body_form: long-form`（含 legacy `wechat_target: false` 别名，即明确非公众号场景，如纯 blog/KB 输出），可以跳过此 checklist。
 
 **为什么 checklist 而不是自动化**：微信公众平台**没有公开 API**——「创作来源」「原创声明」「允许推荐」三项都必须在 mp.weixin.qq.com 后台 UI 人工操作，article-craft 只能提醒，不能代为执行。
 
