@@ -1944,8 +1944,15 @@ _RULE_DISPATCH = {
 # Source: references/self-check-rules.md "Who enforces what" matrix —
 # write column. Keep this constant in sync with that matrix; the test
 # `CLIRuleSelectionTests.test_write_gate_rules_constant_matches_doc`
-# pins the tuple to (1, 2, 6, 11, 13, 16) on purpose.
-WRITE_GATE_RULES = (1, 2, 6, 11, 13, 16)
+# pins the tuple to (1, 2, 6, 13, 14, 16) on purpose.
+#
+# NOTE: Rule 11 (占位符残留 / placeholder residue) is deliberately NOT here.
+# At write time the article still carries `<!-- IMAGE: -->` placeholders by
+# design (the images stage resolves them later), so gating on Rule 11 would
+# block every legitimate draft. Placeholder residue is a REVIEW-stage gate
+# (post-images). Rule 14 (ASCII in non-executable code blocks) is the
+# pre-images gate that forces ASCII diagrams into IMAGE placeholders.
+WRITE_GATE_RULES = (1, 2, 6, 13, 14, 16)
 
 
 def run_selected_rules(article_path: str, rule_ids: List[int]) -> Tuple[List[CheckResult], bool]:

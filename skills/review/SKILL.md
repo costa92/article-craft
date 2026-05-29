@@ -17,8 +17,8 @@ Run self-check rules against the article, then perform built-in content scoring.
 **Invoke**: `/article-craft:review`
 
 **Features**:
-- Phase 1: all 17 rules from `references/self-check-rules.md` via `scripts/review_selfcheck.py`
-- Phase 2: 7-dimension built-in content scoring
+- Phase 1: all 23 rules from `references/self-check-rules.md` via `scripts/review_selfcheck.py`
+- Phase 2: 8-dimension built-in content scoring
 - Self-contained: no external skill installation needed
 
 ---
@@ -38,7 +38,7 @@ Question: "Which article file should I review?"
 
 ## Execution Steps
 
-### Phase 1: Self-Check (17 rules via `scripts/review_selfcheck.py`)
+### Phase 1: Self-Check (23 rules via `scripts/review_selfcheck.py`)
 
 Canonical source: **`${CLAUDE_PLUGIN_ROOT}/references/self-check-rules.md`** (rule bodies).
 Canonical implementation: **`${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py`** (executable).
@@ -57,8 +57,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py \
 
 Optional flags:
 - `--rules 1,3,5` — run only the listed rule IDs (useful when re-checking after a targeted fix).
-- `--write-gate` — pre-save GATE subset (rules 1/2/6/11/13/16); review never needs this, write does.
-- (no flag) — runs all 17 rules.
+- `--write-gate` — pre-save GATE subset (rules 1/2/6/13/14/16); review never needs this, write does.
+- (no flag) — runs all 23 rules.
 
 Exit codes:
 - `0` — every rule passed (article ready for Phase 2 scoring).
@@ -103,17 +103,21 @@ After parsing, walk the array in this order:
    `<!-- IMAGE: -->` placeholders exist, downgrade to WARNING and skip
    any injection attempt. Never add placeholders here (same orphan risk).
 
-3. **Rules 1, 2, 3, 4, 5, 8, 10, 12, 15** — for any `passed == false`, fix the
+3. **Rules 1, 2, 3, 4, 5, 8, 10, 12, 15, 18** — for any `passed == false`, fix the
    `violations[].line` in place with Edit. The `suggestion` field gives the
    per-violation auto-fix hint; the canonical mapping for prose rewrites is
    still in `references/self-check-rules.md` Rule 1 (red-flag word table).
-   Re-run the script with `--rules <ids>` after edits to confirm.
+   Rule 18 (AIGC 显式标识) is satisfied by appending the standard AIGC footer if
+   it is missing. Re-run the script with `--rules <ids>` after edits to confirm.
 
-4. **Rules 6, 7, 9, 11, 13, 14, 16, 17** — detect only at the review stage
-   (these are owned by write or already handled upstream). Report
-   PASS / WARNING; do **not** auto-fix. For Rule 6 (shallow chapters) and
-   Rule 17 (register naturalness) the deductions flow into the Phase 2
-   AI 痕迹 / 内容深度 dimensions, not into a fix loop.
+4. **Rules 6, 7, 9, 13, 14, 16, 17, 19, 20, 22, 23, 24** — detect only at the
+   review stage (these are owned by write/upstream or are warning-level signals).
+   Report PASS / WARNING; do **not** auto-fix. Their deductions flow into the
+   Phase 2 dimensions, not into a fix loop:
+   - Rule 6 (浅层章节) → 内容深度; Rule 17 (register) / Rule 22 (个人化注入) → AI 痕迹 + 看一看友好度
+   - Rule 19 (标题钩子) → 标题与 Hook; Rule 20 (段落去重) → 结构可读
+   - Rule 23 (反推荐黑名单) → surface the `error`-severity items (AIGC 反向声明) prominently in feedback; `warning` items (营销标题) feed 标题与 Hook
+   - Rule 24 (虚构数字) → list unverified number+unit claims for author review (warning-only, never blocks)
 
 **General rules for Phase 1:**
 
@@ -131,7 +135,7 @@ After parsing, walk the array in this order:
 
 **If mode is `draft`**: skip this phase. Report self-check results only.
 
-**If mode is `publish`**: score the article on 7 dimensions, surface actionable
+**If mode is `publish`**: score the article on 8 dimensions, surface actionable
 feedback, let the user decide what to do. **No auto-modify loop.**
 
 #### Why scoring-only
@@ -235,7 +239,7 @@ review.
 ```markdown
 ## Review Results
 
-### Phase 1: Self-Check (17 rules)
+### Phase 1: Self-Check (23 rules)
 - Rule  1: PASS / FIXED / WARNING
 - Rule  2: PASS / FIXED / WARNING
 - Rule  3: PASS / FIXED / WARNING
@@ -253,6 +257,12 @@ review.
 - Rule 15: PASS / FIXED / WARNING
 - Rule 16: PASS / FIXED / WARNING
 - Rule 17: PASS / FIXED / WARNING
+- Rule 18: PASS / FIXED / WARNING
+- Rule 19: PASS / FIXED / WARNING
+- Rule 20: PASS / FIXED / WARNING
+- Rule 22: PASS / FIXED / WARNING   (21 reserved)
+- Rule 23: PASS / FIXED / WARNING
+- Rule 24: PASS / FIXED / WARNING
 
 ### Rules Index (Phase 1 reference)
 
@@ -277,18 +287,26 @@ review.
 - **Rule 15: 孤立 PROMPT 注释 (Orphan PROMPT)** — deletes `<!-- PROMPT: -->` not paired with an `<!-- IMAGE: -->` above.
 - **Rule 16: PROMPT 文字渲染风险 (PROMPT Text-Rendering Risk)** — blocks CJK or "render this text" instructions in PROMPT (Gemini can't render text).
 - **Rule 17: Register Naturalness (tone-aware)** — checks first-person density, strong-opinion presence, summary-phrase ceiling, and sentence-length CV against tier-specific thresholds (`scripts/config.py TONE_THRESHOLDS`). The active tone is read from frontmatter `tone:` with style-default fallback.
+- **Rule 18: AIGC 显式标识 (AIGC Label)** — requires the AIGC disclosure footer; auto-append if missing.
+- **Rule 19: 标题钩子 + 长度 (Title Hook + Length)** — title must hit ≥1 hook type and stay ≤28 chars.
+- **Rule 20: 段落相似度去重 (Paragraph Dedup)** — flags near-duplicate / template-cloned paragraphs.
+- **Rule 22: 个人化注入 (Personal Voice Density)** — soft warning when personal experience / subjective judgment is too sparse.
+- **Rule 23: 反推荐特征词黑名单 (Anti-Recommendation Blacklist)** — error on AIGC reverse-declaration; warning on marketing-headline patterns.
+- **Rule 24: 虚构数字检测 (Fabricated-Number Detection)** — warning on unverified number+unit claims (never blocks).
+- *(Rule 21 is a reserved slot — URL fact-check now lives in `verify_claims.py`.)*
 
-### Phase 2: Diagnostic Scoring (7 dimensions)
+### Phase 2: Diagnostic Scoring (8 dimensions, /80)
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| AI 痕迹 | X/10 | L47 has "综上所述"; section 2 repeats "另外" 3× in a row |
-| 标题与 Hook | X/10 | Hook is 118 chars (Rule 2 wants ≤100) |
+| AI 痕迹 | X/10 | L47 has "综上所述"; section 2 repeats "另外" 3× in a row (Rule 17/22) |
+| 标题与 Hook | X/10 | Hook is 118 chars (Rule 2 wants ≤100); title hook (Rule 19) |
 | 内容深度 | X/10 | "为什么选 uv" section has only 1 code block (Rule 6 wants ≥2) |
-| 结构可读 | X/10 | ... |
-| 代码质量 | X/10 | ... |
-| 结尾行动力 | X/10 | ... |
-| 图片配置 | X/10 | ... |
-| **Total** | **X/70** | **PASS (≥55) / NEEDS_REVISION (<55)** |
+| 结构可读 | X/10 | 段落去重 (Rule 20)、过渡、层次 ... |
+| 代码质量 | X/10 | 可运行、注释、verify-claims 通过 ... |
+| 结尾 CTA | X/10 | 1-2 个具体 CTA (Rule 3)；AIGC 标识 (Rule 18) ... |
+| 图片配置 | X/10 | 节奏图匹配、内容相关、非装饰 ... |
+| 看一看友好度 | X/10 | 标签/独家信号/中段钩子/金句/关键词密度 (Rule 4/22) ... |
+| **Total** | **X/80** | **PASS (≥63) / NEEDS_REVISION (<63)** |
 
 ### Feedback
 For each weak dimension, print:
@@ -297,7 +315,7 @@ For each weak dimension, print:
 - **Suggested action**: one short action
 
 ### Verdict
-- **PASS** — score ≥ 55, or score < 55 but user chose "Publish anyway"
+- **PASS** — score ≥ 63, or score < 63 but user chose "Publish anyway"
 - **NEEDS_REVISION_RERUN_WRITE** — user chose "Re-run write with hints"
   (orchestrator drops back to write stage with feedback as input)
 - **ABORT** — user chose "Abort"
@@ -314,7 +332,7 @@ When invoked directly (not as part of the orchestrator pipeline):
    ```
    Question: "Review mode?"
    Options:
-     - Publish -- full review with built-in 7-dim scoring (>= 55/70 required)
+     - Publish -- full review with built-in 8-dim scoring (>= 63/80 required)
      - Draft -- self-check only, skip scoring phase
    ```
 3. Execute the review steps above.

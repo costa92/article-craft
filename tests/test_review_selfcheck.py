@@ -168,11 +168,12 @@ class CLIRuleSelectionTests(unittest.TestCase):
     """
 
     def setUp(self):
-        # Article with known violations across rules 1, 6, 11, 13:
+        # Article with known violations across rules 1, 6, 13:
         # - Rule 1: "实际上" (red flag word)
         # - Rule 6: "## 一" only has 0 code blocks (shallow)
-        # - Rule 11: "→" arrow in prose (ASCII diagram char)
         # - Rule 13: empty fence ``` opens an untagged block
+        # (Rule 11 = placeholder residue; this fixture has no placeholders so
+        #  Rule 11 passes — the "→" in prose is not an ASCII-in-code-block hit.)
         self.bad_article = """---
 title: demo
 description: "demo"
@@ -225,8 +226,112 @@ print("ok")
         """WRITE_GATE_RULES must stay in sync with the rules.md write column."""
         self.assertEqual(
             review_selfcheck.WRITE_GATE_RULES,
-            (1, 2, 6, 11, 13, 16),
+            (1, 2, 6, 13, 14, 16),
             "WRITE_GATE_RULES drift — update self-check-rules.md 'Who enforces what' too",
+        )
+
+    def test_write_gate_allows_image_placeholders(self):
+        """Regression: a normal draft carries <!-- IMAGE: --> placeholders
+        (images stage resolves them later). The write gate must NOT block on
+        them — placeholder residue (Rule 11) is a review-stage gate, not write.
+        """
+        import subprocess
+        draft_with_placeholder = """---
+title: 占位符草稿测试
+description: "验证 write gate 不会因为合法的 IMAGE 占位符而阻断保存。"
+---
+
+# 我踩过的第一个坑
+
+前几个月我自己搭流水线时栽了一跤，下面是具体过程和我的判断。
+
+## 第一节：核心代码
+
+<!-- IMAGE: build-flow - 构建流程示意 (16:9) -->
+<!-- PROMPT: Code snippet style, diagram of build stages -->
+
+```python
+def add(a, b):
+    return a + b
+```
+
+加法返回两数之和，这里给出第二个示例。
+
+```python
+def sub(a, b):
+    return a - b
+```
+
+减法返回差值。
+
+## 第二节：再来一组
+
+第二节保持最低代码密度。
+
+```python
+print(add(2, 3))
+```
+
+中间一句运行说明。
+
+```python
+print(sub(9, 4))
+```
+
+我的结论是占位符在写作阶段就该存在。
+"""
+        path = self._write_tmp(draft_with_placeholder)
+        script = (Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py")
+        proc = subprocess.run(
+            ["python3", str(script), path, "--write-gate"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(
+            proc.returncode, 0,
+            f"--write-gate must pass a draft that only contains legit IMAGE "
+            f"placeholders. stdout: {proc.stdout}\nstderr: {proc.stderr}",
+        )
+
+    def test_write_gate_blocks_ascii_diagram(self):
+        """The write gate (Rule 14) must block an ASCII diagram inside a
+        non-executable code block — it has to be converted to an IMAGE
+        placeholder before the images stage runs."""
+        import subprocess
+        draft_with_ascii = """---
+title: ASCII 图测试
+description: "验证 write gate 会拦截代码块内的 ASCII 框线图，强制转 IMAGE。"
+---
+
+# 我画了一张图
+
+前几个月我偷懒在代码块里画了 ASCII 架构图，下面就是反面教材。
+
+## 第一节：那张图
+
+```text
+┌─────────┐      ┌─────────┐
+│  State1 │ ───▶ │  State2 │
+└─────────┘      └─────────┘
+```
+
+这种图在手机上会错位，应该转成 IMAGE 占位符。
+
+```python
+print("hi")
+```
+
+收尾说明。
+"""
+        path = self._write_tmp(draft_with_ascii)
+        script = (Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py")
+        proc = subprocess.run(
+            ["python3", str(script), path, "--write-gate"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(
+            proc.returncode, 1,
+            f"--write-gate must block an ASCII diagram in a text code block "
+            f"(Rule 14). stdout: {proc.stdout}\nstderr: {proc.stderr}",
         )
 
     def test_parse_rule_list_handles_whitespace_and_commas(self):
@@ -239,7 +344,7 @@ print("ok")
             review_selfcheck._parse_rule_list("1,foo,3")
 
     def test_cli_write_gate_exit_code_on_failure(self):
-        """End-to-end: --write-gate must exit 1 when Rule 1/6/11/13 fails."""
+        """End-to-end: --write-gate must exit 1 when Rule 1/6/13 fails."""
         import subprocess
         path = self._write_tmp(self.bad_article)
         script = (Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py")
@@ -251,13 +356,13 @@ print("ok")
         # Output should mention at least one of the failing rules.
         combined = proc.stdout + proc.stderr
         self.assertTrue(
-            any(tag in combined for tag in ("Rule 1", "Rule 6", "Rule 11", "Rule 13")),
+            any(tag in combined for tag in ("Rule 1", "Rule 6", "Rule 13", "Rule 14")),
             f"Output should name a failing rule. Got: {combined[:500]}",
         )
 
     def test_cli_write_gate_exit_code_on_pass(self):
         """End-to-end: --write-gate must exit 0 on a clean article that
-        satisfies rules 1/2/6/11/13/16. Companion to the failure test."""
+        satisfies rules 1/2/6/13/14/16. Companion to the failure test."""
         import subprocess
         clean_article = """---
 title: 干净测试文章

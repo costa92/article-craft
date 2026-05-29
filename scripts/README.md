@@ -10,7 +10,7 @@ path.
 article-craft/scripts/
 ├── doctor.py                       # Runtime healthcheck CLI (v1.6.0+)
 ├── setup_dependencies.py           # Auto-dependency installer; backs doctor.py
-├── config.py                       # VerificationCache, MODEL_FALLBACK_CHAIN,
+├── config.py                       # MODEL_FALLBACK_CHAIN, cache_dir(),
 │                                   # kb_category_root(), share_card_logo(), etc.
 ├── utils.py                        # PlaceholderManager, SmartDirectoryMatcher
 ├── nanobanana.py                   # Single-image generation (Minimax → Gemini fallback)
@@ -20,7 +20,7 @@ article-craft/scripts/
 ├── publish_plan.py                 # KB auto-placement + collision detection + sidecar copy (v1.6.0+)
 ├── series_state.py                 # Series state machine: status/next/mark-published/validate (v1.6.0+)
 ├── pipeline_state.py               # Persistent `.article-craft-state.json` for --upgrade resume
-├── review_selfcheck.py             # 17 self-check rules invoked by the review skill
+├── review_selfcheck.py             # 23 self-check rules invoked by the review skill
 ├── lint_article.py                 # Vale-style lint with tone-aware rewrites
 ├── verify_claims.py                # Post-write shell-command existence check
 ├── write_verify_cache.py           # Writer for ~/.cache/article-craft/verify-cache.json

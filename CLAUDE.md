@@ -44,9 +44,9 @@ When making changes: SKILL.md files reference scripts by `${CLAUDE_PLUGIN_ROOT}/
 - `scripts/generate_and_upload_images.py` — batch processes `<!-- IMAGE: -->` / `<!-- PROMPT: -->` placeholders in an article.md, calls Gemini via `nanobanana.py`, compresses with Pillow, uploads through PicGo or S3, and edits the article file in place. The `--process-file` flag is the standard invocation.
 - `scripts/nanobanana.py` — single-image Gemini call with the model fallback chain from `config.py`.
 - `scripts/share_card.py` — optional social-platform card generator (9 platforms, 7 color presets). Reads article frontmatter.
-- `scripts/config.py` — loads `~/.claude/env.json`, defines `VerificationCache`, `MODEL_FALLBACK_CHAIN`. All configuration (Gemini API key, S3, timeouts) lives in `~/.claude/env.json` — see `ENV.md`.
+- `scripts/config.py` — loads `~/.claude/env.json`, defines `MODEL_FALLBACK_CHAIN`, `cache_dir()`, tone tables. All configuration (Gemini API key, S3, timeouts) lives in `~/.claude/env.json` — see `ENV.md`.
 - `scripts/utils.py` — `PlaceholderManager` (in-place article mutation) and `SmartDirectoryMatcher` (knowledge base auto-placement for publish skill).
-- `scripts/review_selfcheck.py` — the 17-rule self-check invoked by the review skill (`check_rule_1` … `check_rule_17`, dispatched from the list at the bottom of the file). Do not run it standalone from the orchestrator; the review skill calls it internally.
+- `scripts/review_selfcheck.py` — the 23-rule self-check invoked by the review skill (`check_rule_1` … `check_rule_24`, with Rule 21 reserved → 23 active, dispatched from `_RULE_DISPATCH` at the bottom of the file). The pre-save write GATE subset is `WRITE_GATE_RULES = (1, 2, 6, 13, 14, 16)` — Rule 11 (placeholder residue) is **not** in the write gate (placeholders are expected pre-images); Rule 14 (ASCII-in-code-blocks) is the pre-images gate. Do not run it standalone from the orchestrator; the review skill calls it internally.
 - `scripts/write_verify_cache.py` — writer counterpart to the verify cache; the verify skill calls it (single-URL or `--batch` JSONL) to populate `~/.cache/article-craft/verify-cache.json`.
 - `scripts/bump_version.py` — bumps `plugin.json`, `marketplace.json`, and every `skills/*/SKILL.md` frontmatter in lockstep. Accepts `major` / `minor` / `patch` or an explicit `X.Y.Z`. Use `--no-tag` to let the GitHub workflow handle tag creation on push (recommended default).
 - `lib/article-core.js` — tiny Node shim exposing `loadConfig()`, `resolveScriptPath()`, `findSkills()` for any JS-side consumers. Also respects `CLAUDE_PLUGIN_ROOT`.
@@ -117,12 +117,12 @@ other authors will hit these unless they bring real material.
 
 Skills pass state through three mechanisms:
 1. **The article.md file itself** — the absolute path is captured after `write` and passed to every subsequent skill. Placeholders (`<!-- IMAGE: -->`, `<!-- SCREENSHOT: -->`) are the contract; downstream skills find and replace them.
-2. **`~/.cache/article-craft/verify-cache.json`** — URL status cache shared between verify and screenshot (TTL 1h). Verify writes via `write_verify_cache.py`; screenshot reads via `VerificationCache` in `config.py`.
+2. **`~/.cache/article-craft/verify-cache.json`** — URL status cache shared between verify and screenshot (TTL 1h). Verify writes via `write_verify_cache.py` (`CACHE_TTL = 3600`); screenshot reads it via `VERIFY_CACHE_FILE` in `screenshot_tool.py`. Both resolve the path through `config.cache_dir()`.
 3. **Orchestrator context** — requirements outputs `_trusted_sources` (T0–T5 tiers) which verify uses to skip pre-trusted links and which write uses to cite official docs.
 
 Since v1.4.2 there is also a **persistent state file** at `.article-craft-state.json` (next to `article.md`), written by the orchestrator at each stage boundary via `scripts/pipeline_state.py`. `--upgrade` mode reads this first and falls back to text heuristics only when the file is absent (backward compat for articles predating v1.4.2). The article content is still ground truth — if state says `images: completed` but the body still has `<!-- IMAGE: -->` placeholders, the stage is flagged `stale` and re-runs.
 
-The **review skill** owns its own retry loop: Phase 1 self-check (17 rules, embedded — see `scripts/review_selfcheck.py`) → Phase 2 7-dim scoring; if total score < 55/70 it auto-revises up to 3 rounds, then asks the user via AskUserQuestion. The loop also breaks early if a round produces a **non-improving score** (oscillation guard). The orchestrator does **not** wrap this in a second loop — it just trusts review's PASS/ABORT result.
+The **review skill** runs Phase 1 self-check (23 rules, embedded — see `scripts/review_selfcheck.py`) → Phase 2 8-dim scoring (threshold 63/80). **Since v1.4.4 Phase 2 is diagnostic-only — there is no auto-revise loop.** Earlier versions (≤ v1.4.3) auto-revised up to 3 rounds with an oscillation guard, but the open-ended "fix dimensions <7/10" instruction failed to converge and risked orphaning post-images placeholders, so it was removed. Phase 2 now scores once and, if `< 63/80`, surfaces an AskUserQuestion (Publish anyway / Abort / Re-run write with hints) — each revision is a fresh explicit user decision. The orchestrator caps "Re-run write with hints" at 2 re-jumps and trusts review's PASS/NEEDS_REVISION/ABORT verdict.
 
 ## Common commands
 
@@ -198,8 +198,11 @@ These are architectural gaps **intentionally deferred** because they require coo
   were considered as proxies but they validate *style*, not *substance*.
   Empirical observation needed for ≥4 weeks before deciding whether to
   add a "real example" gate that requires authors to paste actual command
-  output before the article can save. See `references/self-check-rules.md`
-  Rule 5/6 sections for current detect-only behavior.
+  output before the article can save. (Note: Rule 6 *is* a write pre-save
+  GATE — `WRITE_GATE_RULES` includes 6 — so a shallow chapter blocks save;
+  what's "not auto-fixable" is the *substance*, since the gate can't write
+  the missing code for you. Rule 5 is detect-only, review-stage.) See
+  `references/self-check-rules.md` Rule 5/6 sections.
 
 - **Rule 24 (虚构数字) high warning-density tolerance.** v1.7.4 dogfood
   article generates 36 unverified-number warnings (mostly version numbers

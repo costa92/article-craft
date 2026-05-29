@@ -5,11 +5,12 @@
 > re-state rule bodies or re-type grep patterns — they read this file and
 > run the patterns from it.
 >
-> **Active rule count: 24.** `scripts/review_selfcheck.py` implements
-> `check_rule_1` through `check_rule_24` sequentially (see the dispatcher
-> list at the bottom of that file). Reference entries below cover all
-> 24 plus the `7b` degradation-aware variant of Rule 7. Rule 21 remains
-> a reserved slot (URL fact-check is now handled by `verify_claims.py`).
+> **Active rule count: 23.** `scripts/review_selfcheck.py` implements
+> `check_rule_1` through `check_rule_24` (highest ID is 24), but Rule 21 is a
+> reserved slot, so 23 rules are active. See the dispatcher list at the bottom
+> of that file. Reference entries below cover all 23 plus the `7b`
+> degradation-aware variant of Rule 7. (URL fact-check, formerly Rule 21, is
+> now handled by `verify_claims.py`.)
 >
 > Rules 18-22 added in v1.7+ based on first-round official-source research:
 > GB 45438-2025 强制国标 + 网信办《标识办法》(cac.gov.cn) + microweixin.qq.com
@@ -37,10 +38,10 @@
 | 8 WeChat external links |   |   | ✓ |
 | 9 Mermaid residue       |   | report | ✓ |
 | 10 References inline    |   | ✓ | ✓ |
-| 11 ASCII diagrams       | ✓ GATE (auto-fix) | report | detect-only, block |
+| 11 Placeholder residue  |   |   | ✓ GATE (detect-only, post-images) |
 | 12 Template summaries   |   |   | ✓ |
 | 13 Code block lang tag  | ✓ | ✓ default `text` | ✓ |
-| 14 ASCII in code blocks |   |   | ✓ |
+| 14 ASCII in code blocks | ✓ GATE (auto-convert) | report | ✓ detect-only |
 | 15 Orphan PROMPT lines  |   | ✓ | ✓ |
 | 16 PROMPT CJK render    | ✓ |   | ✓ |
 | 17 Register naturalness |   |   | ✓ (tone-aware) |
@@ -398,76 +399,37 @@ from inline links; a manual section causes duplication.
 
 ---
 
-## Rule 11: ASCII Diagram Check (three-role split)
+## Rule 11: Placeholder Residue (CRITICAL GATE — review stage)
 
-**Severity**: FAIL
-**Auto-fix**: depends on enforcer — see escalation below
-**Escalation**: three roles, three behaviors.
+**Severity**: FAIL (`is_gate=True`)
+**Auto-fix**: no — the missing asset must be generated, not papered over
+**Enforcer**: **review Phase 1 only** (post-images). NOT a write-stage gate.
 
-### Why the split
+### Why review-only
 
-By the time `review` runs, the `images` stage has already generated and uploaded
-all `<!-- IMAGE: -->` placeholders. Any new placeholder inserted at review time
-would be **orphaned** — never generated, article ships broken. ASCII-to-IMAGE
-conversion is therefore a **pre-images** responsibility.
+At **write** time the article is *supposed* to carry `<!-- IMAGE: -->` and
+`<!-- SCREENSHOT: -->` placeholders — they are the handoff contract that the
+screenshot/images stages consume. Gating on them at write would block every
+legitimate draft. By the time **review** runs, those stages have already run,
+so any *remaining* placeholder means an asset silently failed to generate and
+the article would ship broken. That is what this rule catches.
 
-### Canonical grep
+### What `check_rule_11` flags
 
-```
-│|├|└|┌|┐|─|▼|▶|←|→|↑|↓
-```
+1. `<!-- IMAGE: ... -->` still present → run `/article-craft:images`.
+2. `<!-- SCREENSHOT: ... -->` still present → run `/article-craft:screenshot`.
+3. `IMAGE_PLACEHOLDER` (agent-generated non-standard format) → convert to the
+   standard `<!-- IMAGE: name - desc (ratio) -->` or a CDN URL.
+4. Broken local image refs `![...](images/…)` / `![...](placeholder-…)` whose
+   file does not exist and is not a `cdn.`/`http` URL.
 
-12 single characters. Do **not** use combined sequences like `──→` or `←──` — the
-single-character grep already matches those.
+### Review behavior
 
-### Enforcer responsibilities
-
-| Enforcer | When | Action |
-|----------|------|--------|
-| **write Step 6 (pre-save GATE)** | before save, before images | **Auto-convert** ASCII diagrams to `<!-- IMAGE: -->` + `<!-- PROMPT: -->`. Re-grep; block save until clean. |
-| **lint** | standalone, before images | **Report only**. Do not auto-fix (lint may run anywhere in the pipeline). User decides. |
-| **review Phase 1** | after images | **Detect only**. On match → FAIL, block Phase 2, surface via AskUserQuestion (open article for manual fix / re-run write / abort). Never insert placeholders. |
-
-### Detection procedure (same for all enforcers)
-
-1. Run the canonical grep.
-2. For each match: check if it's inside a code block (between ` ``` `).
-3. If inside, verify the code block is **executable code** (bash/python/json/yaml/etc.).
-4. If NOT executable code (ASCII flowchart, state machine, architecture diagram) → violation.
-
-### Auto-convert template (write only)
-
-```markdown
-<!-- IMAGE: slug - description (ratio) -->
-<!-- PROMPT: [shared visual prefix], [describe the diagram content in English] -->
-```
-
-Example:
-
-```
-Detected ASCII:
-┌─────────┐
-│  State1 │ → State2 → State3
-└─────────┘
-
-Converted to:
-<!-- IMAGE: state-machine - 状态转移图 (16:9) -->
-<!-- PROMPT: Code snippet style, architecture diagram, show State1 with arrow to State2 with arrow to State3 -->
-```
-
-### 项目目录树也受此规则约束
-
-用 `├──`、`└──` 等字符在代码块里展示项目结构，同样会触发此规则。**正确做法**：用
-Markdown 列表替代：
-
-```
-- `main.go` — HTTP server 入口
-- `mutate.go` — Mutating Webhook 处理逻辑
-- `deploy/` — K8s 部署清单
-  - `certificate.yaml`
-```
-
-不要把目录树放在任何代码块里，即使 `text` 语言标识也不建议（`├` 字符会被规则检测器标记）。
+On any match → FAIL, **block Phase 2**, surface via `AskUserQuestion`
+(open article for manual fix / re-run the missing stage / abort). **Never**
+insert new placeholders at review time — the images stage has already run, so a
+fresh placeholder would be orphaned. (ASCII-diagram conversion is a *pre-images*
+concern handled by Rule 14, not here.)
 
 ---
 
@@ -568,13 +530,12 @@ Common tags: `bash` `shell` `python` `go` `yaml` `json` `sql` `js` `ts`
 ## Rule 14: ASCII Diagram in Non-Executable Code Blocks
 
 **Severity**: FAIL
-**Auto-fix**: no — diagrams must be re-authored as `<!-- IMAGE: -->` placeholders
-that the images stage generates
-**Escalation**: review Phase 1 flags. Companion to Rule 11 — where Rule 11
-scans **anywhere** in the body for box/arrow chars (including raw markdown),
-Rule 14 narrows in on **code blocks specifically** and skips executable
-languages so a real `bash` snippet with `│` in a string literal doesn't
-false-positive.
+**Auto-fix**: write auto-converts to `<!-- IMAGE: -->` placeholders; lint and
+review detect-only.
+**Enforcer**: **write Step 6 pre-save GATE** (auto-convert before the images
+stage) + lint (report) + review Phase 1 (detect-only). This is the rule the
+write gate uses to force ASCII diagrams into IMAGE placeholders *before* images
+runs — converting at review time would orphan the placeholder.
 
 ### Why
 
@@ -595,25 +556,44 @@ For each closed code block:
    `json` `sql` `dockerfile` and 30+ others) → **skip** the flag (those chars
    are likely string-literal content, not a diagram).
 
-### Auto-convert template (write only, parallels Rule 11)
+### Auto-convert template (write GATE)
 
 ```markdown
 <!-- IMAGE: slug - description (ratio) -->
 <!-- PROMPT: [shared visual prefix], [describe the diagram content in English] -->
 ```
 
-### Relationship to Rule 11
+Example:
 
-| | Rule 11 | Rule 14 |
-|---|---|---|
-| Scope | Entire body | Code blocks only |
-| Code-block filter | n/a | Skips `_EXECUTABLE_LANGS` |
-| Enforcers | write GATE + lint + review | review only |
-| Auto-fix | write does, others detect-only | none — flagged for human |
+```
+Detected ASCII:
+┌─────────┐
+│  State1 │ → State2 → State3
+└─────────┘
 
-Rule 11 catches the common "ASCII art directly in prose" case at write
-time; Rule 14 is a defensive backstop for the "ASCII hidden inside a
-code block" case that slips past Rule 11's body scan.
+Converted to:
+<!-- IMAGE: state-machine - 状态转移图 (16:9) -->
+<!-- PROMPT: Code snippet style, architecture diagram, show State1 with arrow to State2 with arrow to State3 -->
+```
+
+### 项目目录树也受此规则约束
+
+用 `├──`、`└──` 等字符在代码块里展示项目结构，同样会触发此规则。**正确做法**：用
+Markdown 列表替代：
+
+```
+- `main.go` — HTTP server 入口
+- `mutate.go` — Mutating Webhook 处理逻辑
+- `deploy/` — K8s 部署清单
+  - `certificate.yaml`
+```
+
+不要把目录树放在任何代码块里，即使 `text` 语言标识也不建议（`├` 字符会被规则检测器标记）。
+
+> **Note**: this rule scans **code blocks only** and skips `_EXECUTABLE_LANGS`,
+> so a real `bash`/`python` snippet with `│`/`→` in a string literal does not
+> false-positive. It is the single ASCII check in the system — there is no
+> separate "body-wide ASCII" rule.
 
 ---
 

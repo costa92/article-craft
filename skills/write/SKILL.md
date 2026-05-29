@@ -805,20 +805,23 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ascii_gate.py /ABSOLUTE/PATH/article.md
 
 Canonical source: **`${CLAUDE_PLUGIN_ROOT}/references/self-check-rules.md`**.
 
-Read that file before saving. All 17 rule bodies, canonical grep patterns, and
+Read that file before saving. All rule bodies, canonical grep patterns, and
 auto-fix mappings live there — do not re-type them here.
 
 **Write's ownership (per the "Who enforces what" matrix in rules.md):**
 
 - **Pre-save GATE (must pass before Step 6 can save)**: apply rules **1, 2, 6,
-  11, 13, and 16** from `references/self-check-rules.md`. Step 6 calls
+  13, 14, and 16** from `references/self-check-rules.md`. Step 6 calls
   `scripts/review_selfcheck.py --write-gate` which runs exactly these six —
   do not re-implement them via grep here. The constant
-  `WRITE_GATE_RULES = (1, 2, 6, 11, 13, 16)` in `review_selfcheck.py` is the
+  `WRITE_GATE_RULES = (1, 2, 6, 13, 14, 16)` in `review_selfcheck.py` is the
   source of truth; if you think a rule should move in or out of the GATE,
-  update both rules.md and that constant together.
+  update both rules.md and that constant together. **Rule 14 (ASCII diagrams in
+  code blocks) is the pre-images gate; Rule 11 (placeholder residue) is NOT a
+  write gate — at write time `<!-- IMAGE: -->` placeholders are expected.**
 - **Deferred to lint / review (do not duplicate here)**: rules **3, 4, 5, 7,
-  7b, 8, 9, 10, 12, 14, 15, 17**. Those are lint's or review Phase 1's job.
+  7b, 8, 9, 10, 11, 12, 15, 17**. Those are lint's or review Phase 1's job
+  (Rule 11 placeholder-residue fires at review, after the images stage).
 
 For the quick convenience sweep before Step 6, use the single combined grep in
 the appendix of rules.md.
@@ -888,7 +891,7 @@ WORD_COUNT_CHECK: <count> chars (target [<min>, <max>], depth=<depth>) → PASS|
 
 ### Step 6: Save Article (GATE CHECK REQUIRED)
 
-**BEFORE saving**，执行 write pre-save GATE — 这是把 write 的"自检责任"机器化的入口，不再让 agent 用 grep 重新发明（rules 1/2/6/11/13/16）：
+**BEFORE saving**，执行 write pre-save GATE — 这是把 write 的"自检责任"机器化的入口，不再让 agent 用 grep 重新发明（rules 1/2/6/13/14/16）：
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py \
@@ -902,8 +905,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py \
 | 1 | 红旗词汇（无缝/赋能/链路/实际上/综上所述...） | 删词或改写,见 rules.md Rule 1 的 mapping 表 |
 | 2 | Hook ≤100 字 + 禁止套路化开头 | 拆段或重写开头 |
 | 6 | 每章 ≥ N 代码块（N 因 style 而异） | 补命令/配置/输出/对比代码片段 |
-| 11 | ASCII 流程图字符（│├└→ 等）残留 | 转 `<!-- IMAGE: -->` 占位符 |
 | 13 | 代码块裸开 ` ``` ` 没语言 tag | 补语言标识（bash/yaml/python/text 等） |
+| 14 | 代码块内 ASCII 框线/箭头字符（│├└→ 等）残留 | 转 `<!-- IMAGE: -->` 占位符 |
 | 16 | `<!-- PROMPT: -->` 含 CJK 或要 Gemini 渲染文字 | 改用 silhouette / 抽象描述 |
 
 **Exit codes**:
@@ -911,7 +914,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py \
 - `1` — 至少一条 FAIL，stderr/stdout 给出 file:line 列表。**DO NOT SAVE YET**：按上表的失败处理列逐条修复，重新跑直到 `0`。
 - `2` — 文件不存在，检查路径。
 
-> `ascii_gate.py` 只跑 Rule 14（代码块内部的 ASCII 框/箭头字符），是 `--write-gate` 的真子集。保留给 Step 4a 这种"写作中途快速 ASCII 扫"的场景。Step 6 一律走 `--write-gate`，因为它额外覆盖 Rule 1/2/6/11/13/16。
+> `ascii_gate.py` 只跑 Rule 14（代码块内部的 ASCII 框/箭头字符），是 `--write-gate` 的真子集（Rule 14 已在 GATE 内）。保留给 Step 4a 这种"写作中途快速 ASCII 扫"的场景。Step 6 一律走 `--write-gate`，因为它额外覆盖 Rule 1/2/6/13/16。
 
 Use the `Write` tool to save `article.md` to the determined path from Step 2 — **only after `--write-gate` 返回 0**。
 
@@ -924,10 +927,10 @@ Print the absolute file path after saving so subsequent skills can find it.
 **文件保存后，立即运行自动化验证** — 这是交给 screenshot / images 前的 handoff 契约检查，确保下游 skill 能正确消费。
 
 > **职责分工**:
-> - write Step 6 **跑 pre-save GATE 的 6 条规则** (1/2/6/11/13/16) via `review_selfcheck.py --write-gate` —— 内容硬约束在保存前阻断。
+> - write Step 6 **跑 pre-save GATE 的 6 条规则** (1/2/6/13/14/16) via `review_selfcheck.py --write-gate` —— 内容硬约束在保存前阻断。
 > - write Step 7 **只检查下游 skill 的硬契约**(占位符格式、IMAGE/HARVEST 解析、SCREENSHOT/IMAGE 覆盖警告),这是给 screenshot / images 的入参验证。
-> - **其余 11 条内容质量规则**(描述字段完整性、模板化句式、外链格式、Mermaid 残留、表格/孤儿 PROMPT、register naturalness 等)由 `review` skill 的 Phase 1 (17 条 self-check rules 全套)统一执行,write Step 7 不重复跑。
-> - 不要在 Step 7 里再调一次 `${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py` —— Step 6 已经跑过 GATE 子集,后续 17 条全套留给 review。
+> - **其余内容质量规则**(描述字段完整性、模板化句式、外链格式、Mermaid 残留、表格/孤儿 PROMPT、占位符残留、register naturalness 等)由 `review` skill 的 Phase 1 (23 条 self-check rules 全套)统一执行,write Step 7 不重复跑。
+> - 不要在 Step 7 里再调一次 `${CLAUDE_PLUGIN_ROOT}/scripts/review_selfcheck.py` —— Step 6 已经跑过 GATE 子集,后续全套留给 review。
 
 **必须检查的 3 项 handoff 契约（精简,只保留真正的下游阻断项）+ 1 项软警告：**
 

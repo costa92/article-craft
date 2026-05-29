@@ -474,8 +474,8 @@ Invoke the `article-craft:review` skill (via the **Skill tool** — `skill: "art
 自 v1.4.4 起 review **不再自动修订**，Phase 2 是诊断性评分，结果直接返回给 orchestrator。
 
 - Pass the article.md absolute file path
-- review 内部执行：Phase 1 self-check（11 条规则，按 `references/self-check-rules.md`）
-  → Phase 2 embedded 7 维评分 → 若得分 < 55/70 用 AskUserQuestion 询问用户
+- review 内部执行：Phase 1 self-check（23 条规则，按 `references/self-check-rules.md`）
+  → Phase 2 embedded 8 维评分 → 若得分 < 63/80 用 AskUserQuestion 询问用户
 - **不要单独调用 `review_selfcheck.py`**——review skill 内部会调用它
 - review 不再嵌套重试循环；每一轮修改都是一次新的显式用户决定
 
@@ -483,9 +483,9 @@ Invoke the `article-craft:review` skill (via the **Skill tool** — `skill: "art
 
 | Return value | Meaning | Orchestrator action |
 |--------------|---------|---------------------|
-| `PASS` | score ≥ 55，或 score < 55 但用户选 "Publish anyway" | 继续到 publish |
+| `PASS` | score ≥ 63，或 score < 63 但用户选 "Publish anyway" | 继续到 publish |
 | `NEEDS_REVISION_RERUN_WRITE` | 用户选 "Re-run write with hints" | **回跳到 Step 3.3**，把 review 的 feedback 列表作为输入重跑 write；回跑后 screenshot / images / review 按正常顺序继续。最多回跳 2 次（避免无限循环）；第 3 次 NEEDS_REVISION 强制 AskUserQuestion 不含 rerun 选项 |
-| `ABORT` | 用户选 "Abort" | 停止 pipeline，在 summary 中报告"review ABORT @ score X/70" |
+| `ABORT` | 用户选 "Abort" | 停止 pipeline，在 summary 中报告"review ABORT @ score X/80" |
 
 **Rerun loop guard:** track `review_rerun_count` in state file; if ≥ 2 when the
 next review round NEEDS_REVISION, drop "Re-run write with hints" from the
@@ -602,5 +602,5 @@ if no arguments are provided.
 ## Integration
 
 - **content-pipeline agent**: Already updated to use `article-craft` as the writing skill
-- **review skill**: Self-contained — embeds the 11 self-check rules plus 7-dim scoring inline. No external scoring dependency.
+- **review skill**: Self-contained — embeds the 23 self-check rules plus 8-dim scoring inline. No external scoring dependency.
 - **wechat-seo-optimizer**: Called by publish skill for WeChat optimization

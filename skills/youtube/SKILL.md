@@ -163,7 +163,7 @@ WebFetch 拿不到自动生成字幕，**视频如果只有 auto-caption 就要�
 
 > [!important] 调用约定
 > youtube skill **不亲自写正文**——它产出结构化大纲，然后调用 `article-craft:write`
-> 走完 GATE 流程（rules 1/2/6/11/13/16 检查）。如果跳过这步直接 inline 写文章，
+> 走完 GATE 流程（rules 1/2/6/13/14/16 检查）。如果跳过这步直接 inline 写文章，
 > write 的 pre-save GATE 完全不会运行，导致红旗词 / 章节深度 / ASCII 字符 /
 > 代码块语言 tag 这些违规漏到 review 阶段才被发现。**别这么干。**
 
@@ -296,7 +296,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pipeline_state.py skip \
 
 - `/article-craft:screenshot` — 展开 `<!-- SCREENSHOT: -->` 占位符（含视频帧）
 - `/article-craft:images` — 生成 `<!-- IMAGE: -->` 配图
-- `/article-craft:review` — 17 条 self-check + 7 维度评分
+- `/article-craft:review` — 23 条 self-check + 8 维度评分
 - `/article-craft:publish` — 发布到知识库
 
 如果用户后续想接着跑，`/article-craft --upgrade /path/to/article.md` 会自动
