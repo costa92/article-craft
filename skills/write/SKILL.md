@@ -166,7 +166,7 @@ Options:
 将用户选中的标题写入 frontmatter `title:` 字段。
 
 **例外**：
-- 当 `wechat_target: false` 显式设置（纯 blog 输出），跳过此步骤，直接用单一标题
+- 当 `body_form: long-form`（含 legacy `wechat_target: false` 别名）时，跳过此步骤，直接用单一标题
 - Style H (爆料自媒体) 必须命中 H 的戏剧化标题公式（"刚刚"/"突袭"/"硬刚"），3 候选都走戏剧化变体即可
 
 ### Step 2: Determine Save Path
@@ -280,6 +280,12 @@ If no `tone:` in frontmatter, default to `neutral`.
 
 Each tone section contains: register guidance, sample paragraphs at the chosen tier, and replacement-map examples. The writer should follow the sample register, not just consume the rules verbatim.
 
+**同时注入 Body Form 形态规则**：从 `style-guide.md` 读取 `## Body Form: wechat-native`
+段，按已解析的 `body_form` 字段应用对应列的规则到正文写作上下文：
+- `wechat-native`（默认）：短段（≤~200 字）、强冷开场、**禁用 Obsidian callout**（改 bold 引导句 / 单行 `>` 引用）、标题 ≤2 级、章节少而利落、每 ~600 字一个视觉物、单主线。
+- `long-form`：今天的行为（callout 允许、深章节），用于 KB/博客副本。
+`body_form` 缺失时按 `wechat-native` 处理。
+
 **v1.7.3+ Style G + opinionated 加强约束**：当 `tone: opinionated`（Style G/H 的默认值）时，**额外加载**`style-guide.md` 的 `### Style G + opinionated 加强模板` 章节——这是基于 4 篇实测文章 100% 失败 Rule 17/22 的针对性补救，包含：
 
 - **个人经历句式表**（≥ 2 处）：时间锚 / 项目锚 / 失败锚 / 选择锚 / 数字锚
@@ -330,6 +336,10 @@ If writing as part of a series, inject navigation **after the cover image and be
 - 套路式提问: "你是否也有这样的困扰？"
 
 #### 3d. Core Abstract Callout
+
+> **形态条件**：以下 callout（`> [!abstract]` 等）规则**仅在 `body_form: long-form` 下生效**。
+> 在 `body_form: wechat-native`（默认）下，公众号不渲染 Obsidian callout —— 改写成
+> **bold 引导句**（`**一句话重点**`）或单行 `>` 普通引用，不要用 `> [!type]` 语法。
 
 **Style A / C / D** — after the hook, include:
 
