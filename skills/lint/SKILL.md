@@ -1,6 +1,6 @@
 ---
 name: article-craft:lint
-version: 1.8.0
+version: 1.8.1
 description: "Check and auto-fix article style violations using canonical self-check rules. Use to clean up articles before review."
 allowed-tools:
   - Read
