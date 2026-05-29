@@ -212,6 +212,35 @@ description: "demo"
         result = review_selfcheck.check_rule_6(article, article.splitlines())
         self.assertFalse(result.passed, result.details)
 
+    def test_rule6_explicit_body_form_wins_over_wechat_target_alias(self):
+        # Parity with config.resolve_body_form: an explicit body_form field
+        # wins over the legacy wechat_target:false alias. Here body_form is
+        # wechat-native AND wechat_target is false (contradictory) — the field
+        # wins, so Style D threshold lowers to 1 and a 1-block section PASSES.
+        article = (
+            "---\n"
+            "title: demo\n"
+            'description: "demo"\n'
+            "writing_style: D\n"
+            "body_form: wechat-native\n"
+            "wechat_target: false\n"
+            "---\n"
+            "\n"
+            "# 标题\n"
+            "\n"
+            "## 实战一节\n"
+            "\n"
+            "这一节有实际内容，超过两百字的正文用来触发深度检查。"
+            + "占" * 200
+            + "\n"
+            "\n"
+            "```python\n"
+            'print("only one block")\n'
+            "```\n"
+        )
+        result = review_selfcheck.check_rule_6(article, article.splitlines())
+        self.assertTrue(result.passed, result.details)
+
 
 class CLIRuleSelectionTests(unittest.TestCase):
     """Tests for the --rules / --write-gate / --gate-only CLI surface.

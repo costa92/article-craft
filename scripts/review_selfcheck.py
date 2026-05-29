@@ -782,9 +782,13 @@ def check_rule_6(content: str, lines: List[str]) -> CheckResult:
     # Body-form-aware: wechat-native sections are punchier and fewer, so they
     # need one fewer code block per section (min 1). long-form keeps the full
     # style threshold. Missing field degrades to wechat-native (the default).
+    # Match config.resolve_body_form() precedence: an explicit body_form field
+    # wins over the legacy wechat_target:false alias; the alias only applies
+    # when the field is unset/invalid.
     body_form_raw = (frontmatter.get("body_form", "") or "").strip()
-    if frontmatter.get("wechat_target") in (False, "false", "False"):
-        body_form_raw = "long-form"
+    if body_form_raw not in ("wechat-native", "long-form"):
+        if frontmatter.get("wechat_target") in (False, "false", "False"):
+            body_form_raw = "long-form"
     if body_form_raw != "long-form":  # wechat-native or unset (default)
         base_threshold = max(1, base_threshold - 1)
 

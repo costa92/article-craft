@@ -87,7 +87,8 @@ class Rule6StyleAwareTests(unittest.TestCase):
         self.assertIn("3", joined)
 
     def test_style_a_passes_with_three_code_blocks_per_section(self):
-        article = _article("A", [("步骤一", 3), ("步骤二", 3)])
+        # long-form pins the full Style-A threshold (3); 3 blocks/section passes.
+        article = _article("A", [("步骤一", 3), ("步骤二", 3)], body_form="long-form")
         result = review_selfcheck.check_rule_6(article, article.splitlines())
         self.assertTrue(result.passed, result.details)
 
