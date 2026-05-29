@@ -81,20 +81,27 @@ Example: "同一个项目，pip install 用了 45 秒，uv 只用了 2.1 秒—�
 - Good: end with a concrete next-step action: "装好 uv 后，在现有项目里跑一次 `uv pip install -r requirements.txt`，体感一下速度差异。"
 - Good: end with a brief technical outlook (max 2 sentences): "uv 的 workspace 功能还在快速迭代，monorepo 支持值得关注。"
 
-### Platform Adaptation Rules (Platform adaptation dimension, target 9+)
+## Body Form: wechat-native (default) vs long-form
 
-**WeChat Official Account adaptation**:
-- `description` field required in frontmatter, max 120 characters, used as WeChat summary
-- External links: use inline `[Name](url)` format (converter auto-extracts footnotes). In body text for WeChat-primary content, consider replacing with "参见文末链接" or search guidance.
-- Individual code blocks: max 30 lines (mobile reading). Split longer code into multiple blocks with explanatory text between.
-- Pure text passages must not exceed 800 characters without a figure/table/code block to break monotony.
-- Heading levels: max 3 levels (##, ###, ####). Never use #####.
+`body_form` is resolved by the requirements skill (default `wechat-native`).
+The writer applies these rules **on top of** the chosen content style (A–H).
+`wechat-native` is the default because 公众号 is the primary target; `long-form`
+is the opt-in KB/blog form (today's behavior, callouts allowed).
 
-**Readability rhythm**:
-- Paragraphs: max 150 characters, split if longer
-- Between code blocks: at least 2-3 sentences of explanation. Never place two code blocks back-to-back without text.
-- Long sentences: max 60 characters, break if longer
-- Insert one rhythm image every 400-600 words (screenshot or AI-generated)
+| Dimension | wechat-native (default) | long-form (opt-in) |
+|---|---|---|
+| Paragraph | ≤ ~200 字 / 3–4 短句, frequent breaks | unconstrained |
+| Cold open | first screen (~100 字) must hook, zero "本文将…" runway | softer intro OK |
+| Callouts | **banned** (公众号 doesn't render `> [!abstract]`) → use a **bold 引导句** or a single `>` quote | Obsidian `> [!abstract]` allowed |
+| Headings | ≤ 2 levels (`##`/`###`), no deep nesting | ≤ 3 levels |
+| Sections | fewer, punchier (≈3–5), one idea each | many deep sections OK |
+| Image rhythm | a visual every ~2–3 screens (~600 字) | 1 图/章 |
+| Throughline | one core question/conflict carried start→end | survey-of-subtopics OK |
+| Code blocks | ≤30 行/块, split长代码 | ≤30 行/块 |
+
+These numbers are guidance, not a hard gate (review surfaces violations as a
+Phase-2 signal). The constraints formerly under "Platform Adaptation Rules"
+(30-line code, ≤3 headings, inline links, 800-字 text-break) are subsumed here.
 
 **朋友推荐适配（v1.7.1+，B 级官方间接）**:
 
