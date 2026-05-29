@@ -314,6 +314,12 @@ If writing as part of a series, inject navigation **after the cover image and be
 > 上一篇：[上一篇标题](./filename.md) | 下一篇：[下一篇标题](./filename.md)
 ```
 
+> **形态条件**：上面的 `> [!info]` callout **仅在 `body_form: long-form` 下使用**。
+> 在 `body_form: wechat-native`（默认）下公众号不渲染 Obsidian callout，改用纯文本：
+> ```markdown
+> **📚 系列导航**：本文是《系列名称》第 X/Y 篇。上一篇：[标题](./f.md) ｜ 下一篇：[标题](./f.md)
+> ```
+
 - First article: omit "上一篇"
 - Last article: change "下一篇" to "合集：[系列合集](./series-collection.md)"（if exists）
 - Visual style prefix: read from series.md, use for ALL image prompts in this article
