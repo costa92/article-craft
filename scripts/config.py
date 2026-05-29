@@ -437,6 +437,36 @@ def resolve_tone(
     return "neutral"
 
 
+# ─── Body-form axis (orthogonal to style/tone/depth) ───────────────
+# wechat-native: mobile-shaped 公众号 body (short paras, no callouts, ≤3
+#   headings, image rhythm). The default — 公众号 is the primary target.
+# long-form: today's blog behavior (callouts allowed, deep sections) — the
+#   KB / blog archive copy.
+BODY_FORM_LEVELS = ("wechat-native", "long-form")
+DEFAULT_BODY_FORM = "wechat-native"
+
+
+def resolve_body_form(
+    cli_body_form: Optional[str] = None,
+    frontmatter_body_form: Optional[str] = None,
+    frontmatter_wechat_target=None,
+) -> str:
+    """Resolve final body form: CLI > frontmatter body_form: > legacy
+    wechat_target alias > default wechat-native.
+
+    `wechat_target: false` (bool or the string "false") is the back-compat
+    alias for long-form. Any invalid value at a tier degrades to the next.
+    Returns one of BODY_FORM_LEVELS, never None.
+    """
+    if cli_body_form in BODY_FORM_LEVELS:
+        return cli_body_form
+    if frontmatter_body_form in BODY_FORM_LEVELS:
+        return frontmatter_body_form
+    if frontmatter_wechat_target in (False, "false", "False"):
+        return "long-form"
+    return DEFAULT_BODY_FORM
+
+
 # ─── Tone thresholds (Rule 17 sub-checks) ────────────────────────
 # v1.1 calibration (2026-05-08): tightened after 4-article pilot.
 #   - neutral.max_summary_phrases: 5 → 3 (caught AI-flavor article that
