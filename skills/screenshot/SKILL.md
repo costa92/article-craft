@@ -27,7 +27,7 @@ allowed-tools:
 
 ## 占位符扫描优先级
 
-scan article.md 时同时识别两种占位符：
+扫描 article.md（由本 skill 读取文件，不是某个 `scan` 子命令）时，同时识别两种占位符：
 
 | 占位符 | 处理方式 |
 |--------|----------|
@@ -252,7 +252,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py screenshot "URL" \
 
 ### 占位符到 CLI 的映射 [v1.5.3+]
 
-scan 文章时遇到 `<!-- SCREENSHOT: URL [opts] -->`，按下表把 opts 映射成 CLI 参数后调脚本：
+扫描文章（读取 article.md）时遇到 `<!-- SCREENSHOT: URL [opts] -->`，按下表把 opts 映射成 CLI 参数后调脚本（注意：`screenshot_tool.py` 没有 `scan` 子命令，逐个占位符调 `screenshot` / `batch`）：
 
 | 占位符片段 | CLI 参数 |
 |---|---|
