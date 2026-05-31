@@ -1105,8 +1105,16 @@ def upload_to_cdn(image_path: str) -> str:
     try:
         from generate_and_upload_images import upload_image  # type: ignore
         return upload_image(image_path)
-    except Exception:
+    except ImportError:
+        # Shared uploader not importable in this context — fall back quietly
+        # to the local PicGo path (an expected, benign case).
         pass
+    except Exception as e:
+        # The shared uploader IS available but failed at runtime. Don't swallow
+        # this silently — a silently-degraded upload is exactly how screenshots
+        # end up treated as "not uploaded" downstream. Warn, then fall back.
+        print(f"⚠️  shared uploader failed ({type(e).__name__}: {e}); "
+              f"falling back to PicGo/local for {image_path}", file=sys.stderr)
 
     picgo = shutil.which("picgo")
     if not picgo:
