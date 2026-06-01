@@ -2265,6 +2265,13 @@ def _code_block_char_spans(text: str) -> List[Tuple[int, int]]:
     return spans
 
 
+def _image_timestamp() -> str:
+    """Compact timestamp segment (YYYYMMDD-HHMMSS) added to generated image and
+    screenshot filenames so the same placeholder produced in different runs — or
+    the same slug across articles — never collides on disk / CDN."""
+    return time.strftime("%Y%m%d-%H%M%S")
+
+
 def parse_markdown_images(file_path: str) -> List[tuple]:
     """
     Parse Markdown file for image placeholders.
@@ -2316,7 +2323,7 @@ def parse_markdown_images(file_path: str) -> List[tuple]:
         combined_hash = hashlib.md5(
             f"{file_path}_{slug}_{idx}_{prompt}".encode('utf-8')
         ).hexdigest()[:12]
-        filename = f"{safe_file_stem}_{safe_slug}_{combined_hash}.jpg"
+        filename = f"{safe_file_stem}_{safe_slug}_{_image_timestamp()}_{combined_hash}.jpg"
 
         config = ImageConfig(
             name=desc,
@@ -2391,7 +2398,7 @@ def parse_markdown_screenshots_v2(file_path: str) -> List[tuple]:
         combined_hash = hashlib.md5(
             f"{file_path}_{url}_{idx}_{options_str}".encode('utf-8')
         ).hexdigest()[:12]
-        filename = f"{safe_file_stem}_{combined_hash}.png"
+        filename = f"{safe_file_stem}_{_image_timestamp()}_{combined_hash}.png"
 
         config = ScreenshotConfig(
             slug=slug,
@@ -2496,7 +2503,7 @@ def parse_markdown_screenshots(file_path: str) -> List[tuple]:
         combined_hash = hashlib.md5(
             f"{file_path}_{slug}_{idx}_{url}".encode('utf-8')
         ).hexdigest()[:12]
-        filename = f"{safe_file_stem}_{safe_slug}_{combined_hash}.png"
+        filename = f"{safe_file_stem}_{safe_slug}_{_image_timestamp()}_{combined_hash}.png"
 
         config = ScreenshotConfig(
             slug=slug,
