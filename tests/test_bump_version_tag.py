@@ -85,5 +85,30 @@ def test_tag_points_at_commit_containing_bump(repo):
     assert porcelain == "", f"bump left uncommitted: {porcelain!r}"
 
 
+def test_unrelated_staged_files_are_not_swept_into_release_commit(repo):
+    # A caller may have unrelated staged work; cutting a local tag must not fold
+    # it into the chore(release) commit.
+    plugin = repo / ".claude-plugin" / "plugin.json"
+    plugin.write_text(json.dumps({"version": "1.1.0"}), encoding="utf-8")
+    unrelated = repo / "unrelated.txt"
+    unrelated.write_text("work in progress", encoding="utf-8")
+    _git(repo, "add", "unrelated.txt")
+
+    bv.create_git_tag("1.1.0")
+
+    # The release commit (== the tag) must NOT contain unrelated.txt.
+    tagged_files = subprocess.run(
+        ["git", "-C", str(repo), "show", "--name-only", "--pretty=format:", "v1.1.0"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert "unrelated.txt" not in tagged_files, "unrelated staged file swept into release commit"
+    # It should still be staged (uncommitted), preserved for the caller.
+    staged = subprocess.run(
+        ["git", "-C", str(repo), "diff", "--cached", "--name-only"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert "unrelated.txt" in staged
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

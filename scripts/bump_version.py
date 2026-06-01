@@ -147,21 +147,28 @@ def create_git_tag(version: str) -> None:
 
     # Stage exactly the files the bump touched (plugin.json + marketplace.json +
     # every SKILL.md), so the release commit contains the full lockstep bump.
-    bump_files = [PLUGIN_JSON, MARKETPLACE_JSON, *sorted(SKILLS_DIR.glob("*/SKILL.md"))]
+    bump_files = [
+        str(f) for f in
+        [PLUGIN_JSON, MARKETPLACE_JSON, *sorted(SKILLS_DIR.glob("*/SKILL.md"))]
+        if f.exists()
+    ]
     for f in bump_files:
-        if f.exists():
-            subprocess.run(git + ["add", str(f)], check=True)
+        subprocess.run(git + ["add", f], check=True)
 
     # Commit the bump BEFORE tagging so the tag points at a commit that actually
     # contains it (the previous version tagged HEAD with the bump left
-    # uncommitted). Skip the commit only if nothing is staged — e.g. the caller
-    # already committed the bump themselves.
+    # uncommitted). Scope both the staged-check and the commit to the bump files
+    # with an explicit pathspec, so unrelated already-staged work the caller has
+    # is NOT swept into the release commit. Skip the commit if the bump files
+    # have no staged change — e.g. the caller already committed the bump.
     staged = subprocess.run(
-        git + ["diff", "--cached", "--name-only"], capture_output=True, text=True
+        git + ["diff", "--cached", "--name-only", "--"] + bump_files,
+        capture_output=True, text=True
     ).stdout.strip()
     if staged:
         subprocess.run(
-            git + ["commit", "-m", f"chore(release): v{version}"], check=True
+            git + ["commit", "-m", f"chore(release): v{version}", "--"] + bump_files,
+            check=True
         )
 
     subprocess.run(
