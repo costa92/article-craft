@@ -54,10 +54,23 @@ def load_cache() -> dict:
 
 
 def save_cache(cache: dict) -> None:
+    # Atomic write: the cache is a cross-process contract with the screenshot
+    # skill. Write a temp file then os.replace so a mid-write failure or two
+    # interleaving writers can never truncate/corrupt the live file.
     try:
-        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-        with open(CACHE_FILE, "w") as f:
-            json.dump(cache, f, ensure_ascii=False, indent=2)
+        dir_ = os.path.dirname(CACHE_FILE) or "."
+        os.makedirs(dir_, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(cache, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, CACHE_FILE)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     except Exception as e:
         print(f"⚠️  Cache write failed: {e}", file=sys.stderr)
 

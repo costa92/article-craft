@@ -130,6 +130,23 @@ def _load_verify_cache() -> dict:
         return {}
 
 
+def _save_verify_cache(cache: dict) -> None:
+    """原子写入 verify 缓存（跨进程契约，避免截断/交错损坏）。"""
+    dir_ = os.path.dirname(VERIFY_CACHE_FILE) or "."
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(cache, f)
+        os.replace(tmp, VERIFY_CACHE_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def check_url_status(url: str, timeout: int = 10,
                      _from_cache: bool = True) -> dict:
     """
@@ -220,8 +237,7 @@ def check_url_status(url: str, timeout: int = 10,
             cache = _load_verify_cache()
             cache[url] = {k: v for k, v in result.items() if k != "from_cache"}
             cache[url]["_checked_at"] = time.time()
-            with open(VERIFY_CACHE_FILE, "w") as f:
-                json.dump(cache, f)
+            _save_verify_cache(cache)
         except Exception:
             pass  # 缓存写入失败不影响主流程
 
