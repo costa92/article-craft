@@ -2355,7 +2355,12 @@ def parse_markdown_screenshots_v2(file_path: str) -> List[tuple]:
         re.IGNORECASE
     )
 
-    for match in new_pattern.finditer(file_content):
+    # Screenshots shown as documentation inside fenced code blocks are not real.
+    code_spans = _code_block_char_spans(file_content)
+
+    for idx, match in enumerate(new_pattern.finditer(file_content)):
+        if any(start <= match.start() < end for start, end in code_spans):
+            continue
         full_match_text = match.group(0)
         url = match.group(1).strip()
         options_str = match.group(2) or ""
@@ -2381,9 +2386,11 @@ def parse_markdown_screenshots_v2(file_path: str) -> List[tuple]:
             path = parsed.netloc.replace(".", "-")
         slug = path[:60] if len(path) > 60 else path
 
-        # 生成文件名
+        # 生成文件名（纳入序号+选项，避免同 URL 不同选项撞名）
         safe_file_stem = re.sub(r'[^a-zA-Z0-9-_]', '_', file_stem)
-        combined_hash = hashlib.md5(f"{file_path}_{url}".encode('utf-8')).hexdigest()[:12]
+        combined_hash = hashlib.md5(
+            f"{file_path}_{url}_{idx}_{options_str}".encode('utf-8')
+        ).hexdigest()[:12]
         filename = f"{safe_file_stem}_{combined_hash}.png"
 
         config = ScreenshotConfig(
@@ -2445,13 +2452,18 @@ def parse_markdown_screenshots(file_path: str) -> List[tuple]:
         r'((?:\s*\n<!--\s*(?:SELECTOR|WAIT|JS):\s*.*?-->)*)'
     )
 
-    for match in re.finditer(pattern, file_content):
+    # Skip placeholders documented inside fenced code blocks (same as v2).
+    code_spans = _code_block_char_spans(file_content)
+
+    for idx, match in enumerate(re.finditer(pattern, file_content)):
         full_match_text = match.group(0)
         match_start = match.start()
         match_end = match.end()
 
-        # 跳过已被新格式占用的区域
+        # 跳过已被新格式占用的区域，以及代码块内的演示占位符
         if any(s <= match_start < e for s, e in consumed_ranges):
+            continue
+        if any(s <= match_start < e for s, e in code_spans):
             continue
 
         slug = match.group(1).strip()
@@ -2478,10 +2490,12 @@ def parse_markdown_screenshots(file_path: str) -> List[tuple]:
             if js_m:
                 js = js_m.group(1).strip()
 
-        # 生成文件名
+        # 生成文件名（纳入序号+URL，避免同 slug 撞名）
         safe_file_stem = re.sub(r'[^a-zA-Z0-9-_]', '_', file_stem)
         safe_slug = re.sub(r'[^a-zA-Z0-9-_]', '_', slug)
-        combined_hash = hashlib.md5(f"{file_path}_{slug}".encode('utf-8')).hexdigest()[:12]
+        combined_hash = hashlib.md5(
+            f"{file_path}_{slug}_{idx}_{url}".encode('utf-8')
+        ).hexdigest()[:12]
         filename = f"{safe_file_stem}_{safe_slug}_{combined_hash}.png"
 
         config = ScreenshotConfig(
