@@ -1007,18 +1007,18 @@ def check_rule_11(content: str, lines: List[str]) -> CheckResult:
                 line=i + 1, text=line.strip()[:80],
                 suggestion="替换 IMAGE_PLACEHOLDER 为标准 <!-- IMAGE: --> 格式或 CDN URL"
             ))
-        # Broken local image paths (images/xxx.jpg or placeholder-xxx.jpg that don't exist)
+        # Local relative image paths (images/xxx.jpg or placeholder-xxx.jpg).
+        # By gate time every image must be a CDN URL, so a relative local path is
+        # residue regardless of whether the file exists on disk. We deliberately
+        # do NOT call os.path.exists — the rule has no reliable article directory
+        # (only content + lines), so a CWD-relative check was non-deterministic.
         local_img = re.search(r'!\[.*?\]\(((?:images/|placeholder-)[\w.-]+)\)', line)
         if local_img:
             img_path = local_img.group(1)
-            # Check if referenced file exists relative to article
-            article_dir = os.path.dirname(os.path.abspath(lines[0])) if lines else '.'
-            # Use the article's directory from the content context
-            if not os.path.exists(img_path) and 'cdn.' not in img_path and 'http' not in img_path:
-                violations.append(Violation(
-                    line=i + 1, text=line.strip()[:80],
-                    suggestion=f"本地图片 {img_path} 不存在，替换为 CDN URL 或添加 <!-- IMAGE: --> 占位符"
-                ))
+            violations.append(Violation(
+                line=i + 1, text=line.strip()[:80],
+                suggestion=f"本地图片路径 {img_path} 不可发布，替换为 CDN URL 或添加 <!-- IMAGE: --> 占位符"
+            ))
 
     return CheckResult(
         rule_id=11, rule_name="占位符残留",
