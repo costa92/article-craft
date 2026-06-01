@@ -398,12 +398,29 @@ def _is_structural_anchor_block(block: str) -> bool:
     )
 
 
+# Sourced-attribution markers. A paragraph that ties a claim to an external
+# source (据/根据/官方/原文/"视频里说"/"Karpathy 演示") is as grounded as one
+# carrying a number or command. For source-derived articles (YouTube / research
+# / docs) this is the *honest* alternative to fabricated first-person
+# experience — recognizing it stops Rule 5/22 from penalizing attributed,
+# verifiable writing while still rewarding fabricated "我" anecdotes.
+ATTRIBUTION_ANCHOR_REGEX = re.compile(
+    r"据[^，。；！？\s]{0,10}(?:说|讲|介绍|表示|演示|指出|提到|强调|报道|披露|公布|显示)"
+    r"|根据[^，。；！？]{0,14}(?:数据|文档|说明|规范|公告|论文|报告|介绍|讲座|视频|原文)"
+    r"|引用自|援引|出处[:：]|官方(?:数据|文档|说明|口径|公告|声明|规范|博客)"
+    r"|原文(?:里|中|提到|写道|指出)"
+    r"|(?:视频|讲座|演讲|论文|白皮书|报告|文章)(?:里|中)(?:说|讲|提到|演示|指出|强调|介绍|解释)"
+    r"|[A-Z][A-Za-z]{2,}\s*(?:说|表示|演示|解释|指出|强调|提到|讲|介绍|认为|举例|演讲|抛出|拆成|比作|打了?个?比方)"
+)
+
+
 def _has_concrete_anchor(paragraph: str) -> bool:
     return (
         re.search(r'`[^`]+`', paragraph) is not None or
         re.search(r'\b(v?\d+(?:\.\d+){1,3})\b', paragraph) is not None or
         re.search(r'(/[A-Za-z0-9_.-]+){2,}', paragraph) is not None or
-        re.search(r'(报错|错误|error|exception|warning|404|500|ms|MB|GB|%)', paragraph, re.IGNORECASE) is not None
+        re.search(r'(报错|错误|error|exception|warning|404|500|ms|MB|GB|%)', paragraph, re.IGNORECASE) is not None or
+        ATTRIBUTION_ANCHOR_REGEX.search(paragraph) is not None
     )
 
 
@@ -712,6 +729,11 @@ def check_rule_5(content: str, lines: List[str]) -> CheckResult:
     for heading, section_content in sections:
         section_blocks = _split_blocks(section_content)
         if not section_blocks:
+            continue
+        # Conclusion / intro sections are reflective by nature (takeaways, CTA,
+        # framing) — don't demand command/number anchors there. Mirrors Rule 6's
+        # skip set so the two rules treat these sections consistently.
+        if re.search(r'写在最后|总结|结语|结尾|小结|后记|导语|导言|开篇', heading):
             continue
         label = _section_label(heading)
         run: List[str] = []
@@ -1586,22 +1608,27 @@ SPECIFIC_NUMBER_REGEX = re.compile(
 def check_rule_22(content: str, lines: List[str]) -> CheckResult:
     """Rule 22: 个人化注入软检测（warning）.
 
-    - 个人经历关键词 ≥ 2 处
+    - 个人经历关键词 ≥ 2 处 **或** 来源归属 ≥ 2 处（二选一即可）
     - 具体数字（非代码块内）≥ 1 处
     - 主观判断 ≥ 1 处
+
+    来源归属（据/官方/"X 在视频里说"）对 source-derived 文章（YouTube/研究/官方
+    文档总结）是个人经历的诚实替代——不该逼一个如实转述来源的作者去编造第一人称。
     """
     body = strip_code_blocks(get_body(content))
 
     exp_count = len(PERSONAL_EXPERIENCE_REGEX.findall(body))
     judg_count = len(SUBJECTIVE_JUDGMENT_REGEX.findall(body))
     num_count = len(SPECIFIC_NUMBER_REGEX.findall(body))
+    attr_count = len(ATTRIBUTION_ANCHOR_REGEX.findall(body))
 
     violations = []
-    if exp_count < 2:
+    if exp_count < 2 and attr_count < 2:
         violations.append(Violation(
             line=0,
-            text=f"个人经历关键词 {exp_count} 处",
-            suggestion="补充 ≥ 2 处个人经历（我用 / 去年试过 / 上周踩坑等）",
+            text=f"个人经历 {exp_count} 处 / 来源归属 {attr_count} 处",
+            suggestion="补 ≥ 2 处个人经历（我用 / 去年试过 / 上周踩坑），"
+                       "或 ≥ 2 处来源归属（据官方数据 / X 在视频里说）——二选一即可",
             severity="warning",
         ))
     if judg_count < 1:
@@ -1622,7 +1649,7 @@ def check_rule_22(content: str, lines: List[str]) -> CheckResult:
     return CheckResult(
         rule_id=22, rule_name="个人化注入",
         passed=len(violations) == 0, violations=violations,
-        details=f"经历 {exp_count} / 判断 {judg_count} / 数字 {num_count}",
+        details=f"经历 {exp_count} / 来源归属 {attr_count} / 判断 {judg_count} / 数字 {num_count}",
     )
 
 
