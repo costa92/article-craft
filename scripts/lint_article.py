@@ -436,8 +436,11 @@ def _build_line_disabled_sets(text: str) -> list[frozenset]:
     active: set[str] = set()
     for line in lines:
         stripped = line.strip()
-        dm = DISABLE_PATTERN.match(stripped)
-        em = ENABLE_PATTERN.match(stripped)
+        # .search (not .match): a marker is honored anywhere on the line, so a
+        # trailing inline `... <!-- lint:disable X -->` opens the region too —
+        # matching what _has_unmatched_disable_at_eof counts (findall).
+        dm = DISABLE_PATTERN.search(stripped)
+        em = ENABLE_PATTERN.search(stripped)
         if dm:
             rules = set(dm.group(1).split())
             active.update(rules)
