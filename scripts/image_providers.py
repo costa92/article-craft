@@ -270,6 +270,20 @@ class MinimaxProvider:
             )
 
         data = response.json() if response.text else {}
+
+        # Minimax returns HTTP 200 with a base_resp object; a non-zero
+        # status_code is a logical error (rate limit / auth / balance) even
+        # though the HTTP status is 200. Surface it as a RuntimeError so it is
+        # not silently swallowed as a recoverable NoImageDataError. Known
+        # rate-limit codes carry a "rate limit" token so the caller's backoff
+        # (which string-matches the error message) engages.
+        base_resp = data.get("base_resp") if isinstance(data, dict) else None
+        if isinstance(base_resp, dict) and base_resp.get("status_code"):
+            code = base_resp.get("status_code")
+            msg = base_resp.get("status_msg", "")
+            hint = " rate limit" if code in (1002, 1039) else ""
+            raise RuntimeError(f"Minimax API error (base_resp {code}): {msg}{hint}")
+
         image_b64 = (
             (data.get("data") or {}).get("image_base64")
             if isinstance(data, dict)
