@@ -72,6 +72,24 @@ echo ok
     def test_extract_tool_strips_env_and_sudo(self):
         self.assertEqual(verify_claims._extract_tool("sudo env mytool --help"), "mytool")
 
+    def test_extract_tool_strips_env_var_assignment_prefix(self):
+        # `FOO=bar mytool` — the leading VAR=value assignment must be stripped so
+        # the real tool (mytool) is still extracted and PATH-checked.
+        self.assertEqual(verify_claims._extract_tool("FOO=bar mytool run"), "mytool")
+        self.assertEqual(verify_claims._extract_tool("DEBUG=1 NODE_ENV=prod mytool"), "mytool")
+
+    def test_extract_tool_handles_pathspec_separator(self):
+        # `git -- file.txt` uses `--` as the pathspec separator; the tool is git,
+        # not a prose help-description. Must not be dropped.
+        self.assertEqual(verify_claims._extract_tool("git -- file.txt"), "git")
+        self.assertEqual(verify_claims._extract_tool("mytool -- input.txt"), "mytool")
+
+    def test_extract_tool_still_skips_prose_description(self):
+        # Typographic dash help text ("mempalace — a searchable palace") is prose,
+        # not a command — still skipped.
+        self.assertIsNone(verify_claims._extract_tool("mempalace — a searchable palace"))
+        self.assertIsNone(verify_claims._extract_tool("a searchable drawer"))
+
 
 # ─── B8 Phase 1: flag validation ─────────────────────────────────────────
 
