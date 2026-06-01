@@ -30,6 +30,7 @@ from review_selfcheck import (  # noqa: E402
     _BOX_CHARS,
     _ARROW_CHARS,
     _EXECUTABLE_LANGS,
+    iter_code_blocks,
 )
 
 
@@ -37,36 +38,21 @@ def find_violations(content: str):
     """Return a list of (line_number, language, preview) violations.
 
     Line number is 1-indexed and points at the opening ``` fence of the
-    offending block.
+    offending block. Uses the canonical fence scanner so nested/documented
+    fences (a bare ``` inside a ```` block) don't desync the scan.
     """
     lines = content.split("\n")
     violations = []
-    in_code = False
-    code_start = 0
-    code_lang = ""
-    code_lines = []
 
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-        if stripped.startswith("```"):
-            if in_code:
-                # End of block — evaluate
-                block_content = "".join(code_lines)
-                box_count = sum(1 for c in block_content if c in _BOX_CHARS)
-                arrow_count = sum(1 for c in block_content if c in _ARROW_CHARS)
-                if box_count >= 5 or (box_count >= 2 and arrow_count >= 2):
-                    if code_lang.lower() not in _EXECUTABLE_LANGS:
-                        preview = block_content.replace("\n", " | ")[:80]
-                        violations.append((code_start + 1, code_lang, preview))
-                in_code = False
-                code_lines = []
-            else:
-                in_code = True
-                code_start = i
-                code_lang = stripped[3:].strip()
-                code_lines = []
-        elif in_code:
-            code_lines.append(line)
+    for block in iter_code_blocks(lines):
+        if block["lang"].lower() in _EXECUTABLE_LANGS:
+            continue
+        block_content = "\n".join(block["content_lines"])
+        box_count = sum(1 for c in block_content if c in _BOX_CHARS)
+        arrow_count = sum(1 for c in block_content if c in _ARROW_CHARS)
+        if box_count >= 5 or (box_count >= 2 and arrow_count >= 2):
+            preview = block_content.replace("\n", " | ")[:80]
+            violations.append((block["start"] + 1, block["lang"], preview))
 
     return violations
 

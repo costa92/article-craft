@@ -301,6 +301,52 @@ def strip_code_blocks(text: str) -> str:
     return re.sub(r'```.*?```', '', text, flags=re.DOTALL)
 
 
+# Opening/closing fence line: 0-indent backtick or tilde run of length >= 3,
+# optionally followed by an info string. CommonMark: a fence opened by N chars
+# closes only on a line of >= N of the *same* char with no info string — so a
+# bare ``` inside a ```` block is content, not a close.
+_FENCE_RE = re.compile(r'^(?P<fence>`{3,}|~{3,})(?P<info>.*)$')
+
+
+def iter_code_blocks(lines):
+    """Yield one dict per fenced code block, CommonMark-correct for variable
+    fence lengths (``` vs ````) and ~~~ fences.
+
+    Each dict: {'start': open_idx, 'end': close_idx_or_len, 'lang': info,
+    'content_lines': [...]} with 0-indexed line positions. An unterminated
+    block at EOF is yielded with 'end' = len(lines).
+
+    This is the canonical fence scanner — Rule 13, Rule 14 and ascii_gate all
+    use it so they stay consistent on nested/documented fences.
+    """
+    open_fence = None  # (char, length, start_idx, lang)
+    for i, line in enumerate(lines):
+        m = _FENCE_RE.match(line.rstrip())
+        if not m:
+            continue
+        fence = m.group('fence')
+        char, length = fence[0], len(fence)
+        info = m.group('info').strip()
+        if open_fence is None:
+            open_fence = (char, length, i, info)
+        else:
+            o_char, o_len, o_start, o_lang = open_fence
+            # Close only on same char, >= opening length, and no info string.
+            if char == o_char and length >= o_len and not info:
+                yield {
+                    'start': o_start, 'end': i, 'lang': o_lang,
+                    'content_lines': lines[o_start + 1:i],
+                }
+                open_fence = None
+            # else: this fence line is content inside the open block.
+    if open_fence is not None:
+        o_char, o_len, o_start, o_lang = open_fence
+        yield {
+            'start': o_start, 'end': len(lines), 'lang': o_lang,
+            'content_lines': lines[o_start + 1:],
+        }
+
+
 def _strip_callout_blocks(text: str) -> str:
     """Remove Obsidian callout blocks (> [!type] ... \n> body) from text.
 
@@ -1019,23 +1065,13 @@ def check_rule_12(content: str, lines: List[str]) -> CheckResult:
 def check_rule_13(content: str, lines: List[str]) -> CheckResult:
     """Code Block Language Identifier: every opening ``` must have a language tag."""
     violations = []
-    in_code = False
 
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-        if stripped.startswith('```'):
-            if in_code:
-                # Closing fence — should be bare, skip
-                in_code = False
-            else:
-                # Opening fence — must have language identifier
-                in_code = True
-                lang = stripped[3:].strip()
-                if not lang:
-                    violations.append(Violation(
-                        line=i + 1, text=stripped,
-                        suggestion="添加语言标识符，如 ```yaml、```bash、```go、```text"
-                    ))
+    for block in iter_code_blocks(lines):
+        if not block['lang']:
+            violations.append(Violation(
+                line=block['start'] + 1, text=lines[block['start']].rstrip(),
+                suggestion="添加语言标识符，如 ```yaml、```bash、```go、```text"
+            ))
 
     return CheckResult(
         rule_id=13, rule_name="代码块语言标识",
@@ -1060,36 +1096,20 @@ _ARROW_CHARS = set('▼▶◄◀←→↑↓►')
 def check_rule_14(content: str, lines: List[str]) -> CheckResult:
     """ASCII Diagram Detection: flag ASCII diagrams in code blocks."""
     violations = []
-    in_code = False
-    code_start = 0
-    code_lang = ''
-    code_lines = []
 
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-        if stripped.startswith('```'):
-            if in_code:
-                # End of code block — check for ASCII diagram
-                block_content = ''.join(code_lines)
-                box_count = sum(1 for c in block_content if c in _BOX_CHARS)
-                arrow_count = sum(1 for c in block_content if c in _ARROW_CHARS)
-                if (box_count >= 5 or (box_count >= 2 and arrow_count >= 2)):
-                    if code_lang.lower() not in _EXECUTABLE_LANGS:
-                        preview = block_content.replace('\n', ' | ')[:80]
-                        violations.append(Violation(
-                            line=code_start + 1,
-                            text=f"```{code_lang} 块含 ASCII 图: {preview}",
-                            suggestion="流程图/架构图转 <!-- IMAGE: name - desc (ratio) --> 占位符；目录树（├──/└──）改用 Markdown 列表"
-                        ))
-                in_code = False
-                code_lines = []
-            else:
-                in_code = True
-                code_start = i
-                code_lang = stripped[3:].strip()
-                code_lines = []
-        elif in_code:
-            code_lines.append(line)
+    for block in iter_code_blocks(lines):
+        if block['lang'].lower() in _EXECUTABLE_LANGS:
+            continue
+        block_content = '\n'.join(block['content_lines'])
+        box_count = sum(1 for c in block_content if c in _BOX_CHARS)
+        arrow_count = sum(1 for c in block_content if c in _ARROW_CHARS)
+        if box_count >= 5 or (box_count >= 2 and arrow_count >= 2):
+            preview = block_content.replace('\n', ' | ')[:80]
+            violations.append(Violation(
+                line=block['start'] + 1,
+                text=f"```{block['lang']} 块含 ASCII 图: {preview}",
+                suggestion="流程图/架构图转 <!-- IMAGE: name - desc (ratio) --> 占位符；目录树（├──/└──）改用 Markdown 列表"
+            ))
 
     return CheckResult(
         rule_id=14, rule_name="ASCII 图表残留",
