@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Two verification stages (since v1.4.5):** `verify` runs **before** `write` and vets the *sources* (URL reachability, T0–T5 trust tiering — this is effectively a source-vet stage, the directory kept its name for command compat). `verify-claims` runs **after images, before review** and vets the *article body* (scans shell code blocks for tool names, checks each is on PATH via `scripts/verify_claims.py`).
 
-**WeChat distribution focus (v1.7.x):** Built on the experience of an author whose published WeChat articles consistently underperformed (4 articles, 8 rules with 100% failure rate against `review_selfcheck.py`). The v1.7.x series adds 6 new self-check rules (Rules 18-24, except 21 reserved) targeting WeChat compliance + reach mechanics + LLM systematic failure modes. **Active rule count: 23 (v1.7.4)**. Rule details: `references/self-check-rules.md`. Empirical validation: v1.7.4 dogfood article passes 23/23 vs the original 4 articles' 63% pass rate — augmentation > gating works.
+**WeChat distribution focus (v1.7.x):** Built on the experience of an author whose published WeChat articles consistently underperformed (4 articles, 8 rules with 100% failure rate against `review_selfcheck.py`). The v1.7.x series adds 6 new self-check rules (Rules 18-24, except 21 reserved) targeting WeChat compliance + reach mechanics + LLM systematic failure modes. **Active rule count: 23 (v1.7.4; unchanged through v1.8.4)**. Rule details: `references/self-check-rules.md`. Empirical validation: v1.7.4 dogfood article passes 23/23 vs the original 4 articles' 63% pass rate — augmentation > gating works.
 
 ## Architecture
 
@@ -128,14 +128,18 @@ and `.research/wechat-distribution-mechanism-2026.md` (round 2, 9 incremental
 propositions). When adding new rules, follow the same evidence-chain
 convention: each rule → 1 commit → commit message links ≥1 first-party URL.
 
-**The two unfixed rules (Rule 5 / Rule 6):** require real author experience,
-not just regex patterns. Rule 5 (反 AI 结构) needs concrete anchors
-(commands, file paths, error codes) authors haven't actually run. Rule 6
-(浅层章节) needs runnable code blocks from real work. These are
-**deferred** because no augmentation can fabricate them — the author needs
-to live the project. The v1.7.4 dogfood article passes both because the
-author (Costa) genuinely lived the v1.7.x evolution; future articles by
-other authors will hit these unless they bring real material.
+**Rule 5 / Rule 6 and real author experience:** Rule 6 (浅层章节) still
+needs runnable code blocks from real work — no augmentation can fabricate
+them, so it stays **deferred**: the author needs to live the project.
+Rule 5 (反 AI 结构) used to share this debt but was **partially addressed
+in v1.8.4** (attribution-as-voice): source attribution (据/根据/官方/原文/
+"视频里说") now counts as a valid concrete anchor, and Rule 5 skips
+conclusion/intro sections — so a faithfully-attributed source summary no
+longer gets penalized for "缺少具体锚点" while a fabricated-anecdote article
+passes. This removed a perverse fabrication-reward incentive. The v1.7.4
+dogfood article passes both because the author (Costa) genuinely lived the
+v1.7.x evolution; future from-scratch articles still hit Rule 6 unless they
+bring real material.
 
 ### Cross-skill data flow
 
@@ -215,18 +219,18 @@ These are architectural gaps **intentionally deferred** because they require coo
 
 ### Open
 
-- **Rule 5 / Rule 6 not auto-fixable.** Real author experience is required:
-  Rule 5 (反 AI 结构) needs concrete command/path/error-code anchors,
-  Rule 6 (浅层章节) needs runnable code blocks from work the author has
-  actually done. No prompt augmentation can fabricate them. Rule 17/22
-  were considered as proxies but they validate *style*, not *substance*.
-  Empirical observation needed for ≥4 weeks before deciding whether to
-  add a "real example" gate that requires authors to paste actual command
-  output before the article can save. (Note: Rule 6 *is* a write pre-save
-  GATE — `WRITE_GATE_RULES` includes 6 — so a shallow chapter blocks save;
-  what's "not auto-fixable" is the *substance*, since the gate can't write
-  the missing code for you. Rule 5 is detect-only, review-stage.) See
-  `references/self-check-rules.md` Rule 5/6 sections.
+- **Rule 6 (浅层章节) substance not auto-fixable.** Rule 6 needs runnable
+  code blocks from work the author has actually done — no prompt
+  augmentation can fabricate them. (Rule 6 *is* a write pre-save GATE —
+  `WRITE_GATE_RULES` includes 6 — so a shallow chapter blocks save; what's
+  "not auto-fixable" is the *substance*, since the gate can't write the
+  missing code for you.) Rule 5 (反 AI 结构) used to share this debt but was
+  **addressed in v1.8.4**: attribution-as-voice (`ATTRIBUTION_ANCHOR_REGEX`)
+  lets source attribution count as a concrete anchor, Rule 22 passes on
+  `个人经历 ≥2 OR 来源归属 ≥2`, and Rule 5 now skips conclusion/intro
+  sections — removing the fabrication-reward incentive (see
+  `tests/test_attribution_anchor.py`). Rule 5 remains detect-only,
+  review-stage. See `references/self-check-rules.md` Rule 5/6 sections.
 
 - **Rule 24 (虚构数字) high warning-density tolerance.** v1.7.4 dogfood
   article generates 36 unverified-number warnings (mostly version numbers

@@ -3,13 +3,13 @@
 [![Plugin Layout Smoke](https://github.com/costa92/article-craft/actions/workflows/smoke.yml/badge.svg)](https://github.com/costa92/article-craft/actions/workflows/smoke.yml)
 [![Screenshot E2E](https://github.com/costa92/article-craft/actions/workflows/screenshot-e2e.yml/badge.svg)](https://github.com/costa92/article-craft/actions/workflows/screenshot-e2e.yml)
 
-Modular article generation plugin for Claude Code — 13 composable skills plus orchestrator for the full article lifecycle. **WeChat distribution-aware** (v1.7.x): built from 4 real published articles where 8 self-check rules failed 100% of the time, hardened with A/B-tier official-source evidence chain.
+Modular article generation plugin for Claude Code — 13 composable skills plus orchestrator for the full article lifecycle. **WeChat distribution-aware** (v1.7.x): built from 4 real published articles where 8 self-check rules failed 100% of the time, hardened with A/B-tier official-source evidence chain. **v1.8.x** adds an orthogonal `body_form` axis — `wechat-native` (mobile-shaped 公众号 body) is now the default — and attribution-as-voice (Rule 5/22 credit honest source attribution, not just first-person anecdotes).
 
 ## What it does
 
 Start writing and article-craft orchestrates the complete pipeline: requirements gathering, source verification, evidence collection for Style H, article writing, screenshot capture with Playwright validation, AI image generation, post-write claim verification, quality review with image count checks, and knowledge base publishing.
 
-**For WeChat 公众号 authors** (v1.7.x default mode): article-craft enforces 6 distribution-critical rules covering AIGC compliance (GB 45438-2025), recommendation-pool qualification (《微信公众号推荐运营规范》), Style G + opinionated tone substance, and tag NLP matching. See [WeChat 适配 (v1.7.x)](#wechat-适配-v17x) section below for empirical validation data.
+**For WeChat 公众号 authors** (`wechat-native` is the default body form since v1.8.0): article-craft enforces 6 distribution-critical rules covering AIGC compliance (GB 45438-2025), recommendation-pool qualification (《微信公众号推荐运营规范》), Style G + opinionated tone substance, and tag NLP matching. See [WeChat 适配 (v1.7.x)](#wechat-适配-v17x) section below for empirical validation data.
 
 ## Installation
 
@@ -100,6 +100,16 @@ requirements → verify → [evidence if Style H] → write → screenshot → s
 | **v1.7.2** | Rule 24 (fabricated-number detection, warning-only) + Rule 23 code-block exemption bugfix | Internal dogfooding (LAT.md 评论文章触发) |
 | **v1.7.3** | `style-guide.md` Style G + opinionated 加强模板: 4 fill-in-the-blank tables (个人经历 / 主观判断 / 强观点 / 具体锚点) | Empirical 4-article 100% Rule 17/22 failure data |
 | **v1.7.4** | Rule 4 enforcement (write step 3a hard constraint + publish step 3.5.0 auto-check) | Empirical 4-article 100% Rule 4 failure data |
+
+### What v1.8.x adds
+
+The v1.8.x line keeps the 23-rule count but reshapes *form* and fixes a fabrication-reward incentive surfaced by further dogfooding:
+
+| Release | Adds | Why |
+|---|---|---|
+| **v1.8.0** | Orthogonal `body_form` axis: `wechat-native` (mobile-shaped 公众号 body — short paragraphs, no callouts, ≤ `##`/`###`, single throughline) is the **default**; `long-form` (blog/KB body with callouts + deep sections) is opt-in via `--long-form` / `body_form: long-form`. Independent of *style* (A–H) and *depth* (字数). Rule 6 threshold is body-form-aware (`wechat-native` −1); review adds a **soft** form-consistency signal (no new write gate). | A `wechat-native + deep` article should be long but mobile-shaped — depth and form are separate decisions. |
+| **v1.8.1–v1.8.3** | Dogfood doc follow-ups (title-skip, word-count calibration, Rule 14 hint); screenshot CLI `scan` misread fix; warn (not silently swallow) on shared-uploader degradation. | Minor reliability + accuracy fixes. |
+| **v1.8.4** | **Attribution-as-voice** (Rule 5/22): source attribution (据/根据/官方/原文/"视频里说") now counts as a valid concrete anchor; Rule 22 passes on `个人经历 ≥2 OR 来源归属 ≥2`; Rule 5 skips conclusion/intro sections. Plus an **honest default AIGC label** — no longer auto-claims "人工核实改写" that never happened. | Dogfooding caught the rules rewarding *fabricated* anecdotes while penalizing honest, fully-attributed source summaries. Addresses the open Rule 5/6 design debt. |
 
 ### Empirical validation (v1.7.4 dogfood)
 
