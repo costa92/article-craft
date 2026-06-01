@@ -135,26 +135,44 @@ def update_skill_versions(version: str) -> int:
 
 def create_git_tag(version: str) -> None:
     tag = f"v{version}"
+    # Run every git command against REPO_ROOT explicitly — never the process
+    # CWD — so the tag/commit always land in this plugin's repo.
+    git = ["git", "-C", str(REPO_ROOT)]
+
     # 检查 tag 是否已存在
-    result = subprocess.run(
-        ["git", "tag"], capture_output=True, text=True
-    )
+    result = subprocess.run(git + ["tag"], capture_output=True, text=True)
     if tag in result.stdout.splitlines():
         print(f"  ⚠️  Tag {tag} already exists")
         return
 
-    subprocess.run(["git", "add", str(PLUGIN_JSON.relative_to(REPO_ROOT))], check=True)
-    # 也 add 所有修改过的 SKILL.md
-    result = subprocess.run(
-        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
-        capture_output=True, text=True
-    )
-    for f in result.stdout.strip().splitlines():
-        subprocess.run(["git", "add", f], check=True)
+    # Stage exactly the files the bump touched (plugin.json + marketplace.json +
+    # every SKILL.md), so the release commit contains the full lockstep bump.
+    bump_files = [
+        str(f) for f in
+        [PLUGIN_JSON, MARKETPLACE_JSON, *sorted(SKILLS_DIR.glob("*/SKILL.md"))]
+        if f.exists()
+    ]
+    for f in bump_files:
+        subprocess.run(git + ["add", f], check=True)
 
-    # 如果有 staged 文件，先 amend（如果没有，用新 commit）
+    # Commit the bump BEFORE tagging so the tag points at a commit that actually
+    # contains it (the previous version tagged HEAD with the bump left
+    # uncommitted). Scope both the staged-check and the commit to the bump files
+    # with an explicit pathspec, so unrelated already-staged work the caller has
+    # is NOT swept into the release commit. Skip the commit if the bump files
+    # have no staged change — e.g. the caller already committed the bump.
+    staged = subprocess.run(
+        git + ["diff", "--cached", "--name-only", "--"] + bump_files,
+        capture_output=True, text=True
+    ).stdout.strip()
+    if staged:
+        subprocess.run(
+            git + ["commit", "-m", f"chore(release): v{version}", "--"] + bump_files,
+            check=True
+        )
+
     subprocess.run(
-        ["git", "tag", "-a", tag, "-m", f"Release {tag} — article-craft v{version}"],
+        git + ["tag", "-a", tag, "-m", f"Release {tag} — article-craft v{version}"],
         check=True
     )
     print(f"  ✅ Created git tag: {tag}")

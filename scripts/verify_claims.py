@@ -364,9 +364,16 @@ _FLAG_RE = re.compile(r"^(--[a-z][a-z0-9-]*)(?:=.*)?$")
 # Fragments matching these patterns describe a tool (CLI help output), not actual
 # command invocations. The first token is a noun in a description sentence,
 # not a executable.  These are safe to skip — not real commands.
+# A help-description sentence separates the tool name from its prose with a
+# *typographic* dash (em/en).  ASCII `--` is NOT used here because it is the
+# shell pathspec separator (`git -- file`) — treating it as prose dropped real
+# commands.
 _HELP_DESCRIBE_RE = re.compile(
-    r"^[A-Za-z_][\w]*\s*(?:—|--)\s+[a-z]", re.IGNORECASE
+    r"^[A-Za-z_][\w]*\s*[—–]\s+[a-z]", re.IGNORECASE
 )
+# Leading `VAR=value` environment-assignment prefix (like sudo/env, stripped
+# before the tool name).
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 # Single-word fragments that are clearly description nouns, not commands.
 # E.g. "drawer" in "a searchable drawer", "palace" in "a searchable palace".
 _HELP_NOUN_RE = re.compile(
@@ -399,7 +406,7 @@ def _extract_tool(fragment: str) -> str | None:
     if not tokens:
         return None
     head = tokens[0]
-    while head in {"sudo", "env"} and len(tokens) > 1:
+    while len(tokens) > 1 and (head in {"sudo", "env"} or _ENV_ASSIGNMENT_RE.match(head)):
         tokens = tokens[1:]
         head = tokens[0]
     if "=" in head and not head.startswith("="):

@@ -2234,6 +2234,44 @@ def generate_markdown_output(results: Dict) -> str:
 
 
 
+_FENCE_LINE_RE = re.compile(r'^\s*(`{3,}|~{3,})(.*)$')
+
+
+def _code_block_char_spans(text: str) -> List[Tuple[int, int]]:
+    """Return (start, end) char-offset spans of fenced code blocks.
+
+    Length-aware (CommonMark): a fence opened by N backticks/tildes closes only
+    on a line of >= N of the same char with no info string, so a bare ``` inside
+    a ```` block is content. Used to skip placeholders shown as documentation
+    examples inside code blocks.
+    """
+    spans: List[Tuple[int, int]] = []
+    open_fence = None  # (char, length, start_offset)
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        m = _FENCE_LINE_RE.match(line.rstrip('\n'))
+        if m:
+            fence = m.group(1)
+            char, length = fence[0], len(fence)
+            info = m.group(2).strip()
+            if open_fence is None:
+                open_fence = (char, length, offset)
+            elif char == open_fence[0] and length >= open_fence[1] and not info:
+                spans.append((open_fence[2], offset + len(line)))
+                open_fence = None
+        offset += len(line)
+    if open_fence is not None:
+        spans.append((open_fence[2], len(text)))
+    return spans
+
+
+def _image_timestamp() -> str:
+    """Compact timestamp segment (YYYYMMDD-HHMMSS) added to generated image and
+    screenshot filenames so the same placeholder produced in different runs — or
+    the same slug across articles — never collides on disk / CDN."""
+    return time.strftime("%Y%m%d-%H%M%S")
+
+
 def parse_markdown_images(file_path: str) -> List[tuple]:
     """
     Parse Markdown file for image placeholders.
@@ -2249,8 +2287,12 @@ def parse_markdown_images(file_path: str) -> List[tuple]:
     matches = []
 
     file_stem = Path(file_path).stem
+    # Placeholders shown as documentation inside fenced code blocks are not real.
+    code_spans = _code_block_char_spans(file_content)
 
-    for match in re.finditer(pattern, file_content, re.DOTALL):
+    for idx, match in enumerate(re.finditer(pattern, file_content, re.DOTALL)):
+        if any(start <= match.start() < end for start, end in code_spans):
+            continue
         full_match_text = match.group(0)
         name_and_desc = match.group(1).strip()
         ratio = match.group(2).strip()
@@ -2274,10 +2316,14 @@ def parse_markdown_images(file_path: str) -> List[tuple]:
         safe_file_stem = re.sub(r'[^a-zA-Z0-9-_]', '_', file_stem)
         # 2. 安全化 slug
         safe_slug = re.sub(r'[^a-zA-Z0-9-_]', '_', slug)
-        # 3. 使用组合哈希值确保唯一性（基于文件路径和 slug）
-        # 计算包含完整信息的哈希值，取前 12 位
-        combined_hash = hashlib.md5(f"{file_path}_{slug}".encode('utf-8')).hexdigest()[:12]
-        filename = f"{safe_file_stem}_{safe_slug}_{combined_hash}.jpg"
+        # 3. 使用组合哈希值确保唯一性（文件路径 + slug + 占位符序号 + prompt）
+        # 仅用 file_path+slug 会让两个同 slug 占位符（如纯中文名都归一为 "_"）
+        # 撞到同一文件名，导致第二张覆盖第一张、两处占位符替换成同一 URL。
+        # 纳入序号与 prompt 保证每个占位符文件名唯一。
+        combined_hash = hashlib.md5(
+            f"{file_path}_{slug}_{idx}_{prompt}".encode('utf-8')
+        ).hexdigest()[:12]
+        filename = f"{safe_file_stem}_{safe_slug}_{_image_timestamp()}_{combined_hash}.jpg"
 
         config = ImageConfig(
             name=desc,
@@ -2316,7 +2362,12 @@ def parse_markdown_screenshots_v2(file_path: str) -> List[tuple]:
         re.IGNORECASE
     )
 
-    for match in new_pattern.finditer(file_content):
+    # Screenshots shown as documentation inside fenced code blocks are not real.
+    code_spans = _code_block_char_spans(file_content)
+
+    for idx, match in enumerate(new_pattern.finditer(file_content)):
+        if any(start <= match.start() < end for start, end in code_spans):
+            continue
         full_match_text = match.group(0)
         url = match.group(1).strip()
         options_str = match.group(2) or ""
@@ -2342,10 +2393,12 @@ def parse_markdown_screenshots_v2(file_path: str) -> List[tuple]:
             path = parsed.netloc.replace(".", "-")
         slug = path[:60] if len(path) > 60 else path
 
-        # 生成文件名
+        # 生成文件名（纳入序号+选项，避免同 URL 不同选项撞名）
         safe_file_stem = re.sub(r'[^a-zA-Z0-9-_]', '_', file_stem)
-        combined_hash = hashlib.md5(f"{file_path}_{url}".encode('utf-8')).hexdigest()[:12]
-        filename = f"{safe_file_stem}_{combined_hash}.png"
+        combined_hash = hashlib.md5(
+            f"{file_path}_{url}_{idx}_{options_str}".encode('utf-8')
+        ).hexdigest()[:12]
+        filename = f"{safe_file_stem}_{_image_timestamp()}_{combined_hash}.png"
 
         config = ScreenshotConfig(
             slug=slug,
@@ -2406,13 +2459,18 @@ def parse_markdown_screenshots(file_path: str) -> List[tuple]:
         r'((?:\s*\n<!--\s*(?:SELECTOR|WAIT|JS):\s*.*?-->)*)'
     )
 
-    for match in re.finditer(pattern, file_content):
+    # Skip placeholders documented inside fenced code blocks (same as v2).
+    code_spans = _code_block_char_spans(file_content)
+
+    for idx, match in enumerate(re.finditer(pattern, file_content)):
         full_match_text = match.group(0)
         match_start = match.start()
         match_end = match.end()
 
-        # 跳过已被新格式占用的区域
+        # 跳过已被新格式占用的区域，以及代码块内的演示占位符
         if any(s <= match_start < e for s, e in consumed_ranges):
+            continue
+        if any(s <= match_start < e for s, e in code_spans):
             continue
 
         slug = match.group(1).strip()
@@ -2439,11 +2497,13 @@ def parse_markdown_screenshots(file_path: str) -> List[tuple]:
             if js_m:
                 js = js_m.group(1).strip()
 
-        # 生成文件名
+        # 生成文件名（纳入序号+URL，避免同 slug 撞名）
         safe_file_stem = re.sub(r'[^a-zA-Z0-9-_]', '_', file_stem)
         safe_slug = re.sub(r'[^a-zA-Z0-9-_]', '_', slug)
-        combined_hash = hashlib.md5(f"{file_path}_{slug}".encode('utf-8')).hexdigest()[:12]
-        filename = f"{safe_file_stem}_{safe_slug}_{combined_hash}.png"
+        combined_hash = hashlib.md5(
+            f"{file_path}_{slug}_{idx}_{url}".encode('utf-8')
+        ).hexdigest()[:12]
+        filename = f"{safe_file_stem}_{safe_slug}_{_image_timestamp()}_{combined_hash}.png"
 
         config = ScreenshotConfig(
             slug=slug,

@@ -73,6 +73,23 @@ class InlineDisableTests(TestCase):
         text = article.read_text(encoding="utf-8")
         self.assertIn("赋能 一站式 链路 综上所述", text)
 
+    def test_trailing_inline_disable_marker_is_honored(self):
+        # The disable marker sits at the END of a content line (not its own line).
+        # _has_unmatched_disable_at_eof counted it (findall, anywhere), but
+        # _build_line_disabled_sets used .match (line start only) so it activated
+        # nothing — the protected words on that line were rewritten anyway.
+        body = (
+            "正常: 赋能开发者。\n\n"
+            "保留: 赋能 一站式。 <!-- lint:disable rule1 -->\n"
+            "<!-- lint:enable rule1 -->\n\n"
+            "正常: 一站式服务。"
+        )
+        article = _temp_article(body)
+        auto_fix(article)
+        text = article.read_text(encoding="utf-8")
+        self.assertNotIn("正常: 赋能", text)           # outside region: replaced
+        self.assertIn("保留: 赋能 一站式", text)         # inline-disabled line: preserved
+
     def test_unmatched_disable_warns_but_does_not_abort(self):
         # Unmatched <!-- lint:disable --> at end of file
         body = "正常段落。\n<!-- lint:disable rule1 -->\n赋能段落。"
