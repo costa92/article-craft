@@ -684,8 +684,13 @@ See the [official documentation](https://example.com/docs) for details.
 
 ---
 
-> 本文 AI 辅助起稿 + 人工核实改写。  ← AIGC 显式标识（Rule 18，必加）
+> 本文由 AI 辅助创作，关键数据与事实请以原始来源为准。  ← AIGC 显式标识（Rule 18，必加）
 ```
+
+> **诚实标识原则**：默认标识**只声明 AI 参与**，不要自动写「人工核实改写」——
+> 那是在替作者声称一次并不一定发生的人工核对。只有当作者**确实逐条核对过**
+> 数据与事实时，才把标识改成「本文 AI 辅助起稿 + 人工核实改写」。对纯转述来源的
+> 文章（如视频/论文总结），更诚实的措辞是「数据与观点以原始来源为准，未逐条二次核实」。
 
 **CTA 模板选择**：读 frontmatter `wechat_action` 字段，到 `references/writing-styles.md` § Closing Templates 找对应模板：
 - `heart` → 点♡/在看话术
