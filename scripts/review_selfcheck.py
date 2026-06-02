@@ -489,9 +489,22 @@ def check_rule_1(content: str, lines: List[str]) -> CheckResult:
     body = get_body(content)
     body_lines = body.split('\n')
 
+    # Mark every line inside a fenced code block (fence lines included) so
+    # red-flag words appearing in demo output / quoted logs / documented
+    # examples don't trip this GATE rule. Same idiom as Rule 23.
+    code_lines: set = set()
+    in_code = False
+    for i, line in enumerate(body_lines):
+        if line.strip().startswith('```'):
+            in_code = not in_code
+            code_lines.add(i)
+            continue
+        if in_code:
+            code_lines.add(i)
+
     for i, line in enumerate(body_lines):
         # Skip code blocks
-        if line.strip().startswith('```'):
+        if i in code_lines:
             continue
         # Check main red-flag words
         for m in re.finditer(RED_FLAG_WORDS, line):
@@ -1042,11 +1055,25 @@ TEMPLATE_SUMMARY_PATTERNS = [
 
 def check_rule_12(content: str, lines: List[str]) -> CheckResult:
     """Template Summary Detection: flag AI-style summary paragraphs."""
-    body = get_body(content)
-    text = strip_code_blocks(body)
+    # Skip fenced code blocks — a template-summary phrase inside a ```text
+    # example (e.g. an article documenting AI writing patterns) is not a
+    # violation. Track in-code line numbers and skip them, preserving the
+    # original line-number reporting. Same idiom as Rule 23.
+    code_lines: set = set()
+    in_code = False
+    for i, line in enumerate(lines):
+        if line.strip().startswith('```'):
+            in_code = not in_code
+            code_lines.add(i)
+            continue
+        if in_code:
+            code_lines.add(i)
+
     violations = []
 
     for i, line in enumerate(lines):
+        if i in code_lines:
+            continue
         for pattern in TEMPLATE_SUMMARY_PATTERNS:
             if re.search(pattern, line):
                 violations.append(Violation(
