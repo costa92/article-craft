@@ -15,10 +15,12 @@ Article-Craft Screenshot Tool
 """
 
 import argparse
+import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import hashlib
@@ -172,6 +174,14 @@ def check_url_status(url: str, timeout: int = 10,
         "redirect_chain": [],
         "from_cache": False,
     }
+
+    # SSRF guard: refuse file:// / metadata before any cache lookup or network.
+    _fetchable, _ssrf_msg = _is_fetchable_url(url)
+    if not _fetchable:
+        result["reason"] = f"SSRF 拦截: {_ssrf_msg}"
+        return result
+    if _ssrf_msg:
+        print(f"  ⚠️  {_ssrf_msg}")
 
     # Step 1: 尝试从 verify 缓存读取
     if _from_cache:
@@ -361,6 +371,46 @@ def _host_matches(host: str, key: str) -> bool:
     """
     key = key.lower()
     return host == key or host.endswith("." + key)
+
+
+def _is_fetchable_url(url: str):
+    """SSRF guard. Returns (allowed, message).
+
+    - allowed=False → the caller MUST refuse the fetch. Hard-blocks non-http(s)
+      schemes (file://, data:, gopher:, …) and link-local / cloud-metadata
+      addresses (169.254.0.0/16 incl. 169.254.169.254, fe80::/10).
+    - allowed=True with a non-None message → proceed but warn: loopback / private
+      targets (localhost, 127/8, ::1, RFC1918). Local dev-server screenshots are a
+      legitimate use case, so these are allowed, not blocked.
+    - allowed=True, message=None → ordinary public URL.
+
+    Hostnames are resolved best-effort; if resolution fails here (e.g. offline),
+    the URL is allowed through and the real fetch will fail on its own.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, f"无法解析的 URL: {url!r}"
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        return False, f"拒绝非 http(s) scheme: {scheme or '(空)'}://"
+    host = parsed.hostname
+    if not host:
+        return False, "拒绝无 host 的 URL"
+    try:
+        candidates = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            candidates = [ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(host, None)]
+        except Exception:
+            return True, None  # can't resolve offline; let the real fetch fail
+    warn = None
+    for ip in candidates:
+        if ip.is_link_local:
+            return False, f"拒绝 link-local/metadata 地址: {ip}"
+        if ip.is_loopback or ip.is_private:
+            warn = f"访问内网/本地地址 {ip}（已放行，请确认是有意为之）"
+    return True, warn
 
 
 def main_content_selectors_for_host(url: str) -> List[str]:
@@ -1256,6 +1306,16 @@ def rehost_image(url: str, mode: str = "auto") -> dict:
     ext, is_animated = _infer_image_extension(url)
     result["is_animated"] = is_animated
 
+    # SSRF guard: blocks file:// / metadata even in mode='always', where a
+    # third-party harvested page controls the <img src> URL being fetched.
+    _fetchable, _ssrf_msg = _is_fetchable_url(url)
+    if not _fetchable:
+        result["ok"] = False
+        result["reason"] = f"SSRF 拦截: {_ssrf_msg}"
+        return result
+    if _ssrf_msg:
+        print(f"  ⚠️  {_ssrf_msg}")
+
     headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
     if referer:
         headers["Referer"] = referer
@@ -1775,6 +1835,14 @@ def harvest_images(source_url: str, wait: int = 2,
         "warnings": [],
         "error": "",
     }
+
+    # SSRF guard: refuse file:// / metadata source URLs before navigating.
+    _fetchable, _ssrf_msg = _is_fetchable_url(source_url)
+    if not _fetchable:
+        result["error"] = f"SSRF 拦截: {_ssrf_msg}"
+        return result
+    if _ssrf_msg:
+        result["warnings"].append(_ssrf_msg)
 
     # ── Step 1: Playwright 优先 ────────────────────────────────────────────
     print(f"  🌾 Harvesting images from: {source_url}")
