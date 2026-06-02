@@ -184,11 +184,11 @@ write 在保存前只跑子集 `WRITE_GATE_RULES = (1, 2, 6, 13, 14, 16)`：
 
 并行图像路径有 worker 协调的退避（`_ParallelRateLimitCoordinator`），任一 worker 触发限流即设共享暂停窗口。
 
-### 7.2 视觉风格预设
+### 7.2 视觉风格预设 S1–S8
 
-`generate_and_upload_images.py` 的 `VISUAL_STYLE_PRESETS` 按内容关键词路由视觉风格。`vary_prompt_for_position()` 自动注入 **8 个轴**（Camera / Composition / Visual treatment / Palette / Material / Lighting / Scale / **Background**，第 8 轴 Background 在 v1.7.6 D1 修复后才生效）。
+`generate_and_upload_images.py` 的 `VISUAL_STYLE_PRESETS`（**8 个 preset**，对应 image-guide.md 的 S1–S8）按内容关键词经 `DESIGN_LOGIC_RULES` 路由视觉风格；`vary_prompt_for_position()` 自动注入 **8 个轴**（Camera / Composition / Visual treatment / Palette / Material / Lighting / Scale / **Background**，第 8 轴 Background 在 v1.7.6 D1 修复后才生效）。
 
-> ⚠️ **文档 / 代码计数不一致**：`skills/images/image-guide.md` 面向作者定义了 **S1–S8 共 8 个风格标签**，但代码 `VISUAL_STYLE_PRESETS` 实际只有 **7 个 preset**——**S3「渐变科技 / Gradient Tech」在代码里没有对应路由项**（image-guide 表格仍引用 S3，属孤儿标签）。需要作者侧确认是补 S3 代码 preset，还是从 image-guide 移除 S3。
+- **S3 渐变科技 / Gradient Tech**（v1.9.1 补齐）：深色背景 + 霓虹渐变、未来感，面向 C 深度 / G 观点 的前沿技术话题；触发词 `futuristic` / `cutting-edge` / `frontier` / `next-gen` / `sci-fi` / `cyberpunk`。此前 image-guide 列了 S3 但代码无对应 preset（孤儿标签），v1.9.1 补上 preset + 路由项后 S1–S8 全部由代码支撑。
 
 - **S8 AI 教程封面风**（v1.7.6）：黑底科技网格 + 悬浮白卡 + 高对比黑白 + cyan 强调，16 个 trigger 词（transformer/llm/rag/ai agent…）。封面零容忍假文字，建议用 `gemini-2.5-flash-image`。
 
