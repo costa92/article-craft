@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.9.2] - 2026-06-02 — 深度审核修复（9+2 条）
+
+### Why
+
+对 v1.9.1 做了一次 4 维度深度审核（文档漂移 / 跨文件不变量 / 脚本逻辑 bug /
+prompt 编排），对抗式复核确认 9 条问题成立、0 条证伪，外加 2 条低优先级。测试
+全绿但盖不到这些「文档/编排/逻辑」层缺陷。
+
+### Fixed
+
+- **`check_rule_1`（写入 GATE）误拦代码块内红旗词** — 只跳过 fence 行、没跳过
+  fence 之间的内容，导致 demo 输出 / 引用示例里的「赋能/闭环/抓手/底层逻辑」触发
+  GATE 阻断保存。改用 Rule 23 同款 `code_lines` set 豁免。
+- **`check_rule_12` 死变量**（`strip_code_blocks` 回归族）— 计算了
+  `text=strip_code_blocks(body)` 却遍历完整 `lines`，代码块内模板词被误报。
+- **截图 host 子串过度匹配** — `"x.com"` 把 vox/netflix/max/xbox.com 当成
+  Twitter 套 tweet 选择器。改为域名边界匹配（`host==key or endswith('.'+key)`）。
+- **pipeline-state 仅认含 "cdn" 的图片 URL** — S3 公开前缀 / endpoint URL 不含
+  "cdn"，导致 `--upgrade` 无 state 文件时误判 images 未完成、白重跑。改为识别任意
+  绝对 http(s) URL 图片。
+- **orchestrator quick/draft 模式说明漏 `[evidence if Style H]`** — 与模式表 /
+  Style-H 特例自相矛盾，Style-H 草稿会在 write 阶段致命阻断。
+- **裸文件路径入口跳到 images** — 跳过 screenshot/HARVEST 展开，与「next
+  unfinished stage」承诺矛盾。改走 `missing-stages` 检测。
+- **§3.4 截图阶段未提 HARVEST** — HARVEST-only 文章被「无 SCREENSHOT 则静默跳过」
+  漏掉，源图不展开后被 publish gate 阻断。现扫描两者。
+- **wechat-native 下章节 callout 矛盾** — 默认禁用 callout，但各风格章节模板无条件
+  要求 callout。补全局 body_form 作用域说明。
+- **marketplace.json 技能数 "12" → "13"**（PR#6-8 计数审计遗漏处）。
+- **tone-calibration 缓存绕过 `config.cache_dir()`**（low）— `~` 前缀不展开，落到
+  字面 `./~/` 目录。
+- **完成摘要示例 `58/70` → `66/80 (PASS)`**（low）— 旧 7 维评分残留。
+
+### Tests
+
+- 新增 4 个测试文件（Rule 1/12 代码块豁免、截图 host 边界、S3 图片识别、
+  tone-calibration 缓存路径），4 个 Python bug 均先写复现测试再修。
+- `python3 -m pytest tests/ -q` → **575 passed**（v1.9.1 为 559）。
+
 ## [1.9.1] - 2026-06-02 — 补齐 S3 渐变科技视觉 preset（消除孤儿标签）
 
 ### Why
