@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
@@ -454,6 +456,25 @@ def _build_line_disabled_sets(text: str) -> list[frozenset]:
     return result
 
 
+def _atomic_write(path: Path, data: str) -> None:
+    """Write *data* to *path* atomically (temp file in the same dir + os.replace),
+    so an interrupted write never leaves the author's article half-truncated.
+    Mirrors pipeline_state._atomic_write.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".lint.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(data)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def auto_fix_text(
     text: str,
     tone: Optional[str] = None,
@@ -603,6 +624,7 @@ def auto_fix(
     hook = _TEST_REWRITES_HOOK
     all_warnings: List[str] = []
     seen_signatures: set = set()
+    dirty = False  # has any pass actually mutated the article?
 
     for pass_num in range(1, max_passes + 1):
         fixed, _stats, pass_warnings = auto_fix_text(
@@ -615,21 +637,25 @@ def auto_fix(
         all_warnings.extend(pass_warnings)
 
         if fixed == text:
-            # Text did not change this pass — fully converged.
-            article_path.write_text(text, encoding="utf-8")
+            # Text did not change this pass — fully converged. Only write if a
+            # prior pass mutated the article; a clean no-op lint must not
+            # truncate-rewrite the file (and risk corruption) for zero benefit.
+            if dirty:
+                _atomic_write(article_path, text)
             return FixReport(passes=pass_num - 1, warnings=all_warnings, status="clean")
 
         # Oscillation detection: if this exact (before, after) pair has been
         # seen in any previous pass, we are cycling with no net progress.
         sig = (text, fixed)
         if sig in seen_signatures:
-            article_path.write_text(fixed, encoding="utf-8")
+            _atomic_write(article_path, fixed)
             return FixReport(passes=pass_num, warnings=all_warnings, status="oscillating")
         seen_signatures.add(sig)
         text = fixed
+        dirty = True
 
     # Exhausted max_passes without converging.
-    article_path.write_text(text, encoding="utf-8")
+    _atomic_write(article_path, text)
     return FixReport(passes=max_passes, warnings=all_warnings, status="incomplete")
 
 

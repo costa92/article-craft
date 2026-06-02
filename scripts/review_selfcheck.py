@@ -347,6 +347,23 @@ def iter_code_blocks(lines):
         }
 
 
+def _code_block_line_set(lines) -> set:
+    """Return the set of 0-indexed line numbers inside any fenced code block
+    (fence lines included), using the CommonMark-correct iter_code_blocks
+    scanner so ~~~ and variable-length ``` / ```` fences are handled. Content
+    rules that need to exempt code blocks while keeping original line numbers
+    should use this instead of a hand-rolled startswith('```') toggle.
+    """
+    code_lines: set = set()
+    n = len(lines)
+    for blk in iter_code_blocks(lines):
+        # blk['end'] is the closing-fence index, or len(lines) when unterminated.
+        last = blk['end'] + 1 if blk['end'] < n else blk['end']
+        for j in range(blk['start'], last):
+            code_lines.add(j)
+    return code_lines
+
+
 def _strip_callout_blocks(text: str) -> str:
     """Remove Obsidian callout blocks (> [!type] ... \n> body) from text.
 
@@ -491,16 +508,11 @@ def check_rule_1(content: str, lines: List[str]) -> CheckResult:
 
     # Mark every line inside a fenced code block (fence lines included) so
     # red-flag words appearing in demo output / quoted logs / documented
-    # examples don't trip this GATE rule. Same idiom as Rule 23.
-    code_lines: set = set()
-    in_code = False
-    for i, line in enumerate(body_lines):
-        if line.strip().startswith('```'):
-            in_code = not in_code
-            code_lines.add(i)
-            continue
-        if in_code:
-            code_lines.add(i)
+    # examples don't trip this GATE rule. Use the canonical iter_code_blocks
+    # scanner (CommonMark-correct for ~~~ and variable-length ``` / ```` fences)
+    # — the same helper Rule 13/14/ascii_gate trust, so a Rule-1 GATE save isn't
+    # blocked by content the other rules already exempt.
+    code_lines = _code_block_line_set(body_lines)
 
     for i, line in enumerate(body_lines):
         # Skip code blocks

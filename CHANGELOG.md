@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.9.3] - 2026-06-02 — 第二轮审核修复 + SSRF 加固（5+4 条）
+
+### Why
+
+对 v1.9.2 做了第二轮审核，换角度覆盖上轮没碰的面（回归核查 / 安全 / 容错并发 /
+测试完整性）。对抗式复核确认 5 条 + 4 条低优先级，并发现上轮 Rule 1 修复的一处不
+完整。575 测试全绿但盖不到这些更深的缺陷。
+
+### Fixed
+
+- **Rule 1（写入 GATE）代码块豁免漏 `~~~`/嵌套 fence** — v1.9.2 的 `in_code`
+  toggle 只认 ` ``` `，红旗词写在 `~~~` 块或嵌套更长 fence 里仍触发 GATE。改走
+  canonical `iter_code_blocks`（Rule 13/14/ascii_gate 同款），新增 `_code_block_line_set`
+  共享辅助。
+- **`lint_article` 三处 in-place 写非原子** — 唯一非原子的文章 mutator，中断会截断
+  作者文章且无备份。新增 `_atomic_write`（mkstemp + os.replace），并用 dirty 标志跳过
+  无改动时的空写。
+- **`is_404_content` host 匹配** — 把 `_normalized_host` 重复计算合一，github/twitter/x
+  统一走 `_host_matches`（修 v1.9.2 commit message 声称"全走 _host_matches"的遗漏）。
+
+### Security
+
+- **SSRF guard（`_is_fetchable_url`）** — verify/screenshot/harvest 此前对 URL 不做
+  任何校验，`page.goto` 能渲染 `file://`、harvest `--rehost always` 时第三方页面的
+  `<img src>` 能打内网/metadata。现硬拦非 http(s) scheme 与 link-local/metadata 地址
+  （169.254/16、fe80::/10），对 localhost/RFC1918 放行仅告警（保留本地开发截图），
+  接入 `check_url_status` / `rehost_image` / `harvest_images`。
+
+### Tests
+
+- 补三处绿但无守护的关键路径：`_is_stale` 正向 stale 检测（`--upgrade` 安全网）、
+  `generate_image` 全模型耗尽分支（429→raise / 非限流→return False）、`upload_image`
+  S3/PicGo 分发 + `upload_to_s3` 错误分支。
+- 重写 Rule 17 的空测试（原仅 `assertIsNotNone`）为真正断言 skip 边界。
+- 新增 5 个测试文件，4 个真 bug/防护走 TDD 先红后绿。
+- `python3 -m pytest tests/ -q` → **600 passed**（v1.9.2 为 575）。
+
 ## [1.9.2] - 2026-06-02 — 深度审核修复（9+2 条）
 
 ### Why

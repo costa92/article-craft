@@ -71,6 +71,53 @@ title: 测试
         self.assertFalse(result.passed)
         self.assertGreaterEqual(len(result.violations), 2)
 
+    def test_red_flag_word_in_tilde_fence_exempt(self):
+        """Red-flag words inside a ~~~ tilde-fenced block must NOT trip the GATE."""
+        content = """---
+title: 测试
+---
+
+# Title
+
+正文自然表达。
+
+~~~text
+这里是赋能闭环抓手底层逻辑的示例输出
+~~~
+
+正文继续。
+"""
+        result = rs.check_rule_1(content, content.split("\n"))
+        self.assertTrue(
+            result.passed,
+            "Tilde-fence exemption failed: {}".format([v.text for v in result.violations]),
+        )
+
+    def test_red_flag_word_in_nested_backtick_fence_exempt(self):
+        """A bare ``` inside a longer ```` fence is content, not a close — words
+        after it must stay exempt (CommonMark variable-length fences)."""
+        content = """---
+title: 测试
+---
+
+# Title
+
+正文自然表达。
+
+````markdown
+```
+这里是赋能闭环抓手底层逻辑的示例输出
+```
+````
+
+正文继续。
+"""
+        result = rs.check_rule_1(content, content.split("\n"))
+        self.assertTrue(
+            result.passed,
+            "Nested-fence exemption failed: {}".format([v.text for v in result.violations]),
+        )
+
 
 class Rule12CodeBlockExemptionTests(unittest.TestCase):
     def test_template_summary_in_code_block_exempt(self):
