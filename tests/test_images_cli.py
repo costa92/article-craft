@@ -7,6 +7,12 @@ from unittest import mock
 import pytest
 
 
+# Make scripts/ importable so the loaded module's `from config import ...`
+# resolves even when this file runs on its own (not just inside the full suite
+# where a sibling test happens to set sys.path first).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+
 def _load_module():
     p = Path(__file__).resolve().parents[1] / "scripts" / "generate_and_upload_images.py"
     spec = importlib.util.spec_from_file_location("images_cli_test", p)
@@ -110,7 +116,8 @@ def test_generate_image_prefers_minimax_without_nanobanana(mod):
     def fake_generate(model, prompt, output_path, aspect_ratio=None, width=None, height=None):
         output_path.write_bytes(b"fake-image")
 
-    with mock.patch.object(mod, "_generate_minimax_image_with_options", side_effect=fake_generate) as minimax_gen, \
+    with mock.patch.dict("os.environ", {"MINIMAX_API_KEY": "test-key"}), \
+         mock.patch.object(mod, "_generate_minimax_image_with_options", side_effect=fake_generate) as minimax_gen, \
          mock.patch.object(mod, "ensure_images_dir", return_value=Path("/tmp")), \
          mock.patch.object(mod.subprocess, "run") as subproc_run:
         ok = mod.generate_image(cfg, model="minimax-image-01")
@@ -136,7 +143,8 @@ def test_generate_image_passes_minimax_options(mod):
         captured["height"] = height
         output_path.write_bytes(b"fake-image")
 
-    with mock.patch.object(mod, "enhance_prompt", side_effect=fake_enhance), \
+    with mock.patch.dict("os.environ", {"MINIMAX_API_KEY": "test-key"}), \
+         mock.patch.object(mod, "enhance_prompt", side_effect=fake_enhance), \
          mock.patch.object(mod, "_generate_minimax_image_with_options", side_effect=fake_generate), \
          mock.patch.object(mod, "ensure_images_dir", return_value=Path("/tmp")), \
          mock.patch.object(mod.subprocess, "run") as subproc_run:
@@ -161,7 +169,8 @@ def test_generate_image_minimax_enhance_uses_local_enhancer(mod):
         captured["prompt"] = prompt
         output_path.write_bytes(b"fake-image")
 
-    with mock.patch.object(mod, "_enhance_prompt", side_effect=fake_enhance), \
+    with mock.patch.dict("os.environ", {"MINIMAX_API_KEY": "test-key"}), \
+         mock.patch.object(mod, "_enhance_prompt", side_effect=fake_enhance), \
          mock.patch.object(mod, "_generate_minimax_image_with_options", side_effect=fake_generate), \
          mock.patch.object(mod, "ensure_images_dir", return_value=Path("/tmp")), \
          mock.patch.object(mod.subprocess, "run") as subproc_run:
