@@ -6,7 +6,7 @@
 
 ## 1. 这是什么
 
-`article-craft` 是一个 **Claude Code 插件**（不是独立运行的服务），为「技术文章生成全生命周期」提供 **14 个可组合技能 + 1 个编排器**。
+`article-craft` 是一个 **Claude Code 插件**（不是独立运行的服务），为「技术文章生成全生命周期」提供 **13 个可组合技能 + 1 个编排器**。
 
 - 仓库即源码，通过 `install.sh` 或 Claude Code 插件市场安装到 `~/.claude/plugins/article-craft/`。
 - **prompt-first 工程**：大部分「逻辑」写在 `.md` 文件里由 Claude 读取并执行；`scripts/*.py` 只承担 prompt 做不可靠的确定性工作（Playwright 截图、图像生成、压缩、CDN 上传、缓存等）。
@@ -71,7 +71,7 @@ requirements → verify → [evidence(仅Style H)] → write → screenshot → 
 | - | **evidence** | `/article-craft:evidence` | 仅 Style H：解析 `materials.md`，批量采集公开源证据（图片/引文/泄露引用），输出 `_evidence.json` 供 write 消费 |
 | 3 | **write** | `/article-craft:write` | 按 style-guide 生成正文，自动校验章节深度、强制代码完整性，注入 tone/body_form 段落；预存写门（write GATE） |
 | 4 | **screenshot** | `/article-craft:screenshot` | Playwright 真实浏览器渲染网页截图，HEAD 预检、智能选择器（GitHub/Twitter/SO 等）、404/空页检测、尺寸优化、CDN 上传 |
-| - | **share-card** | `/article-craft:share-card` | 可选：从 frontmatter 生成社交分享卡（封面/信息流/帖图），**10 个平台预设 + 7 套配色** |
+| - | **share-card** | `/article-craft:share-card` | 可选：从 frontmatter 生成社交分享卡（封面/信息流/帖图），**11 个平台预设（9 平台 + 2 别名）+ 7 套配色** |
 | 5 | **images** | `/article-craft:images` | 处理正文 `<!-- IMAGE: -->`/`<!-- PROMPT: -->` 占位符，**Minimax 优先、Gemini 兜底**，Pillow 压缩、PicGo/S3 上传，原地改写文章 |
 | 6 | **verify-claims** | `/article-craft:verify-claims` | 扫描正文 shell 代码块，逐个检查工具是否在 PATH 上（写作后的事实校验） |
 | 7 | **review** | `/article-craft:review` | 质量门：Phase 1 自检 23 条规则 + Phase 2 八维评分（阈值 63/80），无外部依赖 |
@@ -192,7 +192,7 @@ write 在保存前只跑子集 `WRITE_GATE_RULES = (1, 2, 6, 13, 14, 16)`：
 
 ### 7.3 share-card（社交分享卡）
 
-`scripts/share_card.py`：10 个平台预设（wechat-cover/share/share-square、xiaohongshu/xiaohongshu-sq、twitter/twitter-card、linkedin 等）+ 7 套配色（默认 `tech-blue`）。`wechat-double` 自动生成头条 + 分享两张。
+`scripts/share_card.py`：`PLATFORMS` 含 11 个预设 key——9 个平台（wechat-cover、wechat-share、xiaohongshu、xiaohongshu-sq、twitter、linkedin、facebook、juejin、zhihu）+ 2 个别名（wechat-share-square、twitter-card）；`COLOR_PRESETS` 7 套配色（默认 `tech-blue`）。`wechat-double` 自动生成头条 + 分享两张。
 
 ---
 
