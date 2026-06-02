@@ -54,7 +54,7 @@ This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and
 | screenshot | Web screenshots (Playwright + URL validation) + share cards |
 | images | Minimax-first image generation + CDN upload |
 | verify-claims | Post-write shell command validation |
-| review | Self-check + 7-dimension quality scoring |
+| review | Self-check + 8-dimension quality scoring |
 | publish | Knowledge base auto-placement |
 | lint | Style violation detection + auto-fix |
 | series | Multi-part article management |
@@ -260,7 +260,7 @@ Every skill is independently invokable. All commands resolve as
 /article-craft:screenshot     # Web screenshots + share cards
 /article-craft:images         # Generate images (Minimax → Gemini fallback)
 /article-craft:verify-claims  # Validate shell commands in article body
-/article-craft:review         # Quality gate (11 rules + 7-dim scoring)
+/article-craft:review         # Quality gate (23 rules + 8-dim scoring)
 /article-craft:publish        # KB auto-placement + sidecar copy
 /article-craft:lint           # Style check + auto-fix
 /article-craft:series         # Multi-part series management

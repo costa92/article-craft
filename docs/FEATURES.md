@@ -184,9 +184,11 @@ write 在保存前只跑子集 `WRITE_GATE_RULES = (1, 2, 6, 13, 14, 16)`：
 
 并行图像路径有 worker 协调的退避（`_ParallelRateLimitCoordinator`），任一 worker 触发限流即设共享暂停窗口。
 
-### 7.2 视觉风格预设 S1–S8
+### 7.2 视觉风格预设
 
 `generate_and_upload_images.py` 的 `VISUAL_STYLE_PRESETS` 按内容关键词路由视觉风格。`vary_prompt_for_position()` 自动注入 **8 个轴**（Camera / Composition / Visual treatment / Palette / Material / Lighting / Scale / **Background**，第 8 轴 Background 在 v1.7.6 D1 修复后才生效）。
+
+> ⚠️ **文档 / 代码计数不一致**：`skills/images/image-guide.md` 面向作者定义了 **S1–S8 共 8 个风格标签**，但代码 `VISUAL_STYLE_PRESETS` 实际只有 **7 个 preset**——**S3「渐变科技 / Gradient Tech」在代码里没有对应路由项**（image-guide 表格仍引用 S3，属孤儿标签）。需要作者侧确认是补 S3 代码 preset，还是从 image-guide 移除 S3。
 
 - **S8 AI 教程封面风**（v1.7.6）：黑底科技网格 + 悬浮白卡 + 高对比黑白 + cyan 强调，16 个 trigger 词（transformer/llm/rag/ai agent…）。封面零容忍假文字，建议用 `gemini-2.5-flash-image`。
 

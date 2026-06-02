@@ -174,7 +174,7 @@ When invoked directly:
 
 ## Integration with Review Skill
 
-The lint skill is a **lightweight pre-check** — run it before the full review to eliminate mechanical issues. The review skill's Phase 1 (self-check) covers the same rules, but lint is faster because it skips Phase 2 (7-dim scoring) and the 3-round auto-revision loop.
+The lint skill is a **lightweight pre-check** — run it before the full review to eliminate mechanical issues. The review skill's Phase 1 (self-check) covers the same rules, but lint is faster because it skips Phase 2 (8-dim diagnostic scoring).
 
 Recommended flow:
 ```
