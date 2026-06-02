@@ -59,7 +59,7 @@ This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and
 | lint | Style violation detection + auto-fix |
 | series | Multi-part article management |
 | youtube | Video transcript to article |
-| share-card | Platform-optimized social share images (10 platforms, 7 colors) |
+| share-card | Platform-optimized social share images (11 presets / 9 platforms, 7 colors) |
 
 ## Workflow Modes
 
@@ -234,7 +234,7 @@ In practice, `skills/` decides **what should happen next**, while `scripts/` is 
 - Screenshot → Pillow compress → CDN upload
 
 **share_card** — Optional. Generates platform-specific share images:
-- 9 platforms: WeChat, Xiaohongshu, Twitter/X, LinkedIn, Facebook, Juejin, Zhihu
+- 9 presets across 7 platforms: WeChat (cover+share), Xiaohongshu (tall+square), Twitter/X, LinkedIn, Facebook, Juejin, Zhihu (+ 2 aliases: wechat-share-square, twitter-card)
 - 7 color presets: tech-blue, sunset, forest, midnight, ember, deep-blue, slate
 - Reads from article frontmatter automatically
 
@@ -265,7 +265,7 @@ Every skill is independently invokable. All commands resolve as
 /article-craft:lint           # Style check + auto-fix
 /article-craft:series         # Multi-part series management
 /article-craft:youtube        # YouTube video → article
-/article-craft:share-card     # Social share images (10 platforms, 7 colors)
+/article-craft:share-card     # Social share images (11 presets / 9 platforms, 7 colors)
 /article-craft:doctor         # Runtime healthcheck (v1.6.0+)
 /article-craft:upgrade /path  # Upgrade a draft/quick article to standard
 ```
