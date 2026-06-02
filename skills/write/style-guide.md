@@ -5,7 +5,7 @@
 
 ---
 
-## Scoring Optimization Rules (aligned with the `review` skill's 7-dimension scoring)
+## Scoring Optimization Rules (aligned with the `review` skill's 8-dimension scoring)
 
 ### Title Formula (Title & Hook dimension, target 9+)
 

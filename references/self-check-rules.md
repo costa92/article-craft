@@ -744,15 +744,17 @@ Rule 17 is **detection-only with three signal levels** by design:
   severe it would justify rejection on its own. Rule 17 lets it through.
 - `info`: advisory only, no blocking pressure.
 
-The `review` skill aggregates Rule 17's warnings into the 7-dimension
+The `review` skill aggregates Rule 17's warnings into the 8-dimension
 AI-trace score (Phase 2). An article that ships 3 warnings from Rule 17
 typically loses 4–6 points on the AI-trace dimension, pushing the
-combined 7-dim score below the 55/70 threshold and triggering revision.
+combined 8-dim score below the 63/80 threshold. Since v1.4.4 Phase 2 is
+diagnostic-only — falling below threshold surfaces an AskUserQuestion
+(Publish anyway / Abort / Re-run write with hints), not an auto-revision loop.
 
 **Calibration note:** if you run lint/review on an article and Rule 17
 reports `passed=True` with multiple warnings, that is **not a green
 light to publish**. It means "Rule 17 alone wouldn't reject this, but
-the warnings still feed the 7-dim score." Watch for the combined score.
+the warnings still feed the 8-dim score." Watch for the combined score.
 A v2 calibration may upgrade severity for *severe* sub-check violations
 (e.g., 2× ceiling overrun on summary phrases) to `error`; pending more
 real-world data.
