@@ -509,6 +509,13 @@ for i, sec in enumerate(sections[1:], 1):
 
 **按选定风格的章节结构写正文。** 每种风格的具体章节模板见 `references/writing-styles.md`。
 
+> **body_form 优先级高于风格模板的 callout。** `references/writing-styles.md` 里各
+> 风格的章节模板会内嵌 Obsidian callout（如 Style A 的 `> [!info]`、Style D 的
+> `> [!tip]`、Style F 的 `> [!warning]`）。在默认的 `body_form: wechat-native` 下，
+> 上面第 286 行的「禁用 Obsidian callout」对**所有**这些章节 callout 同样生效——一律
+> 改写成 bold 引导句 / 单行 `>` 引用，不只是摘要 callout。仅在 `body_form: long-form`
+> 下才保留原样的 callout。下表「图表」列里的「Callouts」同理受此约束。
+
 各风格的核心差异：
 
 | 风格 | 段落长度 | 代码风格 | 图表 | 语气 |

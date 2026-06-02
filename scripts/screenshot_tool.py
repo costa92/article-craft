@@ -253,7 +253,9 @@ def is_404_content(page_text: str, url: str) -> bool:
             if re.search(pattern, page_text, re.IGNORECASE):
                 return True
 
-    if "twitter.com" in url_lower or "x.com" in url_lower:
+    if _host_matches(_normalized_host(url), "twitter.com") or _host_matches(
+        _normalized_host(url), "x.com"
+    ):
         for pattern in TWITTER_404_PATTERNS:
             if re.search(pattern, page_text, re.IGNORECASE):
                 return True
@@ -340,31 +342,46 @@ def _user_main_content_overrides() -> Dict[str, List[str]]:
         return {}
 
 
+def _normalized_host(url: str) -> str:
+    """Lowercased hostname with a leading 'www.' stripped; '' on parse failure."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _host_matches(host: str, key: str) -> bool:
+    """True when host equals key or is a subdomain of it (host endswith '.'+key).
+
+    Domain-boundary match — lets "weibo.com" match "m.weibo.com" while keeping
+    the short key "x.com" from over-matching vox.com / netflix.com / max.com.
+    """
+    key = key.lower()
+    return host == key or host.endswith("." + key)
+
+
 def main_content_selectors_for_host(url: str) -> List[str]:
     """Return the prioritized list of main-content CSS selectors for the
     URL's host. User overrides win; otherwise fall back to HOST_MAIN_SELECTORS.
     Returns empty list when the host isn't recognized — callers should
     append GENERIC_CONTENT_SELECTORS as a final fallback.
     """
-    try:
-        host = (urlparse(url).hostname or "").lower()
-    except Exception:
-        return []
+    host = _normalized_host(url)
     if not host:
         return []
-    # Strip leading "www."
-    if host.startswith("www."):
-        host = host[4:]
 
     overrides = _user_main_content_overrides()
-    # User override matches by substring → short-circuit.
+    # User override matches by domain boundary → short-circuit.
     for key, sels in overrides.items():
-        if key.lower() in host:
+        if _host_matches(host, key):
             return list(sels)
 
-    # Built-in match by substring (e.g. "weibo.com" matches "m.weibo.com").
+    # Built-in match by domain boundary (e.g. "weibo.com" matches "m.weibo.com").
     for key, sels in HOST_MAIN_SELECTORS.items():
-        if key in host:
+        if _host_matches(host, key):
             return list(sels)
 
     return []
@@ -399,7 +416,8 @@ def suggest_selector(url: str, page_title: str = "", content_type: str = "") -> 
         return ""
 
     # Twitter/X — 只在 status 页面给 selector，profile 页面留空
-    if "twitter.com" in url_lower or "x.com" in url_lower:
+    host = _normalized_host(url)
+    if _host_matches(host, "twitter.com") or _host_matches(host, "x.com"):
         if "status" in url_lower:
             return '[data-testid="tweet"]' if not content_type else ""
         return ""

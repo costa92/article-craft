@@ -144,12 +144,17 @@ Example failure output:
 
 Parse the invocation arguments:
 - No flags → standard mode (full pipeline)
-- `--quick` → quick mode (requirements + write + screenshot + images)
-- `--draft` → draft mode (requirements + write only)
+- `--quick` → quick mode (requirements + [evidence if Style H] + write + screenshot + images)
+- `--draft` → draft mode (requirements + [evidence if Style H] + write)
 - Detect `--tone=<value>`. If `<value>` not in `{neutral,casual,opinionated}`, abort with a user-facing error: "Invalid tone: <value>. Allowed: neutral, casual, opinionated." Otherwise pass it through to the `requirements` skill call as `--tone=<value>`.
 - Detect `--body-form=<value>` (also accept the bare `--long-form` shorthand for `--body-form=long-form`). If `<value>` not in `{wechat-native,long-form}`, abort with: "Invalid body-form: <value>. Allowed: wechat-native, long-form." Otherwise pass it through to the `requirements` skill as `--body-form=<value>`. If absent, requirements applies the default (`wechat-native`).
-- If a file path to an existing `.md` file is provided → skip requirements/verify/write,
-  start from images skill
+- If a file path to an existing `.md` file is provided → resume at the **next
+  unfinished stage**. Run it through the same `pipeline_state.py missing-stages`
+  detection as **Upgrade Mode** (see below) rather than hardcoding a start stage —
+  this guarantees the screenshot stage (which expands `<!-- SCREENSHOT: -->` **and**
+  `<!-- HARVEST: -->` placeholders) is not skipped when those placeholders are still
+  present. (Jumping straight to images would leave Style-H HARVEST placeholders
+  unexpanded and later trip the publish gate.)
 
 ### Step 2: Initialize Status Tracker + State File
 
@@ -362,14 +367,18 @@ Invoke the `article-craft:write` skill (via the **Skill tool** — `skill: "arti
 
 Invoke the `article-craft:screenshot` skill (via the **Skill tool** — `skill: "article-craft:screenshot"`). The skill is responsible for:
 - Pass the article.md absolute file path from Step 3.3
-- Scan for `<!-- SCREENSHOT: URL [options] -->` placeholders in the article
+- Scan for `<!-- SCREENSHOT: URL [options] -->` **and** `<!-- HARVEST: ... -->`
+  placeholders in the article (this stage owns HARVEST expansion — Style H source
+  images are HARVEST, expanded via the skill's `expand-harvest` subcommand)
 - Take screenshots via `${CLAUDE_PLUGIN_ROOT}/scripts/screenshot_tool.py` (Playwright 渲染 + URL 验证 + 智能选择器)
 - **验证流程**: HEAD 请求预检 → Playwright 渲染 → 空页面检测 → 截图 → 压缩 → CDN 上传
 - Upload to CDN and replace placeholders in-place
-- If no `<!-- SCREENSHOT: -->` placeholders found, skip silently
+- If **neither** `<!-- SCREENSHOT: -->` **nor** `<!-- HARVEST: -->` placeholders are
+  found, skip silently. A HARVEST-only article (no SCREENSHOT) must still run this
+  stage — otherwise its source images stay unexpanded and the publish gate blocks.
 
 **On failure:** Non-fatal — keep placeholders, warn user, continue
-**Status:** Mark `success` if all screenshots captured, `skipped` if no placeholders
+**Status:** Mark `success` if all screenshots/harvest captured, `skipped` if no placeholders
 
 > [!note]
 > Skipped in draft mode. Mark as `skipped`.
@@ -538,7 +547,7 @@ After all skills complete (or pipeline stops on fatal error), print a summary ta
 │ share_card   │ success  │ 3 cards generated             │
 │ images       │ success  │ 4/5 uploaded, 1 placeholder   │
 │ verify_claims │ success  │ 0 missing tools               │
-│ review       │ success  │ Score: 58/70 (round 1)        │
+│ review       │ success  │ Score: 66/80 (PASS)           │
 │ publish      │ success  │ KB: {final_path}              │
 ├──────────────┼──────────┼───────────────────────────────┤
 │ Mode: standard │ Duration: ~2 min                       │
