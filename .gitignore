@@ -35,3 +35,7 @@ tmp/
 *.tmp
 url-to-markdown/
 .planning/
+
+# Claude Code session-local runtime (scheduled-wakeup lock etc.)
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
