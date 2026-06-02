@@ -394,6 +394,7 @@ class ImageConfig:
         self.enhance = enhance
         self.local_path = None
         self.cdn_url = None
+        self.used_model = None  # which model actually produced the image
 
 
 class ScreenshotConfig:
@@ -865,6 +866,7 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
         try:
             provider = _provider_for_model(current_model)
             if provider is not None and provider.name == "minimax":
+                print(f"   尝试 {i}/{len(model_chain)}: 使用 {current_model}")
                 prompt = _minimax_prompt(config, enhance)
                 _generate_minimax_image_with_options(
                     current_model,
@@ -875,6 +877,8 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
                     height=int(height),
                 )
                 config.local_path = str(output_path)
+                config.used_model = current_model
+                print(f"   ✅ 生成成功: {output_path} (使用 {current_model})")
                 return True
 
             cmd = [
@@ -916,6 +920,7 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
 
             if output_path.exists():
                 config.local_path = str(output_path)
+                config.used_model = current_model
                 print(f"   ✅ 生成成功: {output_path} (使用 {current_model})")
                 return True
             else:
