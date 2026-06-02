@@ -35,7 +35,7 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
-from config import TONE_THRESHOLDS, resolve_tone, STRONG_OPINION_PATTERNS
+from config import TONE_THRESHOLDS, resolve_tone, STRONG_OPINION_PATTERNS, cache_dir
 
 # ─── Rule Definitions ───────────────────────────────────────────────
 
@@ -1259,11 +1259,9 @@ def _maybe_log_tone_calibration(
     enabled = os.environ.get("ARTICLE_CRAFT_TONE_CALIBRATION", "true").lower() == "true"
     if not enabled:
         return
-    cache_dir = Path(os.environ.get(
-        "ARTICLE_CRAFT_CACHE_DIR",
-        Path.home() / ".cache" / "article-craft",
-    ))
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    # Resolve through config.cache_dir() so ARTICLE_CRAFT_CACHE_DIR is expanduser'd
+    # and the dir is created consistently with every other cross-process cache.
+    cache_path = cache_dir()
     sha = hashlib.sha256(article_content.encode("utf-8")).hexdigest()
     record = {
         "ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
@@ -1275,7 +1273,7 @@ def _maybe_log_tone_calibration(
         "final_pass": passed,
     }
     try:
-        with (cache_dir / "tone-calibration.jsonl").open("a", encoding="utf-8") as f:
+        with (cache_path / "tone-calibration.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except (OSError, IOError):
         # Don't crash the review pipeline if calibration logging fails
