@@ -1725,16 +1725,10 @@ def check_rule_23(content: str, lines: List[str]) -> CheckResult:
     """
     fm = parse_frontmatter(content)
 
-    # 标记所有处于 fenced code block 内的行号（包括 fence 自身）
-    code_lines: set = set()
-    in_code = False
-    for i, line in enumerate(content.split("\n"), 1):
-        if line.strip().startswith("```"):
-            in_code = not in_code
-            code_lines.add(i)
-            continue
-        if in_code:
-            code_lines.add(i)
+    # 标记所有处于 fenced code block 内的行号（含 fence 自身，1-indexed）。
+    # 用 canonical scanner（识别 ~~~ 与变长 ```/```` 嵌套），避免讨论本规则的
+    # 反例代码块被误扫。_code_block_line_set 返回 0-indexed，故 +1 对齐。
+    code_lines = {i + 1 for i in _code_block_line_set(content.split("\n"))}
 
     violations: List[Violation] = []
 
@@ -1822,16 +1816,9 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
     fm = parse_frontmatter(content)
     verified = set(str(x) for x in fm.get("verified_numbers", []))
 
-    # 标记 fenced code block 行号（含 fence 自身）
-    code_lines: set = set()
-    in_code = False
-    for i, line in enumerate(content.split("\n"), 1):
-        if line.strip().startswith("```"):
-            in_code = not in_code
-            code_lines.add(i)
-            continue
-        if in_code:
-            code_lines.add(i)
+    # 标记 fenced code block 行号（含 fence 自身，1-indexed）。用 canonical
+    # scanner 识别 ~~~ 与变长 ```/```` 嵌套；返回 0-indexed，故 +1 对齐。
+    code_lines = {i + 1 for i in _code_block_line_set(content.split("\n"))}
 
     violations: List[Violation] = []
     seen_per_line: set = set()  # 同行同数字只报一次

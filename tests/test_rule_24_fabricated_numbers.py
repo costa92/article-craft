@@ -186,6 +186,27 @@ echo "100 美元"
         self.assertEqual(len(v), 1)
         self.assertIn("50%", v[0].text)
 
+    def test_tilde_fence_exempts(self):
+        # ~~~ fences are invisible to the hand-rolled startswith('```') toggle,
+        # so numbers inside leak into the scan. The canonical scanner fixes it.
+        content = """---
+title: t
+---
+
+# T
+
+~~~bash
+echo "命中率 99%, 节省 500 美元/天"
+~~~
+
+正文无具体数字。
+"""
+        _, v = run_rule_24(content)
+        self.assertEqual(
+            len(v), 0,
+            "~~~ fenced numbers must be exempt: {}".format([x.text for x in v]),
+        )
+
 
 class FuzzyHedgeTests(unittest.TestCase):
     """Hedge detection allows some flexibility in spacing."""

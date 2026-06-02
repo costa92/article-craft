@@ -166,14 +166,13 @@ title: 测试
         _, errors, _ = run_rule_23(content)
         self.assertEqual(len(errors), 0)
 
-    def test_indented_fence_closes_block(self):
-        """An indented ``` is still treated as a fence (.strip() before check).
+    def test_indented_fence_does_not_close_block(self):
+        """A 4-space-indented ``` is NOT a closing fence (CommonMark).
 
-        This documents (rather than fights) the line tracker's behavior:
-        any line whose stripped form starts with ``` flips the in-code state.
-        Real-world impact is minimal — indented fenced blocks are rare in
-        article-craft output, and the trade-off favors simple, predictable
-        behavior over Markdown spec compliance.
+        The canonical iter_code_blocks scanner anchors fences at column 0
+        (`^`{3,}`), so an indented ``` is content, not a close. The opening
+        ```text block therefore stays open to EOF and "纯手写" is exempt.
+        (The old hand-rolled toggle .strip()-ed first and wrongly closed here.)
         """
         content = """---
 title: 测试
@@ -182,12 +181,64 @@ title: 测试
 ```text
 非 AI 生成
     ```
-仍在代码块外: 纯手写
+仍在代码块内: 纯手写
 """
         _, errors, _ = run_rule_23(content)
-        # 缩进的 ``` 被视为关闭 fence，"纯手写" 在代码块外，触发 1 处
-        self.assertEqual(len(errors), 1)
-        self.assertIn("纯手写", errors[0].text)
+        self.assertEqual(len(errors), 0)
+
+
+class CanonicalFenceTests(unittest.TestCase):
+    """The hand-rolled startswith('```') toggle misses ~~~ fences and treats a
+    bare ``` inside a ```` block as a close. Both let a reverse declaration
+    documented as a code example leak into the violation scan. The canonical
+    iter_code_blocks scanner handles both.
+    """
+
+    def test_reverse_declaration_in_tilde_fence_exempt(self):
+        content = """---
+title: 测试
+---
+
+# Title
+
+~~~text
+反例: 非 AI 生成
+反例: 纯手写
+~~~
+
+正文，无反向声明。
+"""
+        _, errors, _ = run_rule_23(content)
+        self.assertEqual(
+            len(errors), 0,
+            "~~~ fenced reverse declarations must be exempt: {}".format(
+                [e.text for e in errors]),
+        )
+
+    def test_reverse_declaration_in_nested_backtick_fence_exempt(self):
+        # A ```` block whose body shows a ```text example. The inner ``` must
+        # NOT close the outer ```` block (CommonMark: close needs >= open length).
+        content = """---
+title: 测试
+---
+
+# Title
+
+````markdown
+示例代码块：
+```text
+非 AI 生成
+```
+````
+
+正文，无反向声明。
+"""
+        _, errors, _ = run_rule_23(content)
+        self.assertEqual(
+            len(errors), 0,
+            "nested ``` inside ```` must stay in-code: {}".format(
+                [e.text for e in errors]),
+        )
 
 
 if __name__ == "__main__":
