@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.9.4] - 2026-06-02 — 第三轮审核修复：SSRF 重定向链 + Rule 23/24 fence/边界 + KB 路径
+
+### Why
+
+借助多 agent 做第三轮审核（提示词/SKILL 一致性 / 设计架构 / Python 脚本正确性 /
+测试覆盖），对抗式复核确认 P0 安全 2 条、规则 3 条、架构 1 条 + P1 文档漂移。全程
+TDD：每条先写复现测试看它红 → 最小修复 → 验证绿 → 原子提交。
+
+### Security
+
+- **SSRF 守卫漏 IPv4-mapped IPv6** — `::ffff:169.254.169.254` 是 metadata 地址的 v6
+  写法，双栈主机上能真实打到 metadata 端点却绕过 `is_link_local` 硬拦。分类前先
+  unwrap `ipv4_mapped` 再判定。
+- **SSRF 守卫只校验初始 URL，30x 可绕过** — 攻击者控制的页面能把干净公网域名
+  301 到 169.254.169.254。新增 `_redirect_chain_safe`，在 HEAD 状态检查、GET rehost
+  后复检 `response.history`+`response.url`，Playwright 导航后复检 `page.url`；harvest
+  命中即中止（不走 baoyu-fetch 兜底），内网内容永不回传。
+
+### Fixed
+
+- **Rule 23/24 代码块豁免漏 `~~~`/嵌套 fence** — 手写 `startswith('```')` toggle 完全
+  看不见 `~~~`，且把 ```` 块内的裸 ``` 当闭合，使文档化的反例/数字泄漏进违规扫描。
+  改走 canonical `_code_block_line_set`（Rule 13/14/ascii_gate 同款）。4 空格缩进的
+  ``` 按 CommonMark 不再闭合。
+- **Rule 24 frontmatter 边界误吞正文** — 旧「前 20 行像 yaml 就跳过」既漏掉 20 行后的
+  frontmatter，又把 `实测结果: 提升 50%` 这类正文行误跳（中文是 Unicode `\w`）。新增
+  `frontmatter_end_line`（与 `get_body` 同源），严格按闭合 `---` 行号跳过。
+- **Rule 24 两段 code-span 间的数字被误豁免** — `` `a` 50% `b` `` 里的 50% 被「最近一对
+  backtick」启发式 + `HEDGE_PREFIXES` 的 `` `[^`]*\d[^`]*` `` 双重误豁免。改用 backtick
+  奇偶判定（match 前为奇数才算在 span 内），并删除同 bug 的 hedge 模式。
+- **`pipeline_state` 硬编码 `/02-技术/`** — fork 改 `kb_category_root`（env.json 文档化的
+  覆盖项）后，每篇 KB 内文章都被 `--upgrade` 误判为不在 KB、白重跑 publish。改读
+  `config.kb_category_root()`，带 `02-技术` 兜底（脱离插件布局时）。
+
+### Docs
+
+- 图像生成描述 Gemini → 多供应商（`MODEL_FALLBACK_CHAIN` Minimax-first，Gemini/OpenAI
+  兜底，与实际一致）；`review_selfcheck.py` 头部「15 rules」→ 23（Rule 21 reserved）；
+  规则数锚点 v1.8.4 → v1.9.3。核对 share_card 实为 11 = 9 + 2 别名，CLAUDE.md 原文正确未动。
+
+### Tests
+
+- 新增复现测试：SSRF 重定向链（HEAD/GET/Playwright 三处）、IPv4-mapped IPv6、Rule 23/24
+  `~~~`/嵌套 fence、Rule 24 frontmatter 边界、双 code-span、自定义 KB 根。
+- `python3 -m pytest tests/ -q` → **611 passed**（v1.9.3 为 600）。
+
 ## [1.9.3] - 2026-06-02 — 第二轮审核修复 + SSRF 加固（5+4 条）
 
 ### Why
