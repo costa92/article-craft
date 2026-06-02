@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Automated self-check for article review (15 rules).
+Automated self-check for article review (23 active rules; Rule 21 reserved).
 
 Validates articles against the self-check rules defined in
 references/self-check-rules.md. Can be used standalone or
