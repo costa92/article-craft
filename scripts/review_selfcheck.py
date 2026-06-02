@@ -312,8 +312,18 @@ def frontmatter_end_line(content: str) -> int:
 
 
 def strip_code_blocks(text: str) -> str:
-    """Remove code blocks from text."""
-    return re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    """Remove fenced code blocks from text (CommonMark-correct).
+
+    Built on the canonical iter_code_blocks scanner (via _code_block_line_set)
+    so ~~~ fences and variable-length / nested ``` / ```` fences are all
+    handled. The old `re.sub(r'```.*?```')` only matched ``` pairs and
+    mis-paired on nesting — the root of a recurring "red-flag word / number
+    inside a code block still flagged" bug class. Drops the fence lines and
+    their content, keeping the surrounding line structure so downstream
+    paragraph (\\n\\n) splitting and char counts are unaffected."""
+    lines = text.split("\n")
+    code = _code_block_line_set(lines)
+    return "\n".join(line for i, line in enumerate(lines) if i not in code)
 
 
 # Opening/closing fence line: 0-indent backtick or tilde run of length >= 3,
@@ -443,16 +453,19 @@ def get_sections(body: str) -> List[Tuple[str, str]]:
 
 
 def _split_blocks(text: str) -> List[str]:
+    # Group lines into blocks separated by blank lines, keeping fenced code
+    # blocks intact. Code-block detection goes through the canonical scanner
+    # (handles ~~~ and nested/variable-length fences) so a blank line *inside*
+    # a code block never splits it and a ~~~ block isn't torn apart.
+    lines = text.splitlines()
+    code = _code_block_line_set(lines)
     blocks: List[str] = []
     current: List[str] = []
-    in_code = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("```"):
-            in_code = not in_code
+    for i, line in enumerate(lines):
+        if i in code:
             current.append(line)
             continue
-        if not in_code and not stripped:
+        if not line.strip():
             if current:
                 blocks.append("\n".join(current).strip())
                 current = []
@@ -469,6 +482,7 @@ def _is_structural_anchor_block(block: str) -> bool:
     first = lines[0].strip() if lines else ""
     return (
         stripped.startswith("```")
+        or stripped.startswith("~~~")  # ~~~ fences are code blocks too
         or first.startswith("![")
         or first.startswith("|")
         or first.startswith(">")
@@ -1084,17 +1098,9 @@ def check_rule_12(content: str, lines: List[str]) -> CheckResult:
     """Template Summary Detection: flag AI-style summary paragraphs."""
     # Skip fenced code blocks — a template-summary phrase inside a ```text
     # example (e.g. an article documenting AI writing patterns) is not a
-    # violation. Track in-code line numbers and skip them, preserving the
-    # original line-number reporting. Same idiom as Rule 23.
-    code_lines: set = set()
-    in_code = False
-    for i, line in enumerate(lines):
-        if line.strip().startswith('```'):
-            in_code = not in_code
-            code_lines.add(i)
-            continue
-        if in_code:
-            code_lines.add(i)
+    # violation. Use the canonical scanner (0-indexed, ~~~ and nested-fence
+    # aware) so the line numbers line up with the enumerate(lines) loop below.
+    code_lines = _code_block_line_set(lines)
 
     violations = []
 
