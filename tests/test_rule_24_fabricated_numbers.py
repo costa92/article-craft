@@ -100,6 +100,26 @@ title: t
         triggers = [x for x in v if "30%" in x.text]
         self.assertEqual(len(triggers), 0)
 
+    def test_number_between_two_code_spans_still_fires(self):
+        # The number sits in the GAP between two separate code spans, not inside
+        # either. The old nearest-backtick-pair heuristic wrongly exempted it;
+        # backtick parity before the match (even = outside any span) catches it.
+        content = """---
+title: t
+---
+
+# T
+
+`verify()` 命中 50% 的 `cases`，需要核对。
+"""
+        _, v = run_rule_24(content)
+        triggers = [x for x in v if "50%" in x.text]
+        self.assertEqual(
+            len(triggers), 1,
+            "number between two code spans must fire: {}".format(
+                [x.text for x in v]),
+        )
+
     def test_markdown_link_in_same_line_exempts(self):
         content = """---
 title: t

@@ -135,8 +135,9 @@ HEDGE_PREFIXES = [
     r'(基线|目标|预期|理想|阈值)[^。\n]*\d',  # 目标值不是事实声明
     r'<?\s*\d+(?:\.\d+)?\s*[%%]\s*?(?:以内|以上|以下)',  # X% 以内/以上 = 范围声明
     r'(几|十几|数|某|个把|若干)\s*(起|条|次|个|篇|文件|行)',  # 中文模糊量词
-    # backtick 包裹的内容里出现数字 — 例如 `Style G threshold=1`、`v1.7.2`
-    r'`[^`]*\d[^`]*`',
+    # 注：backtick 包裹数字（`v1.7.2` 等）由豁免 1 的 backtick 奇偶判定处理。
+    # 这里不再放 `[^`]*\d[^`]*` —— 它会跨越两段独立 span 的间隙误命中
+    # （`a` 50% `b` 里的 50% 被当成 hedge）。
 ]
 
 # 数字后的限定词（"20 分钟左右"等）
@@ -1853,15 +1854,12 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
             num_str, unit = m.group(1), m.group(2)
             full_match = m.group(0)
 
-            # 豁免 1: backtick 包围
+            # 豁免 1: 在 inline code span 内（` ... `）。用 start 之前的 backtick
+            # 奇偶判定——奇数说明位于一个未闭合的 span 内部。旧逻辑取最近的一对
+            # backtick，会把两段独立 span 之间的数字（`a` 50% `b`）误判为被包围。
             start = m.start()
-            backtick_before = line.rfind('`', 0, start)
-            backtick_after = line.find('`', m.end())
-            if backtick_before >= 0 and backtick_after > start:
-                # 检查 backtick_before 和 backtick_after 之间是否只有 1 个 `
-                between = line[backtick_before:backtick_after + 1]
-                if between.count('`') == 2:
-                    continue
+            if line.count('`', 0, start) % 2 == 1:
+                continue
 
             # 豁免 2: 同行有 markdown link
             if has_link_in_line:
