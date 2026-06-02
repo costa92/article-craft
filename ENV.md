@@ -75,9 +75,9 @@ cp ${CLAUDE_PLUGIN_ROOT:-~/.claude/plugins/article-craft}/env.example.json ~/.cl
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `image_model` | string | `minimax-image-01` | 图片生成默认模型，优先级最高 |
-| `minimax_image_model` | string | `minimax-image-01` | Minimax 图片生成模型 |
-| `gemini_image_model` | string | `gemini-3-pro-image-preview` | Gemini 回退模型 |
+| `image_model` | string | `minimax-image-01` | 图片生成默认模型，**唯一**决定默认的键。不配则默认 Minimax。要默认走 Gemini 请显式设为某个 Gemini 模型（如 `gemini-3-pro-image-preview`）。 |
+| `minimax_image_model` | string | `minimax-image-01` | Minimax 图片变体（参考用，不改变默认模型）。 |
+| `gemini_image_model` | string | `gemini-3-pro-image-preview` | Gemini 回退变体（参考用，**不**决定默认模型——历史上误用为默认导致默认变 Gemini，已修正）。 |
 
 可用模型（按优先级）：
 - `minimax-image-01` — 默认首选

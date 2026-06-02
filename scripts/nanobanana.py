@@ -438,7 +438,10 @@ def run(default_size="1344x768"):
         help=f"Size/aspect ratio (default: {default_size})",
     )
 
-    _default_model = _env_json_config.get("image_model", _env_json_config.get("minimax_image_model", _env_json_config.get("gemini_image_model", "minimax-image-01")))
+    # Default to Minimax unless an explicit `image_model` override is set.
+    # `gemini_image_model` selects the Gemini fallback variant (per ENV.md) —
+    # it must NOT flip the default to Gemini when `image_model` is absent.
+    _default_model = _env_json_config.get("image_model", "minimax-image-01")
     parser.add_argument(
         "--model", type=str, default=_default_model,
         choices=MODEL_FALLBACK_CHAIN,
