@@ -40,6 +40,16 @@ import time
 from pathlib import Path
 from typing import Any
 
+# KB category root for the in_kb heuristic. Configurable via env.json
+# (config.kb_category_root()); falls back to "02-技术" when config is not
+# importable (script run outside the plugin layout).
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from config import kb_category_root as _kb_category_root
+except Exception:  # pragma: no cover - import fallback
+    def _kb_category_root() -> str:
+        return "02-技术"
+
 SCHEMA_VERSION = "1"
 STATE_FILENAME = ".article-craft-state.json"
 
@@ -310,7 +320,7 @@ def _scan_article(article_path: Path) -> Scan:
         # need not contain that substring.) Local/relative paths don't count.
         cdn_images=len(re.findall(r"!\[[^\]]*\]\(https?://[^)]+\)", text)),
         has_frontmatter=text.lstrip().startswith("---"),
-        in_kb="/02-技术/" in str(article_path),
+        in_kb=f"/{_kb_category_root()}/" in str(article_path),
         # Style H signals: publish (v1.4.15+) copies these sidecars into the KB
         # alongside the article, so their presence lets --upgrade know Style H
         # even when no state file exists.

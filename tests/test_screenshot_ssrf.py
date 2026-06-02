@@ -9,6 +9,8 @@ gopher:, …) and link-local / cloud-metadata addresses (169.254.0.0/16 incl.
 import importlib.util
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 def load_module():
@@ -41,6 +43,16 @@ class HardBlockTests(unittest.TestCase):
     def test_no_host_blocked(self):
         allowed, _ = st._is_fetchable_url("http://")
         self.assertFalse(allowed)
+
+    def test_ipv4_mapped_metadata_blocked(self):
+        # ::ffff:169.254.169.254 is the IPv4-mapped IPv6 spelling of the cloud
+        # metadata address. It must be hard-blocked, not allowed-with-warning —
+        # on a dual-stack host this is a real reach to the metadata endpoint.
+        allowed, msg = st._is_fetchable_url(
+            "http://[::ffff:169.254.169.254]/latest/meta-data/"
+        )
+        self.assertFalse(allowed)
+        self.assertIn("169.254.169.254", msg)
 
 
 class AllowWithWarnTests(unittest.TestCase):
@@ -79,6 +91,53 @@ class WiringTests(unittest.TestCase):
 
     def test_harvest_images_blocks_file_scheme(self):
         out = st.harvest_images("file:///etc/hosts")
+        self.assertIn("SSRF", out["error"])
+
+
+class RedirectChainTests(unittest.TestCase):
+    """初始 URL 干净但 30x 跳转把请求引向 metadata/内网时，必须二次拦截。
+
+    `_is_fetchable_url` 只校验初始 URL；攻击者控制的页面可以用一个公网域名
+    301 到 169.254.169.254。fetch 之后必须复检最终落点（及整条 history）。
+    """
+
+    _META = "http://169.254.169.254/latest/meta-data/"
+
+    def test_check_url_status_blocks_redirect_to_metadata(self):
+        fake_resp = SimpleNamespace(
+            status_code=200,
+            url=self._META,
+            history=[SimpleNamespace(url=self._META)],
+        )
+        with mock.patch.object(st.requests, "head", return_value=fake_resp):
+            status = st.check_url_status("http://evil.example/redir", _from_cache=False)
+        self.assertFalse(status["is_valid"])
+        self.assertIn("SSRF", status["reason"])
+
+    def test_rehost_image_blocks_redirect_to_metadata(self):
+        fake_resp = SimpleNamespace(
+            status_code=200,
+            url=self._META,
+            history=[SimpleNamespace(url=self._META)],
+            content=b"x" * 5000,
+            headers={"content-type": "image/png"},
+        )
+        with mock.patch.object(st.requests, "get", return_value=fake_resp):
+            out = st.rehost_image("http://evil.example/img.png", mode="always")
+        self.assertFalse(out["ok"])
+        self.assertIn("SSRF", out["reason"])
+
+    def test_harvest_images_blocks_playwright_redirect_to_metadata(self):
+        fake_page = mock.MagicMock()
+        fake_page.url = self._META
+        fake_page.goto.return_value = SimpleNamespace(status=200)
+        fake_p = mock.MagicMock()
+        fake_p.chromium.launch.return_value.new_context.return_value.new_page.return_value = fake_page
+        cm = mock.MagicMock()
+        cm.__enter__.return_value = fake_p
+        cm.__exit__.return_value = False
+        with mock.patch.object(st, "sync_playwright", return_value=cm):
+            out = st.harvest_images("http://evil.example/article", use_fallback=False)
         self.assertIn("SSRF", out["error"])
 
 

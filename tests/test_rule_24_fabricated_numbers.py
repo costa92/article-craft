@@ -100,6 +100,26 @@ title: t
         triggers = [x for x in v if "30%" in x.text]
         self.assertEqual(len(triggers), 0)
 
+    def test_number_between_two_code_spans_still_fires(self):
+        # The number sits in the GAP between two separate code spans, not inside
+        # either. The old nearest-backtick-pair heuristic wrongly exempted it;
+        # backtick parity before the match (even = outside any span) catches it.
+        content = """---
+title: t
+---
+
+# T
+
+`verify()` 命中 50% 的 `cases`，需要核对。
+"""
+        _, v = run_rule_24(content)
+        triggers = [x for x in v if "50%" in x.text]
+        self.assertEqual(
+            len(triggers), 1,
+            "number between two code spans must fire: {}".format(
+                [x.text for x in v]),
+        )
+
     def test_markdown_link_in_same_line_exempts(self):
         content = """---
 title: t
@@ -186,6 +206,27 @@ echo "100 美元"
         self.assertEqual(len(v), 1)
         self.assertIn("50%", v[0].text)
 
+    def test_tilde_fence_exempts(self):
+        # ~~~ fences are invisible to the hand-rolled startswith('```') toggle,
+        # so numbers inside leak into the scan. The canonical scanner fixes it.
+        content = """---
+title: t
+---
+
+# T
+
+~~~bash
+echo "命中率 99%, 节省 500 美元/天"
+~~~
+
+正文无具体数字。
+"""
+        _, v = run_rule_24(content)
+        self.assertEqual(
+            len(v), 0,
+            "~~~ fenced numbers must be exempt: {}".format([x.text for x in v]),
+        )
+
 
 class FuzzyHedgeTests(unittest.TestCase):
     """Hedge detection allows some flexibility in spacing."""
@@ -232,6 +273,45 @@ title: t
         _, v = run_rule_24(content)
         self.assertEqual(len(v), 1)
         self.assertIn("100", v[0].text)
+
+
+class FrontmatterBoundaryTests(unittest.TestCase):
+    """The frontmatter skip must track the real closing '---', not a
+    'first 20 lines that look like yaml' heuristic. Chinese chars are \\w under
+    Unicode, so a body line like '实测结果: 提升 50%' matches ^\\s*\\w+:\\s and
+    was wrongly skipped when it sat in the first 20 lines.
+    """
+
+    def test_body_yaml_shaped_line_still_scanned(self):
+        content = """---
+title: t
+---
+
+# T
+
+实测结果: 提升 50%，节省 100 美元。
+"""
+        _, v = run_rule_24(content)
+        # Both numbers are real body claims and must fire (not skipped as fm).
+        self.assertGreaterEqual(
+            len(v), 2,
+            "yaml-shaped body line must still be scanned: {}".format(
+                [x.text for x in v]),
+        )
+
+    def test_real_frontmatter_field_still_exempt(self):
+        # A genuine frontmatter field with a number must NOT fire.
+        content = """---
+title: t
+reading_time: 5 分钟
+---
+
+# T
+
+正文无数字。
+"""
+        _, v = run_rule_24(content)
+        self.assertEqual(len(v), 0)
 
 
 class HighDensityWarningTests(unittest.TestCase):

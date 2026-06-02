@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def load_pipeline_state_module():
@@ -177,6 +178,25 @@ class PipelineStateTests(unittest.TestCase):
 
             scan = pipeline_state._scan_article(article)
             self.assertEqual(scan.tone, "casual")
+
+    def test_scan_in_kb_respects_custom_category_root(self):
+        """in_kb must use config.kb_category_root(), not a hardcoded /02-技术/.
+
+        A fork can set kb_category_root in env.json (e.g. "03-Notes"); the
+        --upgrade scan must recognize the article as in-KB under that name.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            kb_dir = Path(tmp) / "03-Notes"
+            kb_dir.mkdir()
+            article = kb_dir / "article.md"
+            article.write_text("# T\n", encoding="utf-8")
+            with mock.patch.object(pipeline_state, "_kb_category_root",
+                                   return_value="03-Notes", create=True):
+                scan = pipeline_state._scan_article(article)
+            self.assertTrue(
+                scan.in_kb,
+                "in_kb must honor the configured KB category root, not hardcode 02-技术",
+            )
 
     def test_scan_article_tone_field_missing_returns_none(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Automated self-check for article review (15 rules).
+Automated self-check for article review (23 active rules; Rule 21 reserved).
 
 Validates articles against the self-check rules defined in
 references/self-check-rules.md. Can be used standalone or
@@ -135,8 +135,9 @@ HEDGE_PREFIXES = [
     r'(基线|目标|预期|理想|阈值)[^。\n]*\d',  # 目标值不是事实声明
     r'<?\s*\d+(?:\.\d+)?\s*[%%]\s*?(?:以内|以上|以下)',  # X% 以内/以上 = 范围声明
     r'(几|十几|数|某|个把|若干)\s*(起|条|次|个|篇|文件|行)',  # 中文模糊量词
-    # backtick 包裹的内容里出现数字 — 例如 `Style G threshold=1`、`v1.7.2`
-    r'`[^`]*\d[^`]*`',
+    # 注：backtick 包裹数字（`v1.7.2` 等）由豁免 1 的 backtick 奇偶判定处理。
+    # 这里不再放 `[^`]*\d[^`]*` —— 它会跨越两段独立 span 的间隙误命中
+    # （`a` 50% `b` 里的 50% 被当成 hedge）。
 ]
 
 # 数字后的限定词（"20 分钟左右"等）
@@ -294,6 +295,20 @@ def get_body(content: str) -> str:
     if not match:
         return content
     return content[match.end():]
+
+
+def frontmatter_end_line(content: str) -> int:
+    """1-indexed line number of the closing frontmatter '---', or 0 if there is
+    no frontmatter. Lines 1..N are frontmatter; line N+1 onward is body.
+
+    Mirrors get_body's parsing so callers can skip frontmatter by line number
+    instead of a fragile 'first 20 lines that look like yaml' heuristic (which
+    both missed long frontmatter and wrongly skipped yaml-shaped body lines —
+    Chinese chars are \\w under Unicode, so '实测结果: 50%' matched it)."""
+    match = re.match(r'^---\n.*?\n---(\n|$)', content, re.DOTALL)
+    if not match:
+        return 0
+    return content[:match.start(1)].count('\n') + 1
 
 
 def strip_code_blocks(text: str) -> str:
@@ -1725,16 +1740,10 @@ def check_rule_23(content: str, lines: List[str]) -> CheckResult:
     """
     fm = parse_frontmatter(content)
 
-    # 标记所有处于 fenced code block 内的行号（包括 fence 自身）
-    code_lines: set = set()
-    in_code = False
-    for i, line in enumerate(content.split("\n"), 1):
-        if line.strip().startswith("```"):
-            in_code = not in_code
-            code_lines.add(i)
-            continue
-        if in_code:
-            code_lines.add(i)
+    # 标记所有处于 fenced code block 内的行号（含 fence 自身，1-indexed）。
+    # 用 canonical scanner（识别 ~~~ 与变长 ```/```` 嵌套），避免讨论本规则的
+    # 反例代码块被误扫。_code_block_line_set 返回 0-indexed，故 +1 对齐。
+    code_lines = {i + 1 for i in _code_block_line_set(content.split("\n"))}
 
     violations: List[Violation] = []
 
@@ -1822,16 +1831,11 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
     fm = parse_frontmatter(content)
     verified = set(str(x) for x in fm.get("verified_numbers", []))
 
-    # 标记 fenced code block 行号（含 fence 自身）
-    code_lines: set = set()
-    in_code = False
-    for i, line in enumerate(content.split("\n"), 1):
-        if line.strip().startswith("```"):
-            in_code = not in_code
-            code_lines.add(i)
-            continue
-        if in_code:
-            code_lines.add(i)
+    # 标记 fenced code block 行号（含 fence 自身，1-indexed）。用 canonical
+    # scanner 识别 ~~~ 与变长 ```/```` 嵌套；返回 0-indexed，故 +1 对齐。
+    code_lines = {i + 1 for i in _code_block_line_set(content.split("\n"))}
+
+    fm_end = frontmatter_end_line(content)
 
     violations: List[Violation] = []
     seen_per_line: set = set()  # 同行同数字只报一次
@@ -1839,8 +1843,8 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
     for line_no, line in enumerate(lines, 1):
         if line_no in code_lines:
             continue
-        # 跳过 frontmatter 行（粗略：前 20 行内的 yaml）
-        if line_no <= 20 and re.match(r'^\s*\w+:\s', line):
+        # 跳过真正的 frontmatter 行（按闭合 --- 行号，而非"前 20 行像 yaml"）
+        if line_no <= fm_end:
             continue
 
         # 整行是否在 markdown link 内（粗略豁免：有 (http..) 出现）
@@ -1850,15 +1854,12 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
             num_str, unit = m.group(1), m.group(2)
             full_match = m.group(0)
 
-            # 豁免 1: backtick 包围
+            # 豁免 1: 在 inline code span 内（` ... `）。用 start 之前的 backtick
+            # 奇偶判定——奇数说明位于一个未闭合的 span 内部。旧逻辑取最近的一对
+            # backtick，会把两段独立 span 之间的数字（`a` 50% `b`）误判为被包围。
             start = m.start()
-            backtick_before = line.rfind('`', 0, start)
-            backtick_after = line.find('`', m.end())
-            if backtick_before >= 0 and backtick_after > start:
-                # 检查 backtick_before 和 backtick_after 之间是否只有 1 个 `
-                between = line[backtick_before:backtick_after + 1]
-                if between.count('`') == 2:
-                    continue
+            if line.count('`', 0, start) % 2 == 1:
+                continue
 
             # 豁免 2: 同行有 markdown link
             if has_link_in_line:
