@@ -22,6 +22,7 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  actions: write  # to dispatch tag-release.yml after merge
 
 jobs:
   gate:
@@ -63,3 +64,14 @@ jobs:
           gh pr merge "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
             --merge --delete-branch
+
+      - name: Trigger tag-release
+        # A merge push made with GITHUB_TOKEN does NOT cascade-trigger the
+        # `on: push` workflows, so tag-release.yml would never run on an
+        # auto-merge and a version bump would ship untagged. workflow_dispatch
+        # is an explicit exception to that suppression, so dispatch it here.
+        # tag-release is version-driven + idempotent: it creates the tag/release
+        # only when plugin.json's version has no release yet, else it's a no-op.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run tag-release.yml --repo "${{ github.repository }}" --ref main
