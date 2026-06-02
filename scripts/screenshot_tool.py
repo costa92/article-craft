@@ -209,6 +209,14 @@ def check_url_status(url: str, timeout: int = 10,
         result["final_url"] = response.url
         result["redirect_chain"] = [r.url for r in response.history]
 
+        # SSRF guard: 守卫只校验了初始 URL，30x 跳转可能把请求引向 metadata/内网。
+        _safe, _redir_msg = _redirect_chain_safe(response)
+        if not _safe:
+            result["status_code"] = None
+            result["is_valid"] = False
+            result["reason"] = f"SSRF 拦截: {_redir_msg}"
+            return result
+
         # 检测重定向
         if response.history:
             result["redirect_count"] = len(response.history)
@@ -414,6 +422,22 @@ def _is_fetchable_url(url: str):
         if ip.is_loopback or ip.is_private:
             warn = f"访问内网/本地地址 {ip}（已放行，请确认是有意为之）"
     return True, warn
+
+
+def _redirect_chain_safe(response):
+    """fetch 之后复检整条重定向链；命中硬拦截地址返回 (False, msg)，否则 (True, None)。
+
+    `_is_fetchable_url` 只能校验初始 URL。攻击者控制的页面可以用一个公网域名
+    301/302 跳转到 169.254.169.254 等 metadata/内网地址绕过守卫。requests 的
+    `response.history` 是除最终响应外的每一跳，`response.url` 是最终落点——两者都要查。
+    """
+    hops = list(getattr(response, "history", []) or [])
+    hops.append(response)
+    for hop in hops:
+        ok, msg = _is_fetchable_url(hop.url)
+        if not ok:
+            return False, f"重定向链命中被拦截地址: {msg}"
+    return True, None
 
 
 def main_content_selectors_for_host(url: str) -> List[str]:
@@ -1330,6 +1354,13 @@ def rehost_image(url: str, mode: str = "auto") -> dict:
         result["reason"] = f"download error: {type(e).__name__}: {e}"
         return result
 
+    # SSRF guard: 初始 URL 干净不代表落点干净，30x 可能跳到 metadata/内网。
+    _safe, _redir_msg = _redirect_chain_safe(r)
+    if not _safe:
+        result["ok"] = False
+        result["reason"] = f"SSRF 拦截: {_redir_msg}"
+        return result
+
     if r.status_code != 200:
         result["ok"] = False
         result["reason"] = f"HTTP {r.status_code}"
@@ -1864,6 +1895,14 @@ def harvest_images(source_url: str, wait: int = 2,
             response = page.goto(source_url, timeout=SCREENSHOT_TIMEOUT_MS,
                                  wait_until="domcontentloaded")
             actual_status = response.status if response else 0
+
+            # SSRF guard: 源页面可 30x 跳转到 metadata/内网；page.url 是最终落点。
+            # 命中即中止（不走 baoyu-fetch 兜底），避免抓取/回传内网内容。
+            _safe, _redir_msg = _is_fetchable_url(page.url)
+            if not _safe:
+                result["error"] = f"SSRF 拦截: {_redir_msg}"
+                browser.close()
+                return result
 
             if actual_status >= 400:
                 result["warnings"].append(
