@@ -10,8 +10,19 @@ v1.8.4 dogfood 后清扫了一批 edge-case bug，并补上 CI 自动合并 owne
 
 ### Added
 
-- **CI：owner PR 测试通过后自动合并 + 删分支**，并级联派发 tag-release
-  (`df7b595`, `60d2b40`)。
+- **CI 单人 owner 自动发布流水线**（已上线并实测验证：owner 开 PR → 测试绿 →
+  自动合并删分支 → 版本变更则级联打 tag/release）(`df7b595`, `60d2b40`)：
+  - `auto-merge-owner.yml`：仅当 PR 作者 == `github.repository_owner` 且非草稿时，
+    `gate` job 跑测试套件（排除 Playwright E2E，由独立 workflow 覆盖），`merge` job
+    （`needs: gate`）通过后直接 `gh pr merge --merge --delete-branch`。非 owner 的 PR
+    原样留待人工 review。无需 branch-protection / `allow_auto_merge` 仓库设置——合并由
+    job 的 contents/pull-requests write 权限授权。
+  - **关键坑**：用 `GITHUB_TOKEN` 推送的合并 commit **不会**级联触发 `on: push` 工作流，
+    所以 `tag-release.yml` 在自动合并后永远不会自己跑、版本 bump 会漏打 tag。
+    `workflow_dispatch` 是该抑制的显式例外，故 merge job 末尾用
+    `gh workflow run tag-release.yml --ref main` 主动派发。
+  - `tag-release.yml` 是 **version-driven + 幂等**：读 `plugin.json` 版本，已存在
+    release 则 no-op，否则建 tag + release。无 auto-bump（`plugin.json` 是唯一真源）。
 - **生成图像/截图文件名加时间戳段**，避免跨次运行覆盖 (`b9948c2`)。
 
 ### Fixed
