@@ -87,6 +87,61 @@ class PipelineStateTests(unittest.TestCase):
             )
             self.assertEqual(out["source"], "state_file")
 
+    def test_stale_completed_image_stage_is_requeued(self):
+        # state says images completed, but the body still has a raw placeholder →
+        # the stage must be flagged stale AND re-queued into missing (the core
+        # --upgrade safety net). Guards _is_stale's positive path.
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text(
+                "---\ntitle: demo\n---\n\n# T\n\n<!-- IMAGE: cover - x (16:9) -->\n",
+                encoding="utf-8",
+            )
+            state = pipeline_state.PipelineState(str(article))
+            state.set_meta("standard", None)
+            for stage in ["requirements", "verify", "write", "screenshot", "share_card", "images"]:
+                state.complete_stage(stage, {"ok": True})
+            state.save()
+
+            out = pipeline_state._compute_missing(state, "standard")
+            self.assertIn("images", out["stale"])
+            self.assertIn("images", out["missing"])
+            self.assertEqual(out["source"], "hybrid")
+
+    def test_stale_completed_screenshot_stage_is_requeued(self):
+        # screenshot completed in state but body still has a SCREENSHOT placeholder.
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            article.write_text(
+                "---\ntitle: demo\n---\n\n# T\n\n<!-- SCREENSHOT: https://x.com/a -->\n",
+                encoding="utf-8",
+            )
+            state = pipeline_state.PipelineState(str(article))
+            state.set_meta("standard", None)
+            for stage in ["requirements", "verify", "write", "screenshot"]:
+                state.complete_stage(stage, {"ok": True})
+            state.save()
+
+            out = pipeline_state._compute_missing(state, "standard")
+            self.assertIn("screenshot", out["stale"])
+            self.assertIn("screenshot", out["missing"])
+
+    def test_stale_completed_publish_stage_when_not_in_kb(self):
+        # publish completed in state but the article isn't under the KB path.
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"  # not under /02-技术/
+            article.write_text("---\ntitle: demo\n---\n\n# T\n\n正文。\n", encoding="utf-8")
+            state = pipeline_state.PipelineState(str(article))
+            state.set_meta("standard", None)
+            for stage in ["requirements", "verify", "write", "screenshot", "share_card",
+                          "images", "verify_claims", "review", "publish"]:
+                state.complete_stage(stage, {"ok": True})
+            state.save()
+
+            out = pipeline_state._compute_missing(state, "standard")
+            self.assertIn("publish", out["stale"])
+            self.assertIn("publish", out["missing"])
+
     def test_missing_stages_draft_skips_evidence_when_not_style_h(self):
         with tempfile.TemporaryDirectory() as tmp:
             article = Path(tmp) / "article.md"

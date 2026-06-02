@@ -181,6 +181,73 @@ def test_generate_image_minimax_enhance_uses_local_enhancer(mod):
     subproc_run.assert_not_called()
 
 
+def test_generate_image_raises_rate_limit_when_all_models_exhausted(mod):
+    # All models fail and the LAST error is a rate-limit → generate_image must
+    # raise RateLimitExhausted so the caller triggers backoff / cross-worker
+    # pause. Exercises the terminal branch (raise vs return) never hit by the
+    # success-path tests.
+    cfg = mod.ImageConfig(name="cover", prompt="p", aspect_ratio="16:9", filename="cover.jpg")
+
+    def boom(model, prompt, output_path, aspect_ratio=None, width=None, height=None):
+        raise RuntimeError("HTTP 429 rate limited")
+
+    with mock.patch.dict("os.environ", {"MINIMAX_API_KEY": "test-key"}), \
+         mock.patch.object(mod, "MODEL_FALLBACK_CHAIN", ("minimax-image-01",)), \
+         mock.patch.object(mod, "_generate_minimax_image_with_options", side_effect=boom), \
+         mock.patch.object(mod, "ensure_images_dir", return_value=Path("/tmp")):
+        with pytest.raises(mod.RateLimitExhausted):
+            mod.generate_image(cfg, model="minimax-image-01")
+
+
+def test_generate_image_returns_false_when_all_models_fail_non_rate_limit(mod):
+    # All models fail and the LAST error is NOT a rate-limit → return False
+    # (record failure), do NOT raise. The opposite side of the terminal branch.
+    cfg = mod.ImageConfig(name="cover", prompt="p", aspect_ratio="16:9", filename="cover.jpg")
+
+    def boom(model, prompt, output_path, aspect_ratio=None, width=None, height=None):
+        raise RuntimeError("invalid api key")
+
+    with mock.patch.dict("os.environ", {"MINIMAX_API_KEY": "test-key"}), \
+         mock.patch.object(mod, "MODEL_FALLBACK_CHAIN", ("minimax-image-01",)), \
+         mock.patch.object(mod, "_generate_minimax_image_with_options", side_effect=boom), \
+         mock.patch.object(mod, "ensure_images_dir", return_value=Path("/tmp")):
+        ok = mod.generate_image(cfg, model="minimax-image-01")
+    assert ok is False
+
+
+def test_upload_image_dispatches_to_s3_when_enabled(mod):
+    with mock.patch.object(mod, "S3_CONFIG", {"enabled": True}), \
+         mock.patch.object(mod, "upload_to_s3", return_value="s3://sentinel") as s3, \
+         mock.patch.object(mod, "upload_to_picgo") as picgo:
+        url = mod.upload_image("/tmp/x.jpg")
+    assert url == "s3://sentinel"
+    s3.assert_called_once_with("/tmp/x.jpg")
+    picgo.assert_not_called()
+
+
+def test_upload_image_dispatches_to_picgo_when_disabled(mod):
+    with mock.patch.object(mod, "S3_CONFIG", {"enabled": False}), \
+         mock.patch.object(mod, "upload_to_s3") as s3, \
+         mock.patch.object(mod, "upload_to_picgo", return_value="picgo://sentinel") as picgo:
+        url = mod.upload_image("/tmp/x.jpg")
+    assert url == "picgo://sentinel"
+    picgo.assert_called_once_with("/tmp/x.jpg")
+    s3.assert_not_called()
+
+
+def test_upload_to_s3_raises_without_boto3(mod):
+    with mock.patch.object(mod, "BOTO3_AVAILABLE", False):
+        with pytest.raises(RuntimeError):
+            mod.upload_to_s3("/tmp/x.jpg")
+
+
+def test_upload_to_s3_raises_on_missing_endpoint_or_bucket(mod):
+    with mock.patch.object(mod, "BOTO3_AVAILABLE", True), \
+         mock.patch.object(mod, "S3_CONFIG", {"endpoint_url": "", "bucket_name": ""}):
+        with pytest.raises(ValueError):
+            mod.upload_to_s3("/tmp/x.jpg")
+
+
 def test_nabobanana_default_model_prefers_minimax(monkeypatch, tmp_path):
     module_path = Path(__file__).resolve().parents[1] / "scripts" / "nanobanana.py"
     spec = importlib.util.spec_from_file_location("nanobanana_test", module_path)
