@@ -60,5 +60,16 @@ class HostMatchStillWorksTests(unittest.TestCase):
         self.assertIn(".WB_feed_detail", sels)
 
 
+class Is404HostParityTests(unittest.TestCase):
+    def test_vox_not_matched_by_twitter_404_patterns(self):
+        # vox.com must not be host-matched as x.com for 404 detection.
+        page = "This account doesn't exist anymore"
+        self.assertFalse(st.is_404_content(page, "https://www.vox.com/some-article"))
+
+    def test_x_com_still_matched_for_404(self):
+        page = "This account doesn't exist anymore"
+        self.assertTrue(st.is_404_content(page, "https://x.com/u/status/1"))
+
+
 if __name__ == "__main__":
     unittest.main()

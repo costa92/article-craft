@@ -141,13 +141,20 @@ class Rule17SubCheckDTests(TestCase):
         self.assertEqual(len(sub_d), 1)
         self.assertEqual(sub_d[0].severity, "warning")
 
-    def test_skipped_when_under_10_sentences(self):
-        body = "短句一。短句二。短句三。我实测过。" * 5
+    def test_variance_subcheck_skipped_under_10_sentences(self):
+        # 8 body sentences + the "# Title" line = 9 qualifying sentences, below
+        # the >=10 gate, so the 句长变异 (sentence-length variance) sub-check must
+        # be SKIPPED. The sentences are identical length (CV≈0): if the gate
+        # regressed to always-run, that uniformity would emit a 句长变异
+        # violation — so asserting its ABSENCE actually pins the skip boundary,
+        # unlike the old assertIsNotNone tautology.
+        body = "这是第一个测试句。" * 8
         article = _article(body, tone="opinionated", style="G")
-        # Only ~20 sentences total; might or might not pass — this test
-        # only asserts the check did not crash and result is well-formed.
         result = check_rule_17(article, article.split("\n"))
-        self.assertIsNotNone(result)
+        variance = [v for v in result.violations if "句长变异" in v.text]
+        self.assertEqual(
+            variance, [], "variance sub-check must be skipped under 10 sentences"
+        )
 
 
 class Rule17IntegrationTests(TestCase):

@@ -256,16 +256,14 @@ def check_url_status(url: str, timeout: int = 10,
 
 def is_404_content(page_text: str, url: str) -> bool:
     """检测页面文本中是否包含 404 特征"""
-    url_lower = url.lower()
+    host = _normalized_host(url)
 
-    if "github.com" in url_lower:
+    if _host_matches(host, "github.com"):
         for pattern in GITHUB_404_PATTERNS:
             if re.search(pattern, page_text, re.IGNORECASE):
                 return True
 
-    if _host_matches(_normalized_host(url), "twitter.com") or _host_matches(
-        _normalized_host(url), "x.com"
-    ):
+    if _host_matches(host, "twitter.com") or _host_matches(host, "x.com"):
         for pattern in TWITTER_404_PATTERNS:
             if re.search(pattern, page_text, re.IGNORECASE):
                 return True
