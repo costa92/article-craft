@@ -114,6 +114,42 @@ class ConfigTests(unittest.TestCase):
             self.assertIn("gemini-2.5-flash-image", mod.MODEL_FALLBACK_CHAIN)
             self.assertEqual(mod.IMAGE_DEFAULTS["model"], "minimax-image-01")
 
+    def test_default_model_stays_minimax_when_only_gemini_image_model_set(self):
+        # Regression: env.json with `gemini_image_model` but no `image_model`
+        # (the shipped env.example.json / common legacy config) must STILL
+        # default to Minimax. `gemini_image_model` selects which Gemini variant
+        # is used as fallback (per ENV.md) — it must not flip the default to
+        # Gemini.
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg_dir = home / ".claude"
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            (cfg_dir / "env.json").write_text(
+                '{"gemini_image_model":"gemini-3-pro-image-preview"}',
+                encoding="utf-8",
+            )
+            mod = load_config_module(home)
+            self.assertEqual(mod.IMAGE_DEFAULTS["model"], "minimax-image-01")
+            self.assertEqual(
+                mod.resolve_default_image_model(
+                    {"gemini_image_model": "gemini-3-pro-image-preview"}
+                ),
+                "minimax-image-01",
+            )
+
+    def test_explicit_image_model_override_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cfg_dir = home / ".claude"
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            (cfg_dir / "env.json").write_text(
+                '{"image_model":"gemini-2.5-flash-image",'
+                '"gemini_image_model":"gemini-3-pro-image-preview"}',
+                encoding="utf-8",
+            )
+            mod = load_config_module(home)
+            self.assertEqual(mod.IMAGE_DEFAULTS["model"], "gemini-2.5-flash-image")
+
     def test_text_model_default_and_override(self):
         with tempfile.TemporaryDirectory() as tmp:
             mod = load_config_module(Path(tmp))

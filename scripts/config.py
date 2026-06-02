@@ -289,10 +289,25 @@ SCREENSHOT_MAIN_CONTENT_OVERRIDES: Dict[str, List[str]] = (
     _user_config.get("screenshot_main_content_selectors", {}) or {}
 )
 
+def resolve_default_image_model(user_config: dict | None = None) -> str:
+    """Resolve the default image-generation model.
+
+    Honors an explicit ``image_model`` override; otherwise defaults to Minimax
+    (the documented Minimax-first design). ``gemini_image_model`` /
+    ``minimax_image_model`` select WHICH variant is used as the Gemini/Minimax
+    entry in the fallback chain (per ENV.md) — they are NOT the default and must
+    not silently flip the default to Gemini. Consulting ``gemini_image_model``
+    here was a bug: a config with that legacy key but no ``image_model`` (the
+    shipped env.example.json) defaulted to Gemini, contradicting Minimax-first.
+    """
+    cfg = _user_config if user_config is None else user_config
+    return cfg.get("image_model", "minimax-image-01")
+
+
 # Image generation defaults (read model from env.json)
 IMAGE_DEFAULTS = {
     "resolution": "2K",  # 1K, 2K, or 4K
-    "model": _user_config.get("image_model", _user_config.get("gemini_image_model", "minimax-image-01")),
+    "model": resolve_default_image_model(),
     "cover_aspect_ratio": "16:9",  # 1344x768, crop to 900x383 for WeChat
     "rhythm_aspect_ratio": "3:2",  # 1248x832 for article body images
 }
