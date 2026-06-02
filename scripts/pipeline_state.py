@@ -305,7 +305,10 @@ def _scan_article(article_path: Path) -> Scan:
         image_placeholders=len(re.findall(r"<!--\s*IMAGE:", text)),
         screenshot_placeholders=len(re.findall(r"<!--\s*SCREENSHOT:", text)),
         harvest_placeholders=len(re.findall(r"<!--\s*HARVEST:", text)),
-        cdn_images=len(re.findall(r"!\[[^\]]*\]\(https?://[^)]*cdn", text)),
+        # Any markdown image with an absolute http(s) URL = an uploaded image.
+        # (Not just URLs containing "cdn" — S3 public prefixes / endpoint URLs
+        # need not contain that substring.) Local/relative paths don't count.
+        cdn_images=len(re.findall(r"!\[[^\]]*\]\(https?://[^)]+\)", text)),
         has_frontmatter=text.lstrip().startswith("---"),
         in_kb="/02-技术/" in str(article_path),
         # Style H signals: publish (v1.4.15+) copies these sidecars into the KB
