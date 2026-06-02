@@ -1,5 +1,160 @@
 # Changelog
 
+## [1.9.0] - 2026-06-02 — edge-case 修复批次 + Minimax-first 回归 + CI auto-merge
+
+### Why
+
+v1.8.4 dogfood 后清扫了一批 edge-case bug，并补上 CI 自动合并 owner PR 的工作流。
+核心矛盾：env.example.json/ENV.md 文档化的 `gemini_image_model` 配置在缺
+`image_model` 时会让默认图像模型悄悄退回 Gemini，与「Minimax 优先」设计相悖。
+
+### Added
+
+- **CI：owner PR 测试通过后自动合并 + 删分支**，并级联派发 tag-release
+  (`df7b595`, `60d2b40`)。
+- **生成图像/截图文件名加时间戳段**，避免跨次运行覆盖 (`b9948c2`)。
+
+### Fixed
+
+- **图像默认模型回归 Minimax**：抽出 `config.resolve_default_image_model()`——
+  显式 `image_model` 覆盖优先，否则一律 `minimax-image-01`；`gemini_image_model`/
+  `minimax_image_model` 不再翻转默认（`gemini_image_model` 只选 Gemini 兜底变体）
+  (`2948ffc`)。
+- **Minimax 生成路径可观测**：暴露 `base_resp` 错误而非吞掉 (`27379f2`, `0b0c24a`)。
+- **verify-cache 原子写**：`write_verify_cache` 与 `screenshot_tool` 改为写临时文件
+  + `os.replace`，避免序列化中途失败或两个写者交错导致缓存损坏/清空 (`836cb90`)。
+- **verify-claims 不再漏掉工具**：`FOO=bar mytool` 的前导赋值前缀现在会被剥离；
+  `git -- file` 的 `--` 不再被误判为帮助说明分隔符（散文分隔符限定为 em/en 破折号）
+  (`b8edbac`)。
+- **Rule 13 围栏扫描器去同步修复**：4 反引号嵌套 3 反引号时朴素 toggle 失同步，
+  误把内层当闭合、外层当无语言标识开头，导致 `--write-gate` 退出 1 阻断保存；
+  新增 CommonMark 正确的 `iter_code_blocks()`，Rule 13/14/ascii_gate 共用 (`a99d434`)。
+- **Rule 11 本地图检查不再依赖 CWD**：删掉对 `os.path.exists()` 的非确定性检查与死变量，
+  发布门下相对本地路径一律判为残留 (`a2af3ff`)。
+- **lint 尊重行尾内联 `lint:disable` 标记** (`69589dc`)。
+- **images 占位符文件名唯一化 + 跳过代码块内占位符**（含 screenshot 解析器）
+  (`ff51cbc`, `0a192d4`)。
+- **release：bump_version 打的 tag 指向包含 bump 的 commit**（而非 bump 前 HEAD）；
+  release commit 只 scope 到 bump 文件 (`f949394`, `31687ed`)。
+
+### Docs
+
+- review 命令描述更正为「23 rules + 8-dim scoring」(`2cb1cde`)。
+
+### Tests
+
+- `test_images_cli` 在无 key 的 CI 下保持 hermetic (`4e03f86`)。
+
+---
+
+## [1.8.4] - 2026-06-01 — attribution-as-voice (Rule 5/22) + 诚实 AIGC 标签
+
+### Why
+
+dogfood 暴露反常激励：忠实、完整归属来源的 YouTube 摘要被 Rule 5/22 判「个人声音太少」，
+而从零虚构 6 段第一人称轶事的文章却通过——规则在**奖励虚构、惩罚诚实引述**。
+
+### Fixed
+
+- **来源归属算作有效锚点/声音**：新增 `ATTRIBUTION_ANCHOR_REGEX`
+  (据/根据/官方/原文/「视频里说」/「Karpathy 演示」)，`_has_concrete_anchor` 现在
+  计入归属，Rule 5 不再把忠实归属段判为「连续 3 段缺少具体锚点」；Rule 22 在
+  `个人经历 ≥2 OR 来源归属 ≥2` 时通过；Rule 5 跳过 conclusion/intro 段 (`9560a62`)。
+- **诚实的默认 AIGC 标签**：默认页脚从「本文 AI 辅助起稿 + 人工核实改写」（自动断言
+  常常并未发生的人工核实）改为「本文由 AI 辅助创作，关键数据与事实请以原始来源为准」；
+  「+ 人工核实改写」降级为作者真正核实后的 opt-in，来源摘要类文章用诚实变体 (`e672cff`)。
+
+### Tests
+
+- `tests/test_attribution_anchor.py` 钉住 attribution-as-voice 契约。
+
+---
+
+## [1.8.3] - 2026-05-31 — 共享上传器静默降级改为告警
+
+### Fixed
+
+- **screenshot 共享上传器失败时告警而非静默吞掉** (`e656a95`)。
+
+### Tests
+
+- screenshot 上传测试 hermetic 化（此前会打到真实 CDN）(`824185b`)。
+
+---
+
+## [1.8.2] - 2026-05-31 — 修复裸 'scan' 被误读为 screenshot_tool 子命令
+
+### Fixed
+
+- **screenshot：裸词 `scan` 被误读为 CLI 子命令**，改写措辞规避 (`a2c01d5`)。
+
+---
+
+## [1.8.1] - 2026-05-29 — dogfood 文档跟进
+
+### Fixed
+
+- 处理 3 个 dogfood 小跟进：title-skip、字数校准、Rule 14 提示 (`dbcd9c4`)。
+- **series 导航 callout 在 `wechat-native` 下随形态条件化** (`a2fe442`)。
+- **Rule 6 显式 `body_form` 优先于 `wechat_target` 别名**（解析器对齐）(`658b6a1`)。
+
+---
+
+## [1.8.0] - 2026-05-29 — 正交 body-form 轴（wechat-native 默认）
+
+### Why
+
+需要与 tone 并列的第二条正交轴 `body_form` 来决定**正文形态**：`wechat-native`
+（移动端公众号体，默认）vs `long-form`（博客体，知识库归档副本）。它独立于
+*写作风格*（A–H 内容身份）和 *深度*（字数）——`wechat-native + deep` 文章可以又长又
+移动端形态。
+
+### Added
+
+- **`config.resolve_body_form()` 解析器**：优先级 `--body-form` CLI > frontmatter
+  `body_form:` > 旧 `wechat_target: false` 别名 > 默认 `wechat-native`；
+  `wechat_target` 不再是死字段 (`ab31364`)。
+- **requirements 输出 `body_form`**（默认 wechat-native，long-form 仅显式开启，
+  绝不从深度/教程关键词自动推断）(`b917716`)。
+- **orchestrator 解析 `--body-form` / `--long-form` 并透传 requirements** (`3dacabe`)。
+- **write 注入 Body Form 规则**，callout 随形态条件化渲染（仅 long-form），
+  style-guide 新增 Body Form 段并吸收 platform-adaptation 块 (`dba52cc`, `ba2bc0c`)。
+- **publish 在 `body_form: long-form` 时跳过微信 checklist**（此前 wechat_target 死字段）
+  (`19a9462`)。
+- **review Phase 2 软形态一致性信号**（不新增 write 门）(`5cf8a9d`)。
+- **`check_rule_6` 阈值随形态调整**（wechat-native 每节阈值 -1）(`b2ad49a`)。
+
+### Docs
+
+- 设计规格 `docs/superpowers/specs/2026-05-29-wechat-native-body-form-design.md`
+  + 实施计划（9 任务 TDD）(`2eb1ad2`, `afffe72`)。
+
+---
+
+## [1.7.8] - 2026-05-29 — write-gate bug 修复 + 死代码/文档清理
+
+### Why
+
+严格遵从的 write agent 永远无法保存：write 预存门跑了 Rule 11（占位符残留），
+但 write 阶段**必须**产出 `<!-- IMAGE: -->` 占位符（由 images 阶段后续解析），
+导致 `--write-gate` 在每篇合法草稿上退出 1（GATE BLOCKED）。测试套件因「干净文章」
+fixture 无占位符而漏检。
+
+### Fixed
+
+- **write 门 Rule 11→14 互换**：write 门应捕获 ASCII 图（图像前自动转换），
+  占位符残留是 review 阶段门——脚本与文档间的 Rule 11/14 身份此前交叉了 (`8883ba7`)。
+
+### Removed
+
+- **删除死代码 `VerificationCache`**：`config.py` 里 `VerificationCache` /
+  `get_verification_cache()` 零调用方（~130 行），连带清掉孤立的
+  `time`/`atexit`/`tempfile` import；verify/SKILL.md 文档化的可配置 TTL
+  (`verify_cache_ttl_seconds` 等)纯属虚构——真实缓存是固定 1h TTL，已重写为如实描述
+  (`1803c0d`)。
+
+---
+
 ## [1.7.7] - 2026-05-29 — 修复 datetime.utcnow() 弃用警告
 
 ### Why
