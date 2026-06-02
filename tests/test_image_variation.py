@@ -19,6 +19,7 @@ from scripts.generate_and_upload_images import (
     LIGHTING_ROTATION,
     SCALE_ROTATION,
     VISUAL_TREATMENT_ROTATION,
+    VISUAL_STYLE_PRESETS,
     build_design_logic,
     select_visual_style_from_prompt,
     vary_prompt_for_position,
@@ -199,6 +200,12 @@ class VisualStyleSelectionTests(TestCase):
         style = select_visual_style_from_prompt("A generic image of a notebook")
         self.assertEqual(style["preset"], "minimalist flat illustration")
 
+    def test_futuristic_prompts_pick_gradient_tech(self):
+        style = select_visual_style_from_prompt(
+            "A futuristic cyberpunk visualization of next-gen frontier technology"
+        )
+        self.assertEqual(style["preset"], "gradient tech style")
+
 
 class DesignLogicTests(TestCase):
     def test_architecture_logic_prioritizes_structure(self):
@@ -215,6 +222,26 @@ class DesignLogicTests(TestCase):
         logic = build_design_logic("tradeoff principle metaphor decision")
         self.assertEqual(logic["primary_goal"], "express concept")
         self.assertEqual(logic["preset"], "conceptual metaphor illustration")
+
+    def test_frontier_logic_prioritizes_gradient_tech(self):
+        logic = build_design_logic("a futuristic cutting-edge frontier breakthrough")
+        self.assertEqual(logic["primary_goal"], "evoke frontier tech")
+        self.assertEqual(logic["preset"], "gradient tech style")
+
+
+class GradientTechPresetTests(TestCase):
+    def test_gradient_tech_preset_is_defined(self):
+        # S3 渐变科技 / Gradient Tech is documented in image-guide.md; the
+        # preset must exist with the full variant schema the other presets use.
+        self.assertIn("gradient tech style", VISUAL_STYLE_PRESETS)
+        preset = VISUAL_STYLE_PRESETS["gradient tech style"]
+        for key in ("triggers", "palette", "background", "treatment", "lighting", "scale"):
+            self.assertIn(key, preset)
+
+    def test_gradient_tech_variants_inject(self):
+        style = select_visual_style_from_prompt("A futuristic cyberpunk scene")
+        # background carries the S3 dark + neon gradient anchor
+        self.assertIn("gradient", style["background"].lower())
 
 
 class PaletteMaterialTests(TestCase):

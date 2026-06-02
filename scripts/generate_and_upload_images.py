@@ -1352,6 +1352,18 @@ VISUAL_STYLE_PRESETS = {
         "lighting": ("diffused studio light", "subtle rim light"),
         "scale": ("wide contextual scale", "large-scale dominant subject"),
     },
+    # S3 渐变科技 / Gradient Tech (image-guide.md): dark background + neon
+    # gradient, futuristic aesthetic. For C 深度 / G 观点 articles on frontier
+    # tech. The author-facing taxonomy listed S3 long before any code preset
+    # existed — this fills that gap (see DESIGN_LOGIC_RULES "evoke frontier tech").
+    "gradient tech style": {
+        "triggers": ("futuristic", "cutting-edge", "frontier", "next-gen", "sci-fi", "cyberpunk"),
+        "palette": ("purple-to-cyan neon gradient", "magenta-to-blue neon gradient"),
+        "background": "dark navy background with neon gradient accents and glowing edges",
+        "treatment": ("futuristic with glowing gradient edges and luminous particles", "sleek high-tech with soft neon bloom"),
+        "lighting": ("neon glow", "dramatic rim light"),
+        "scale": ("large-scale dominant subject", "wide contextual scale"),
+    },
     "clean data visualization style": {
         "triggers": ("benchmark", "comparison", "compare", "chart", "metrics", "latency", "throughput", "performance"),
         "palette": ("blue, gray, and green", "purple and cyan accents"),
@@ -1474,6 +1486,11 @@ DESIGN_LOGIC_RULES = (
         "primary_goal": "express concept",
         "triggers": ("tradeoff", "decision", "principle", "concept", "idea", "metaphor", "vision"),
         "preset": "conceptual metaphor illustration",
+    },
+    {
+        "primary_goal": "evoke frontier tech",
+        "triggers": ("futuristic", "cutting-edge", "frontier", "next-gen", "sci-fi", "cyberpunk"),
+        "preset": "gradient tech style",
     },
     {
         "primary_goal": "guide process",

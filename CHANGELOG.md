@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.9.1] - 2026-06-02 — 补齐 S3 渐变科技视觉 preset（消除孤儿标签）
+
+### Why
+
+文档审计发现 code/doc 不一致：`skills/images/image-guide.md` 面向作者定义了
+S1–S8 共 **8 个风格标签**（推荐矩阵也引用 S3），但代码 `VISUAL_STYLE_PRESETS`
+只有 **7 个 preset**——**S3「渐变科技 / Gradient Tech」没有对应路由项**。作者按
+image-guide 选 S3 时路由器悄悄落到默认风格，S3 是个孤儿标签。
+
+### Added
+
+- **S3「渐变科技 / Gradient Tech」preset**
+  (`scripts/generate_and_upload_images.py`)：深色背景 + 霓虹渐变、未来感，面向
+  C 深度 / G 观点 的前沿技术话题，规格对齐 image-guide.md S3 段。
+  - `VISUAL_STYLE_PRESETS["gradient tech style"]`：palette 紫→青/品红→蓝霓虹渐变，
+    background `dark navy ... neon gradient accents and glowing edges`，treatment/
+    lighting/scale 双变体，结构与其余 7 个 preset 一致。
+  - `DESIGN_LOGIC_RULES` 新增 `primary_goal: "evoke frontier tech"` 路由规则，
+    触发词 `futuristic` / `cutting-edge` / `frontier` / `next-gen` / `sci-fi` /
+    `cyberpunk`（distinctive，不与现有规则触发词冲突）。
+  - 至此 image-guide 的 S1–S8 全部由代码 preset + 路由支撑（8 preset / 7 路由规则 +
+    默认 S1）。
+
+### Tests
+
+- `tests/test_image_variation.py` +4：futuristic prompt 路由到 gradient tech、
+  `build_design_logic` primary_goal、preset schema 完整性、background 注入含
+  `gradient`。全套 544 tests pass（含这 4 个，排除 Playwright E2E）。
+
+---
+
 ## [1.9.0] - 2026-06-02 — edge-case 修复批次 + Minimax-first 回归 + CI auto-merge
 
 ### Why
