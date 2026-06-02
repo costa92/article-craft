@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.9.5] - 2026-06-02 — 根治代码块豁免 bug 类：统一到 canonical scanner + 跨规则守护
+
+### Why
+
+「红旗词/数字/裸链/模板词写在代码块里却照样被规则误报」这个 bug 连续三轮审核反复
+出现（v1.9.2 Rule 1/12、v1.9.3 Rule 1、v1.9.4 Rule 23/24）。根因不是单条规则写错，
+而是**「代码块在哪几行」在仓库里有三套互不等价的实现**——`strip_code_blocks` 正则、
+手写 `startswith('```')` toggle、canonical `iter_code_blocks`——只有最后一套对 `~~~`
+和变长/嵌套 fence 正确。每轮审计只把踩雷的一两条规则迁到 canonical，其余仍用错的两套，
+于是 bug 在下一条没迁的规则上复发。这次消灭整个 bug 类，而不是再修一条。
+
+### Fixed
+
+- **`strip_code_blocks` 重写在 `iter_code_blocks` 之上** — 一次性修正所有正则调用点：
+  `get_paragraphs`、Rule 8（裸 URL）、Rule 17（语气）、Rule 22（个人化）现在都对 `~~~`
+  和嵌套 ```` 正确豁免。
+- **`_split_blocks` / `check_rule_12`（模板化摘要）迁离手写 toggle** — 改用
+  `_code_block_line_set`，认 `~~~` 与嵌套 fence。
+- **`_is_structural_anchor_block` 识别 `~~~`** — 此前只认 ` ``` `，`~~~` 代码块不被当作
+  结构锚点。
+
+### Tests
+
+- 新增**跨规则守护测试** `tests/test_code_block_exemption_guard.py`：把每条代码块敏感规则
+  的触发串塞进 `~~~` 块和嵌套 ```` 块，跑全部规则断言零误报；另有 sanity 断言证明这些
+  触发串在普通正文里确实会触发。任何规则（现在或将来）退回到非 fence-aware 的探测都会
+  立刻让它变红——这是「避免再次出现」的防回归闸门。
+- `python3 -m pytest tests/ -q` → **614 passed**（v1.9.4 为 611）。
+
 ## [1.9.4] - 2026-06-02 — 第三轮审核修复：SSRF 重定向链 + Rule 23/24 fence/边界 + KB 路径
 
 ### Why
