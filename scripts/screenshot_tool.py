@@ -404,6 +404,11 @@ def _is_fetchable_url(url: str):
             return True, None  # can't resolve offline; let the real fetch fail
     warn = None
     for ip in candidates:
+        # IPv4-mapped IPv6 (e.g. ::ffff:169.254.169.254) must be unwrapped
+        # before classification, else the v6 spelling of a metadata/link-local
+        # address slips past the is_link_local hard-block below.
+        if ip.version == 6 and ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
         if ip.is_link_local:
             return False, f"拒绝 link-local/metadata 地址: {ip}"
         if ip.is_loopback or ip.is_private:

@@ -42,6 +42,16 @@ class HardBlockTests(unittest.TestCase):
         allowed, _ = st._is_fetchable_url("http://")
         self.assertFalse(allowed)
 
+    def test_ipv4_mapped_metadata_blocked(self):
+        # ::ffff:169.254.169.254 is the IPv4-mapped IPv6 spelling of the cloud
+        # metadata address. It must be hard-blocked, not allowed-with-warning —
+        # on a dual-stack host this is a real reach to the metadata endpoint.
+        allowed, msg = st._is_fetchable_url(
+            "http://[::ffff:169.254.169.254]/latest/meta-data/"
+        )
+        self.assertFalse(allowed)
+        self.assertIn("169.254.169.254", msg)
+
 
 class AllowWithWarnTests(unittest.TestCase):
     def test_loopback_allowed_with_warning(self):
