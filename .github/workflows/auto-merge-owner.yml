@@ -1,0 +1,65 @@
+name: Auto-merge owner PRs
+
+# When the repository OWNER opens a PR, run the test suite and — if it passes —
+# merge it and delete the branch automatically. PRs from anyone else are left
+# untouched for review. This is the single-owner convenience flow; it
+# deliberately bypasses human review (owner-authored only) but still gates on
+# the test suite.
+#
+# Self-contained: the `gate` job runs the tests, and `merge` runs only on its
+# success (`needs: gate`). No branch-protection or `allow_auto_merge` repo
+# setting is required — the merge is a direct `gh pr merge`, authorized by the
+# job's contents/pull-requests write permissions.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  gate:
+    # Owner's own non-draft PRs only. github.repository_owner is the repo's
+    # owning user/org; for a user repo it equals the username.
+    if: >-
+      github.event.pull_request.user.login == github.repository_owner
+      && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r scripts/requirements.txt pytest
+
+      - name: Run test suite (excluding Playwright E2E)
+        # The Playwright browser E2E is covered by its own workflow and needs a
+        # browser binary; exclude it here to keep the gate fast and hermetic.
+        run: python -m pytest tests/ -q --ignore=tests/test_screenshot_e2e.py
+
+  merge:
+    needs: gate
+    if: >-
+      github.event.pull_request.user.login == github.repository_owner
+      && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge and delete branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --merge --delete-branch
