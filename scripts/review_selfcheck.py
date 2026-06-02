@@ -296,6 +296,20 @@ def get_body(content: str) -> str:
     return content[match.end():]
 
 
+def frontmatter_end_line(content: str) -> int:
+    """1-indexed line number of the closing frontmatter '---', or 0 if there is
+    no frontmatter. Lines 1..N are frontmatter; line N+1 onward is body.
+
+    Mirrors get_body's parsing so callers can skip frontmatter by line number
+    instead of a fragile 'first 20 lines that look like yaml' heuristic (which
+    both missed long frontmatter and wrongly skipped yaml-shaped body lines —
+    Chinese chars are \\w under Unicode, so '实测结果: 50%' matched it)."""
+    match = re.match(r'^---\n.*?\n---(\n|$)', content, re.DOTALL)
+    if not match:
+        return 0
+    return content[:match.start(1)].count('\n') + 1
+
+
 def strip_code_blocks(text: str) -> str:
     """Remove code blocks from text."""
     return re.sub(r'```.*?```', '', text, flags=re.DOTALL)
@@ -1820,14 +1834,16 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
     # scanner 识别 ~~~ 与变长 ```/```` 嵌套；返回 0-indexed，故 +1 对齐。
     code_lines = {i + 1 for i in _code_block_line_set(content.split("\n"))}
 
+    fm_end = frontmatter_end_line(content)
+
     violations: List[Violation] = []
     seen_per_line: set = set()  # 同行同数字只报一次
 
     for line_no, line in enumerate(lines, 1):
         if line_no in code_lines:
             continue
-        # 跳过 frontmatter 行（粗略：前 20 行内的 yaml）
-        if line_no <= 20 and re.match(r'^\s*\w+:\s', line):
+        # 跳过真正的 frontmatter 行（按闭合 --- 行号，而非"前 20 行像 yaml"）
+        if line_no <= fm_end:
             continue
 
         # 整行是否在 markdown link 内（粗略豁免：有 (http..) 出现）
