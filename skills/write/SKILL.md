@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.9.5
+version: 1.9.6
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -542,7 +542,7 @@ Insert image placeholders throughout the article. The `article-craft:images` ski
 **完整风格指南见：** `skills/images/image-guide.md` 的 "Visual Style Guide" 部分。
 
 **核心规则 — 设计 Token 一致性 (v1.4.19 — 锁感觉,不锁画面):**
-1. 根据文章风格从 7 种视觉风格(S1-S7)中选择一种
+1. 根据文章风格从 8 种视觉风格(S1-S8)中选择一种；**逻辑/关系/结构图（流程图、框架图、关系图、思维导图、架构图）统一用 S2 手绘信息图海报**
 2. 封面图的 PROMPT 确定**风格约束前缀**(色调 + 风格 + 背景)
 3. 所有后续节奏图的 PROMPT **必须复用相同的风格约束前缀**(全篇感觉一致)
 4. **不要手动加 `Camera:` / `Composition:`** — `scripts/generate_and_upload_images.py`
@@ -557,6 +557,10 @@ Insert image placeholders throughout the article. The `article-craft:images` ski
 ```
 
 **⛔ 硬禁止：PROMPT 里绝对不能要求 Gemini 渲染任何可读文字**
+
+> **唯一例外 = S2 手绘信息图海报**：逻辑/关系/结构图用 S2 时，信息图本质是**带标签**的，
+> 允许**英文短标签**（1–3 个英文词，如 `Input`/`Parser`/`Cache`），`check_rule_16` 按 S2 风格签名豁免英文标签告警。
+> 三条底线：① **英文 only，不写中文**——CJK 对 S2 也照拦（中文任何模型都糊）；② 只放短标签，绝不渲染整句；③ 版本号/品牌名/精确数字这类错不起的文字仍走截图或表格。英文短标签在所有模型（含默认 minimax）上都稳，无需 `--model` 覆盖或人工核对。详见 `image-guide.md` S2 段「📝 文字例外」。**以下禁文字规则适用于 S2 以外的所有风格。**
 
 Gemini 的图像模型**无法稳定渲染中文汉字**（会变形、缺笔、拼错），英文短标签也不可靠。这是一条**必须在写 prompt 阶段就生效**的硬约束，否则图生成之后你必须重跑一遍。
 

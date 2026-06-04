@@ -227,7 +227,8 @@ On transient failure (network, SSL, rate-limit):
 <!-- PROMPT: [风格约束 + 色彩 + 背景], [具体内容] -->
 ```
 
-例:架构图优先 `isometric technical illustration`，对比图优先
+例:逻辑/关系/结构图（流程图、框架图、关系图、架构图）优先
+`hand-drawn infographic poster`，对比图优先
 `clean data visualization style`，观点图优先 `conceptual metaphor illustration`。
 脚本(`generate_and_upload_images.py` 里的 `select_visual_style_from_prompt()` /
 `vary_prompt_for_position()`) 会先按内容选 preset，再按位置注入不同的
@@ -274,19 +275,53 @@ no shadows no gradients, generous white space, [主色] and [辅色] palette
 <!-- PROMPT: Minimalist flat illustration, solid blue and teal blocks, thin line icons, no shadows, white background. A developer laptop with Docker containers floating above it as colorful rectangles, connected by thin lines -->
 ```
 
-#### S2: 等距透视 (Isometric)
+#### S2: 手绘信息图海报 (Hand-drawn Infographic Poster)
 
-适用：A 教程、C 深度、F 复盘
-特点：2.5D 视角，模块化组件，工程感强
+适用：**所有逻辑/关系/结构图**（流程图、框架图、关系图、思维导图、架构图）
+特点：奶油色纸张底 + 黑色线描 + 柔和马克笔上色 + 可爱商务卡通角色，模块化信息面板用箭头连成知识地图，SaaS 创业风
+触发：脚本里 `flow / architecture / pipeline / system / relationship / framework / mind map / concept map / knowledge map / logic / hierarchy / topology / structure` 任一命中即自动套用（`DESIGN_LOGIC_RULES` "explain structure or relationship"，已**取代旧的 S2 等距透视**）。
+
+> ⚠️ **每张图的 PROMPT 必须以完整 S2 风格 stem 开头**（同 S8 经验）：脚本会把签名 token
+> 注入到 prompt **末尾**（`Background:`），但末尾注意力权重低，rhythm 图容易脱锚。把完整 stem
+> 抄到每条 PROMPT 开头最稳。**可直接 copy 的 stem**：
+>
+> ```
+> hand-drawn infographic poster, whiteboard doodle illustration, sketchnote style
+> knowledge map, warm cream paper background, clean black line art with soft marker
+> coloring, cute friendly business cartoon characters, modular information panels with
+> arrows and flow connections, rich doodle icons (rockets, light bulbs, gears,
+> documents, team and workflow symbols), friendly corporate cartoon style, minimalist
+> vector illustration, mind-map composition, modern SaaS startup aesthetic.
+> ```
+>
+> 然后接本图具体内容（带标签）。
+
+> 📝 **文字例外（S2 专属，与全局 Rule 5 禁文字相反）**：信息图/知识地图的核心就是**带标签**，
+> 所以 S2 **允许英文短标签**（面板名、节点名、箭头说明）。`check_rule_16` 检测到 S2 风格签名
+> （`hand-drawn infographic poster`/`sketchnote`/`knowledge map`/`whiteboard doodle`）会豁免"渲染英文文字"告警——
+> 不必写 `No readable text`。三条底线：
+>
+> 1. **英文 only，不放中文**。中文（CJK）在任何模型上都不稳（变形/缺笔/糊），所以 S2 标签一律用英文
+>    （`Input` / `Parser` / `Cache` / `API`）。`check_rule_16` 对 S2 也照拦 CJK——这是强制执行，不是建议。
+>    中文正文 + 英文图标签是中文技术写作的常规搭配，专业不违和。
+> 2. **只放短标签**（1–3 个英文词），如 `Input`、`Parse Request`、`Cache Layer`。
+>    **绝不**让它渲染整句话、长标题、段落——长文本任何模型都会糊。
+> 3. **关键准确文字宁可不画**：版本号、品牌名、精确数字这类"错一个就出事"的，用截图/表格，别交给图像模型。
+>
+> 英文短标签在所有模型（含默认 minimax）上都能稳定渲染，**无需 `--model` 覆盖、无需人工核对**。
 
 ```
-风格约束: Isometric technical illustration, 2.5D perspective, modular components,
-clean engineering aesthetic, [主色] and [辅色] palette, subtle grid lines
+风格约束: hand-drawn infographic poster, whiteboard doodle illustration, sketchnote
+style knowledge map, warm cream paper background, clean black line art with soft marker
+coloring, cute friendly business cartoon characters, modular information panels with
+short English text labels, arrows and flow connections, rich doodle icons (rockets,
+light bulbs, gears, documents, team symbols), minimalist vector illustration, mind-map
+composition, high readability, modern SaaS startup aesthetic
 ```
 
-**封面示例：**
+**封面示例（英文标签）：**
 ```
-<!-- PROMPT: Isometric technical illustration, 2.5D perspective, soft blue and mint green palette, subtle grid background. A multi-layer architecture with API gateway on top, microservices in middle, database at bottom, connected by glowing data pipes -->
+<!-- PROMPT: hand-drawn infographic poster, whiteboard doodle illustration, sketchnote style knowledge map, warm cream paper background, clean black line art with soft marker coloring, cute friendly business cartoon characters, modular information panels with arrows and flow connections, rich doodle icons. A central workflow framework: three connected rounded panels laid out left to right, panel one labeled Input with a document icon, panel two labeled Parser with a gears icon, panel three labeled Output with a rocket icon, thin hand-drawn arrows linking the panels into a flow, mind-map composition, high readability, modern SaaS startup aesthetic. Short English labels only, no long sentences, no Chinese characters -->
 ```
 
 #### S3: 渐变科技 (Gradient Tech)
@@ -438,9 +473,9 @@ The cards contain only graphical icons and shape diagrams, never any letters or 
 |---------|---------|---------|---------|
 | A 教程 | S1 极简扁平 | S7 信息图 / S8 AI 教程封面（AI 主题） | 清晰、可信、专业 |
 | B 分享 | S4 手绘线描 | S6 概念场景 | 亲切、轻松、真实 |
-| C 深度 | S7 信息图 | S2 等距透视 / S8 AI 教程封面（模型/算法主题） | 严谨、深度、工程感 |
+| C 深度 | S7 信息图 | S2 手绘信息图海报 / S8 AI 教程封面（模型/算法主题） | 严谨、深度、工程感 |
 | D 评测 | S5 数据可视化 | S1 极简扁平 | 客观、对比、数据驱动 |
-| E 资讯 | S1 极简扁平 | S2 等距透视 | 简洁、快速、信息密度 |
+| E 资讯 | S1 极简扁平 | S2 手绘信息图海报 | 简洁、快速、信息密度 |
 | F 复盘 | S5 数据可视化 | S4 手绘线描 | 反思、对比、before/after |
 | G 观点 | S6 概念场景 | S3 渐变科技 | 有态度、引发思考 |
 | AI 知识博主向 | S8 AI 教程封面 | S7 信息图 | 黑底白卡、Notion 感、科普博主 |
@@ -451,10 +486,10 @@ The cards contain only graphical icons and shape diagrams, never any letters or 
 
 | 目标 | 优先视觉 |
 |------|---------|
-| 解释结构 | S2 / S7 |
+| 解释结构 / 关系 / 逻辑（流程图、框架图、关系图、思维导图、架构图） | S2 / S7 |
 | 展示对比 | S5 |
 | 表达概念 | S6 / S3 |
-| 讲流程 | S7 / S1 |
+| 讲流程 | S2 / S7 |
 | 强调人味 | S4 |
 | 讲 AI/LLM 概念（Transformer / 注意力 / RAG / Agent） | S8 |
 | 泛用兜底 | S1 |
@@ -468,6 +503,10 @@ The cards contain only graphical icons and shape diagrams, never any letters or 
 3. **长度**: 30-80 词，太短缺细节，太长互相矛盾
 4. **禁止**: 不要写 "高清" "4K" "超清"（由 `--resolution` 参数控制）
 5. **硬禁止——文字渲染**（重要，违反即重生成）：
+
+   > **唯一例外 = S2 手绘信息图海报**：信息图/知识地图的本质是带标签，S2 允许**英文短标签**
+   > （`check_rule_16` 按风格签名豁免英文标签告警，但 CJK 对 S2 也照拦——English-only）。详见上文 S2 段
+   > 的「📝 文字例外」。本条以下的全局禁文字适用于 **S2 以外的所有风格**。
 
    Gemini 的图像模型**无法稳定渲染中文**（汉字变形/缺笔画/拼错），英文也只能勉强渲染短标签。凡是要求图里出现"可读文字"的提示词，产出几乎必然翻车。
 

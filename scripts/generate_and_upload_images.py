@@ -1344,13 +1344,21 @@ VISUAL_STYLE_PRESETS = {
         "lighting": ("soft daylight", "high-key illumination"),
         "scale": ("medium-scale balanced objects", "wide contextual scale"),
     },
-    "isometric technical illustration": {
-        "triggers": ("architecture", "architecture diagram", "system diagram", "pipeline", "flow", "infrastructure"),
-        "palette": ("soft blue and mint green", "blue gray and emerald"),
-        "background": "subtle grid background",
-        "treatment": ("diagrammatic with stronger visual hierarchy", "soft atmospheric with subtle gradients and shadows"),
-        "lighting": ("diffused studio light", "subtle rim light"),
-        "scale": ("wide contextual scale", "large-scale dominant subject"),
+    # S2 手绘信息图海报 / Hand-drawn Infographic Poster (image-guide.md).
+    # Replaces the former isometric preset (owner decision): per "逻辑或关系
+    # 就用这套手绘风格", ALL structure / logic / relationship diagrams route
+    # here. Cream-paper sketchnote aesthetic — cute business characters,
+    # modular panels, flow arrows, doodle icons. The signature stem is packed
+    # into `background` (mirrors the ai-tutorial preset) so it survives the
+    # tail-position injection, AND is documented in image-guide.md S2 so the
+    # writer puts the full stem at the FRONT of every PROMPT.
+    "hand-drawn infographic poster": {
+        "triggers": ("architecture", "diagram", "flow", "pipeline", "system", "infrastructure", "relationship", "framework", "mind map", "concept map", "knowledge map", "logic", "hierarchy", "topology", "structure"),
+        "palette": ("clean black line art with soft marker color accents", "black ink linework with muted pastel marker fills"),
+        "background": "warm cream paper background with subtle hand-drawn whiteboard doodle texture, clean black line art with soft marker coloring, cute friendly business cartoon characters, modular information panels with short English text labels connected by arrows and flow lines, rich doodle icons (rockets, light bulbs, gears, documents, team symbols), sketchnote knowledge-map layout, modern SaaS startup aesthetic",
+        "treatment": ("modular information panels with clear visual hierarchy", "sketchnote knowledge-map layout with arrows and flow connectors"),
+        "lighting": ("flat even lighting", "soft daylight"),
+        "scale": ("wide contextual scale", "mixed-scale composition"),
     },
     # S3 渐变科技 / Gradient Tech (image-guide.md): dark background + neon
     # gradient, futuristic aesthetic. For C 深度 / G 观点 articles on frontier
@@ -1473,9 +1481,10 @@ DESIGN_LOGIC_RULES = (
         "preset": "ai tutorial cover style",
     },
     {
-        "primary_goal": "explain structure",
-        "triggers": ("architecture", "diagram", "flow", "pipeline", "system", "infrastructure"),
-        "preset": "isometric technical illustration",
+        # 逻辑/关系/结构图统一走 S2 手绘信息图海报 (owner decision: 替代 isometric).
+        "primary_goal": "explain structure or relationship",
+        "triggers": ("architecture", "diagram", "flow", "pipeline", "system", "infrastructure", "relationship", "framework", "mind map", "concept map", "knowledge map", "logic", "hierarchy", "topology", "structure"),
+        "preset": "hand-drawn infographic poster",
     },
     {
         "primary_goal": "show contrast",
