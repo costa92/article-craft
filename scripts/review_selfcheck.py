@@ -1218,6 +1218,14 @@ def check_rule_16(content: str, lines: List[str]) -> CheckResult:
         r'\b(text|title|headline|caption|label|logo|slogan|copy|heading|word|letter|sign|quote|saying)\s*[:=]?\s*["“‘]',
         re.IGNORECASE,
     )
+    # S2 手绘信息图海报 (image-guide.md) 是带标签的信息图 / 知识地图 ——
+    # 文字标签是这个风格的核心，不是渲染事故。owner decision: S2 允许**英文**短标签。
+    # CJK 一律硬拦（含 S2，强制执行 English-only：中文渲染不稳）；仅对带 S2 风格签名的
+    # PROMPT 豁免"英文渲染文字"告警，让它能写 panel labels。其余风格仍走全局禁文字。
+    text_bearing_style_re = re.compile(
+        r'hand-drawn infographic poster|whiteboard doodle|sketchnote|knowledge map',
+        re.IGNORECASE,
+    )
     violations: List[Violation] = []
 
     for i, line in enumerate(lines):
@@ -1233,18 +1241,29 @@ def check_rule_16(content: str, lines: List[str]) -> CheckResult:
             body = body[:-3]
         body = body.strip()
 
-        # CJK inside prompt → hard fail (Gemini can't render Chinese text)
+        is_text_bearing = bool(text_bearing_style_re.search(body))
+
+        # CJK inside prompt → hard fail (models can't render Chinese reliably).
+        # Applies to S2 too: S2 labels must be English (English-only policy).
         cjk_chars = cjk_re.findall(body)
         if cjk_chars:
             sample = ''.join(cjk_chars[:10])
+            extra = (
+                " S2 信息图也只能用英文短标签（如 Input/Parser/Output）。"
+                if is_text_bearing else
+                "改成视觉替代（剪影/色块/图标），并在结尾加 "
+                "'No readable text anywhere, no letters, no numbers, no labels.'"
+            )
             violations.append(Violation(
                 line=i + 1, text=stripped[:80],
-                suggestion=(
-                    f"PROMPT 里出现 CJK 字符 ({sample})。Gemini 不能稳定渲染中文。"
-                    "改成视觉替代（剪影/色块/图标），并在结尾加 "
-                    "'No readable text anywhere, no letters, no numbers, no labels.'"
-                )
+                suggestion=f"PROMPT 里出现 CJK 字符 ({sample})。图像模型不能稳定渲染中文。{extra}"
             ))
+            continue
+
+        # S2 infographic / sketchnote prompts may carry SHORT ENGLISH labels —
+        # text IS the point of an infographic, so the English-render warn below
+        # doesn't apply to them.
+        if is_text_bearing:
             continue
 
         # English instructions to render specific text strings → warn

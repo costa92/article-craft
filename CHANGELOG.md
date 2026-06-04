@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.9.6] - 2026-06-04 — 逻辑/关系图改用 S2 手绘信息图海报（替代等距透视）+ 英文标签例外
+
+### Why
+
+逻辑、关系、流程、框架类图先前默认走 S2 等距透视（isometric 2.5D 工程风），但这类图
+的本质是"把关系讲清楚"——手绘信息图/知识地图（奶油纸 + 黑线描 + 卡通角色 + 箭头连线）
+的可读性和亲和力更适配公众号读者。owner 决定：所有结构/逻辑/关系图统一改用手绘信息图
+海报，彻底替代等距透视。
+
+随之而来的矛盾：信息图的核心是**带标签**，而全局 Rule 16 硬禁止 PROMPT 渲染文字（图像
+模型渲染中文不稳）。解决办法——S2 允许**英文短标签**（Input/Parser/Output 在所有模型上
+都稳定渲染），但 CJK 对 S2 也照拦，强制 English-only，避免中文翻车。中文正文 + 英文图
+标签是中文技术写作的常规搭配。
+
+### Changed
+
+- **S2 视觉风格：等距透视 → 手绘信息图海报**。`VISUAL_STYLE_PRESETS` 用
+  `hand-drawn infographic poster` 替换 `isometric technical illustration`；
+  `DESIGN_LOGIC_RULES` 的 "explain structure" 改向新 preset 并扩词（+`relationship`
+  /`framework`/`mind map`/`concept map`/`knowledge map`/`logic`/`hierarchy`/`topology`
+  /`structure`），所有结构/逻辑/关系图自动路由到手绘信息图海报。
+- **Rule 16 新增 S2 英文标签例外**。带 S2 风格签名（`hand-drawn infographic poster`
+  /`sketchnote`/`knowledge map`/`whiteboard doodle`）的 PROMPT 豁免"渲染英文文字"告警，
+  可写 panel labels；**CJK 仍对 S2 硬拦**（English-only 强制执行）。
+- `image-guide.md` S2 段、全局 Rule 5、`write/SKILL.md` 同步：英文短标签三条底线 + 全英文风格示例。
+- `write/SKILL.md` 顺带修正过时计数 "7 种(S1-S7)" → "8 种(S1-S8)"。
+
+### Tests
+
+- `test_image_variation.py`：更新 architecture → 新 preset 契约，新增 relationship 路由用例。
+- 新增 `test_rule_16_infographic_text.py`（5 测试）：S2 英文标签过 / S2 中文拦 / 非 S2 中文拦。
+
 ## [1.9.5] - 2026-06-02 — 根治代码块豁免 bug 类：统一到 canonical scanner + 跨规则守护
 
 ### Why

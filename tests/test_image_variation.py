@@ -184,9 +184,15 @@ class VisualTreatmentTests(TestCase):
 
 
 class VisualStyleSelectionTests(TestCase):
-    def test_architecture_prompts_pick_isometric(self):
+    def test_structure_prompts_pick_hand_drawn_poster(self):
+        # Structure/logic/relationship diagrams route to S2 手绘信息图海报
+        # (replaced the former isometric preset per owner decision).
         style = select_visual_style_from_prompt("A system architecture diagram with api gateway and database")
-        self.assertEqual(style["preset"], "isometric technical illustration")
+        self.assertEqual(style["preset"], "hand-drawn infographic poster")
+
+    def test_relationship_prompts_pick_hand_drawn_poster(self):
+        style = select_visual_style_from_prompt("A framework showing the relationship between modules")
+        self.assertEqual(style["preset"], "hand-drawn infographic poster")
 
     def test_benchmark_prompts_pick_data_viz(self):
         style = select_visual_style_from_prompt("A comparison chart of latency and throughput")
@@ -210,8 +216,8 @@ class VisualStyleSelectionTests(TestCase):
 class DesignLogicTests(TestCase):
     def test_architecture_logic_prioritizes_structure(self):
         logic = build_design_logic("architecture diagram api gateway database")
-        self.assertEqual(logic["primary_goal"], "explain structure")
-        self.assertEqual(logic["preset"], "isometric technical illustration")
+        self.assertEqual(logic["primary_goal"], "explain structure or relationship")
+        self.assertEqual(logic["preset"], "hand-drawn infographic poster")
 
     def test_comparison_logic_prioritizes_contrast(self):
         logic = build_design_logic("benchmark comparison chart latency throughput")
