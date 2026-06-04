@@ -1,6 +1,6 @@
 ---
 name: article-craft:write
-version: 1.9.6
+version: 1.9.7
 description: "Enhanced technical article writer with structure auto-check — generates articles with style guide, auto-validates section depth, and enforces code completeness."
 allowed-tools:
   - Read
@@ -560,7 +560,7 @@ Insert image placeholders throughout the article. The `article-craft:images` ski
 
 > **唯一例外 = S2 手绘信息图海报**：逻辑/关系/结构图用 S2 时，信息图本质是**带标签**的，
 > 允许**英文短标签**（1–3 个英文词，如 `Input`/`Parser`/`Cache`），`check_rule_16` 按 S2 风格签名豁免英文标签告警。
-> 三条底线：① **英文 only，不写中文**——CJK 对 S2 也照拦（中文任何模型都糊）；② 只放短标签，绝不渲染整句；③ 版本号/品牌名/精确数字这类错不起的文字仍走截图或表格。英文短标签在所有模型（含默认 minimax）上都稳，无需 `--model` 覆盖或人工核对。详见 `image-guide.md` S2 段「📝 文字例外」。**以下禁文字规则适用于 S2 以外的所有风格。**
+> 四条底线：① **英文 only，不写中文**——CJK 对 S2 也照拦（中文任何模型都糊）；② 只放短标签，绝不渲染整句；③ **带标签的 S2 图用 `--model gemini-2.5-flash-image`**——默认 minimax 文字保真度随密度反相关，面板多 + 箭头注文就糊（2026-06-04 dogfood 实证），gemini 即便密集也渲清；箭头只连线不写字；④ 版本号/品牌名/精确数字这类错不起的文字仍走截图或表格。详见 `image-guide.md` S2 段「📝 文字例外」。**以下禁文字规则适用于 S2 以外的所有风格。**
 
 Gemini 的图像模型**无法稳定渲染中文汉字**（会变形、缺笔、拼错），英文短标签也不可靠。这是一条**必须在写 prompt 阶段就生效**的硬约束，否则图生成之后你必须重跑一遍。
 

@@ -297,18 +297,26 @@ no shadows no gradients, generous white space, [主色] and [辅色] palette
 > 然后接本图具体内容（带标签）。
 
 > 📝 **文字例外（S2 专属，与全局 Rule 5 禁文字相反）**：信息图/知识地图的核心就是**带标签**，
-> 所以 S2 **允许英文短标签**（面板名、节点名、箭头说明）。`check_rule_16` 检测到 S2 风格签名
+> 所以 S2 **允许英文短标签**（面板名、节点名）。`check_rule_16` 检测到 S2 风格签名
 > （`hand-drawn infographic poster`/`sketchnote`/`knowledge map`/`whiteboard doodle`）会豁免"渲染英文文字"告警——
-> 不必写 `No readable text`。三条底线：
+> 不必写 `No readable text`。四条底线：
 >
 > 1. **英文 only，不放中文**。中文（CJK）在任何模型上都不稳（变形/缺笔/糊），所以 S2 标签一律用英文
 >    （`Input` / `Parser` / `Cache` / `API`）。`check_rule_16` 对 S2 也照拦 CJK——这是强制执行，不是建议。
 >    中文正文 + 英文图标签是中文技术写作的常规搭配，专业不违和。
 > 2. **只放短标签**（1–3 个英文词），如 `Input`、`Parse Request`、`Cache Layer`。
 >    **绝不**让它渲染整句话、长标题、段落——长文本任何模型都会糊。
-> 3. **关键准确文字宁可不画**：版本号、品牌名、精确数字这类"错一个就出事"的，用截图/表格，别交给图像模型。
+> 3. **带标签的 S2 图用 `--model gemini-2.5-flash-image`**（重要，实证见下）。默认 minimax 的文字
+>    保真度**随密度反相关**：标签少而大（≤4 个、无箭头注文）时 minimax 渲得干净；面板一多 + 箭头带文字，
+>    minimax 就糊成 gibberish。gemini-2.5-flash-image 即便密集多面板也能把每个标签渲清楚。
+>    **箭头只连线、不写字**（连接说明在 minimax 上必糊；gemini 能扛但仍建议留空更稳）。
+> 4. **关键准确文字宁可不画**：版本号、品牌名、精确数字这类"错一个就出事"的，用截图/表格，别交给图像模型。
 >
-> 英文短标签在所有模型（含默认 minimax）上都能稳定渲染，**无需 `--model` 覆盖、无需人工核对**。
+> > **实证（2026-06-04 端到端 dogfood，同一封面 prompt A/B）**：6 标签密集封面——minimax 主标签
+> > 部分糊（`QDUVE`/`TEARNI`）、箭头注文全 gibberish；gemini-2.5-flash-image 把
+> > `PROMPT`/`ROUTE`/`STYLE`/`RENDER` + `IDEATE`/`DEPLOY`/`TEAM`/`DESIGN` 全部渲染清晰。
+> > 4 标签稀疏流程图——minimax 主标签 `Parse`/`Route`/`Lock`/`Render` 也能渲清。
+> > 结论：**S2 带标签 → gemini；纯风格无关键文字 / 极稀疏标签 → minimax 也可**。
 
 ```
 风格约束: hand-drawn infographic poster, whiteboard doodle illustration, sketchnote
