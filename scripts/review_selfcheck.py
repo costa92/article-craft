@@ -1218,12 +1218,13 @@ def check_rule_16(content: str, lines: List[str]) -> CheckResult:
         r'\b(text|title|headline|caption|label|logo|slogan|copy|heading|word|letter|sign|quote|saying)\s*[:=]?\s*["“‘]',
         re.IGNORECASE,
     )
-    # S2 手绘信息图海报 (image-guide.md) 是带标签的信息图 / 知识地图 ——
-    # 文字标签是这个风格的核心，不是渲染事故。owner decision: S2 允许**英文**短标签。
-    # CJK 一律硬拦（含 S2，强制执行 English-only：中文渲染不稳）；仅对带 S2 风格签名的
-    # PROMPT 豁免"英文渲染文字"告警，让它能写 panel labels。其余风格仍走全局禁文字。
+    # S2 手绘信息图海报 / S9 卡通吉祥物讲解漫画 (image-guide.md) 是带标签的信息图 /
+    # 讲解漫画 —— 文字（面板名、气泡）是这个风格的核心，不是渲染事故。owner decision:
+    # 允许**英文**文字。CJK 一律硬拦（含 S2/S9，强制 English-only：中文渲染不稳）；仅对
+    # 带 S2/S9 风格签名的 PROMPT 豁免"英文渲染文字"告警。其余风格仍走全局禁文字。
     text_bearing_style_re = re.compile(
-        r'hand-drawn infographic poster|whiteboard doodle|sketchnote|knowledge map',
+        r'hand-drawn infographic poster|whiteboard doodle|sketchnote|knowledge map'
+        r'|cartoon mascot explainer|explainer comic|mascot diagram|speech bubble',
         re.IGNORECASE,
     )
     violations: List[Violation] = []

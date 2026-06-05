@@ -61,6 +61,24 @@ class Rule16InfographicExemptionTests(unittest.TestCase):
         result = run_rule_16(content)
         self.assertFalse(result.passed, "S2 prompt with CJK must still fail (English-only)")
 
+    def test_s9_mascot_explainer_with_english_text_passes(self):
+        # S9 卡通吉祥物讲解漫画 also carries text (titles, speech bubbles) — exempt.
+        content = (
+            "<!-- PROMPT: cartoon mascot explainer, white background, friendly robot "
+            'mascots with speech bubbles saying "I have a question" and panels labeled '
+            'ROOT MODEL, REPL, SUB-MODELS -->\n'
+        )
+        result = run_rule_16(content)
+        self.assertTrue(result.passed, f"S9 mascot explainer with English text should pass: {result.details}")
+
+    def test_s9_mascot_explainer_with_cjk_still_fails(self):
+        content = (
+            "<!-- PROMPT: cartoon mascot explainer, robot mascots, panels labeled "
+            "根模型 子模型 -->\n"
+        )
+        result = run_rule_16(content)
+        self.assertFalse(result.passed, "S9 prompt with CJK must still fail (English-only)")
+
     def test_non_s2_prompt_with_cjk_still_fails(self):
         content = (
             "<!-- PROMPT: Minimalist flat illustration, top banner with big text "

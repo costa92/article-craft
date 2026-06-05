@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.9.8] - 2026-06-05 — 新增 S9 卡通吉祥物讲解漫画风格（讲"它怎么运作"，与 S2 共存）
+
+### Why
+
+参考一张拟人吉祥物讲解漫画（root model / REPL / sub-models 的 agent 架构图）总结出一种新的
+视觉语言：**拟人角色 + 对话气泡 + 功能色区 + 分色箭头 + 内嵌终端**，专讲 how-it-works / 架构原理
+/ Agent 系统 / 数据流转。它比 S2 静态知识地图更适合"多组件协作叙事"。owner 决定新增为 S9，**与
+S2 共存**——不抢 S2 的静态结构图地盘，也不抢 S8 的纯 AI 概念。
+
+### Added
+
+- **S9 preset `cartoon mascot explainer`** + `DESIGN_LOGIC_RULES` "narrate how a system works"。
+  规则置于 ai-tutorial **之前**，窄触发（`how it works`/`explainer`/`agent system`/`multi-agent`
+  /`sub-model`/`mascot`…），不含 `system`/`flow`/`architecture` 等泛词 → S2/S8 路由完全不受影响。
+- **Rule 16 文字豁免扩展到 S9 签名**（`cartoon mascot explainer`/`explainer comic`/`mascot diagram`
+  /`speech bubble`）；CJK 仍对 S9 硬拦（English-only，承接 v1.9.6/1.9.7 纪律）。
+- `image-guide.md` S9 段（完整 stem + 封面示例 + 5 条文字底线）+ 风格矩阵 / 设计逻辑表。
+- `write/SKILL.md` 视觉风格计数 8 → 9，标注 S9 须 `--model gemini-2.5-flash-image`。
+
+### Note
+
+S9 是全系列**文字密度最高**的风格（标题 + 代码 + 气泡 + 标签满屏），**必须 `--model
+gemini-2.5-flash-image`**——minimax 在这种场景必糊（承接 v1.9.7 A/B 实证）。内嵌 faux 代码/数字
+是装饰性的、不保证准确，精确值仍走截图。
+
+### Tests
+
+- 路由：`how-it-works → S9`，且不抢 S2（结构图）/ S8（纯 AI 概念）。
+- Rule 16：S9 英文文字过 / S9 中文拦。
+
 ## [1.9.7] - 2026-06-04 — 修正 S2 标签出图的模型建议（实证：密集标签需 gemini）
 
 ### Why

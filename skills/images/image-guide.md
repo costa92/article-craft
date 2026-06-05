@@ -475,6 +475,46 @@ The cards contain only graphical icons and shape diagrams, never any letters or 
 <!-- PROMPT: AI tutorial cover style, dark black background with subtle tech grid pattern, floating white diagram cards with rounded corners and soft shadows, high-contrast black and white palette with single cyan accent only, no other accent colors. A central Transformer architecture diagram displayed inside a large white card showing encoder-decoder stacks with stacked blocks, surrounded by smaller satellite cards illustrating multi-head attention split into parallel heads, sinusoidal positional encoding wave shapes, and a feed-forward block, all connected by thin dotted lines and small hand-drawn doodle marks, arrow scribbles, and simple geometric shape sketches. The cards contain only graphical icons and shape diagrams, never any letters or words -->
 ```
 
+#### S9: 卡通吉祥物讲解漫画 (Cartoon Mascot Explainer)
+
+适用：**讲"它怎么运作"**——how-it-works / 架构原理 / Agent 系统 / 数据流转 / 多组件协作叙事
+特点：纯白底 + **拟人吉祥物**（笑脸机器人=AI、动物=用户/语言、有脸的物体=数据）+ **对话气泡** +
+**功能色区**（每组件一个柔和色块，颜色=角色）+ **分色箭头带标签**（颜色=流向）+ 内嵌小终端面板 +
+漫画星爆/闪光。和 S2 的区别：S2 是静态知识地图，S9 是**拟人叙事漫画**——用角色性格和台词讲清系统契约。
+触发：`how it works`/`explainer`/`agent system`/`multi-agent`/`sub-model`/`mascot` 命中即自动套用
+（`DESIGN_LOGIC_RULES` "narrate how a system works"，排在 ai-tutorial 之前——讲 agent 系统运作走漫画而非 S8 黑卡）。
+
+> ⚠️ **这是全系列文字密度最高的风格**（标题 + 代码 + 气泡 + 标签满屏），文字渲染要求比 S2 更硬：
+>
+> 1. **必须 `--model gemini-2.5-flash-image`**。minimax 在这种密集文字场景必糊（2026-06-04 S2 实证已证，
+>    S9 文字更密，minimax 完全不可用）。
+> 2. **英文 only**（同 S2）。气泡、标题、标签、箭头说明一律英文短句；`check_rule_16` 对 S9 也照拦 CJK。
+> 3. **气泡只放短句**（≤6 词），如 `"I have a question!"` / `"One job at a time!"`。
+> 4. **内嵌代码/数字是装饰性的，不保证准确**。faux REPL（`>>> len(chunk)`）可以有，但精确数字
+>    （版本号、真实统计值）若必须准确，仍走截图——别指望图像模型把 `482,732` 渲对。
+> 5. **每张图 PROMPT 以完整 S9 stem 开头**（同 S2/S8 经验，防末位注入脱锚）。**可直接 copy 的 stem**：
+>
+>    ```
+>    cartoon mascot explainer, clean white background, cute anthropomorphic mascot
+>    characters (friendly round robots with cyan smiley faces, simple animal characters)
+>    with short English speech bubbles, soft pastel rounded color-zone panels grouping
+>    each component by role, color-coded hand-drawn arrows with short English labels,
+>    comic-style starbursts and sparkles, warm approachable technical explainer aesthetic.
+>    ```
+
+```
+风格约束: cartoon mascot explainer, clean white background, cute anthropomorphic mascot
+characters with cyan smiley faces and short English speech bubbles, soft pastel rounded
+color-zone panels (blue/green/purple) grouping components by role, color-coded hand-drawn
+arrows with short English labels, comic-style starbursts and sparkles, warm approachable
+technical explainer aesthetic
+```
+
+**封面示例（gemini 出图）：**
+```
+<!-- PROMPT: cartoon mascot explainer, clean white background, cute anthropomorphic mascot characters with cyan smiley faces and short English speech bubbles, soft pastel rounded color-zone panels grouping components by role, color-coded hand-drawn arrows with short English labels, comic-style starbursts and sparkles. A top-to-bottom agent system explainer: a blue panel at top labeled ROOT MODEL with a friendly robot writing code, a green REPL panel in the middle with a cartoon snake mascot, a purple panel at the bottom labeled SUB-MODELS with two small robots, color-coded arrows linking them with short labels like writes code and returns value, a friendly paper-stack character on the right labeled BIG DATA with a speech bubble saying I stay outside, warm approachable technical explainer aesthetic. Short English text only, no Chinese characters -->
+```
+
 ### 风格 × 文章类型推荐矩阵
 
 | 文章风格 | 首选视觉 | 备选视觉 | 封面氛围 |
@@ -487,6 +527,7 @@ The cards contain only graphical icons and shape diagrams, never any letters or 
 | F 复盘 | S5 数据可视化 | S4 手绘线描 | 反思、对比、before/after |
 | G 观点 | S6 概念场景 | S3 渐变科技 | 有态度、引发思考 |
 | AI 知识博主向 | S8 AI 教程封面 | S7 信息图 | 黑底白卡、Notion 感、科普博主 |
+| 讲解/原理向（how-it-works、Agent 系统、数据流转） | S9 卡通讲解漫画 | S2 手绘信息图海报 | 拟人、亲切、叙事感（gemini 出图） |
 
 ### 设计逻辑
 
@@ -500,6 +541,7 @@ The cards contain only graphical icons and shape diagrams, never any letters or 
 | 讲流程 | S2 / S7 |
 | 强调人味 | S4 |
 | 讲 AI/LLM 概念（Transformer / 注意力 / RAG / Agent） | S8 |
+| 讲"它怎么运作"（how-it-works / Agent 系统 / 数据流转 / 拟人叙事） | S9 |
 | 泛用兜底 | S1 |
 
 每张图最终都会再经过位置轮转，补上镜头、构图、配色、材质、光线和尺度变化。

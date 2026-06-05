@@ -194,6 +194,22 @@ class VisualStyleSelectionTests(TestCase):
         style = select_visual_style_from_prompt("A framework showing the relationship between modules")
         self.assertEqual(style["preset"], "hand-drawn infographic poster")
 
+    def test_how_it_works_prompts_pick_mascot_explainer(self):
+        # S9 narrate-how-it-works wins over S2/S8 for explainer/agent narratives.
+        style = select_visual_style_from_prompt("How an agent system works with sub-models")
+        self.assertEqual(style["preset"], "cartoon mascot explainer")
+
+    def test_mascot_explainer_does_not_steal_structure_or_ai(self):
+        # S9 must NOT hijack plain structure diagrams (→ S2) or pure AI concepts (→ S8).
+        self.assertEqual(
+            select_visual_style_from_prompt("system architecture diagram with api gateway")["preset"],
+            "hand-drawn infographic poster",
+        )
+        self.assertEqual(
+            select_visual_style_from_prompt("transformer self-attention mechanism")["preset"],
+            "ai tutorial cover style",
+        )
+
     def test_benchmark_prompts_pick_data_viz(self):
         style = select_visual_style_from_prompt("A comparison chart of latency and throughput")
         self.assertEqual(style["preset"], "clean data visualization style")
