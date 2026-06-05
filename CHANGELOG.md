@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.9.10] - 2026-06-05 — minimax 1500 字符上限守卫 + S9 实证补档
+
+### Why
+
+S9 用 minimax 实测（2026-06-05）暴露两个问题：① minimax API 限 prompt < 1500 字符，S9 完整
+组装 prompt 超限 → `base_resp 2013` 直接失败；而 minimax 在 fallback 链排第一，任何长 stem 风格
+（S8/S9）走默认链都会先在 minimax 上**白白失败一次**再 fallback。② 即便砍短能出，minimax 只渲对
+4 个大面板标签，标题/箭头/气泡全糊（`EXPLAIIIER`/`wrikes code`）。结论：S9 只能 gemini——再加一个
+比"必糊"更硬的理由。
+
+### Added
+
+- `MINIMAX_PROMPT_CHAR_LIMIT = 1500`（`image_providers.py`）+ **客户端预检**：
+  `MinimaxProvider.generate` 对超限 prompt 立即抛清晰错误（取代服务端天书 `base_resp 2013`），
+  且在 deps/key/network 之前 fail fast。
+- **出图主循环守卫**：prompt ≥ 1500 字符时自动**跳过 minimax**、直接走后备（文字更强的）模型，
+  省掉一次注定失败的尝试。
+- `tests/test_minimax_prompt_limit.py`（3 测试：常量、超限报错、边界）。
+
+### Docs
+
+- `image-guide.md` S9 段底线 #1：补 minimax 两个硬伤（1500 上限 + 文字质量）的 2026-06-05 实证对比。
+
 ## [1.9.9] - 2026-06-05 — 修复子进程用字面量 python3 导致非标准环境出图失败
 
 ### Why

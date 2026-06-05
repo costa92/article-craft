@@ -486,8 +486,13 @@ The cards contain only graphical icons and shape diagrams, never any letters or 
 
 > ⚠️ **这是全系列文字密度最高的风格**（标题 + 代码 + 气泡 + 标签满屏），文字渲染要求比 S2 更硬：
 >
-> 1. **必须 `--model gemini-2.5-flash-image`**。minimax 在这种密集文字场景必糊（2026-06-04 S2 实证已证，
->    S9 文字更密，minimax 完全不可用）。
+> 1. **必须 `--model gemini-2.5-flash-image`**。minimax 对 S9 有**两个硬伤**（2026-06-05 S9 实测）：
+>    - **硬拦**：minimax API 限制 prompt < 1500 字符，而 S9 完整 stem 经流水线注入后**超 1500，直接报错出不了图**
+>      （`base_resp 2013`）。脚本现在会**自动跳过 minimax**、直接走后备模型（见 `MINIMAX_PROMPT_CHAR_LIMIT`），
+>      但若你显式 `--model minimax-image-01` 仍会失败。
+>    - **质量**：即便砍短能出，minimax 只有 4 个大面板标签能渲对，**标题/箭头标签/气泡全糊成 gibberish**
+>      （`EXPLAIIIER`/`wrikes code`/`criture valuei`）。对比 gemini：同图所有文字清晰，仅偶发单字符瑕疵。
+>      → minimax 留给纯风格/极稀疏标签的图（S1/S4/S6），S9 这种满屏小文字**只能 gemini**。
 > 2. **英文 only**（同 S2）。气泡、标题、标签、箭头说明一律英文短句；`check_rule_16` 对 S9 也照拦 CJK。
 > 3. **气泡只放短句**（≤6 词），如 `"I have a question!"` / `"One job at a time!"`。
 > 4. **内嵌代码/数字是装饰性的，不保证准确**。faux REPL（`>>> len(chunk)`）可以有，但精确数字

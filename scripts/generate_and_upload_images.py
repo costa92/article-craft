@@ -858,7 +858,10 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
     # existing per-call timeout boundary (tenacity-wrapped below) and
     # the in-process migration is deferred to a later phase to preserve
     # net-zero behaviour.
-    from image_providers import for_model as _provider_for_model
+    from image_providers import (
+        for_model as _provider_for_model,
+        MINIMAX_PROMPT_CHAR_LIMIT,
+    )
 
     last_error_was_rate_limit = False
     last_error_msg = ""
@@ -866,8 +869,21 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
         try:
             provider = _provider_for_model(current_model)
             if provider is not None and provider.name == "minimax":
-                print(f"   尝试 {i}/{len(model_chain)}: 使用 {current_model}")
                 prompt = _minimax_prompt(config, enhance)
+                # Skip Minimax up front when the prompt exceeds its hard char
+                # limit (long-stem S8/S9 styles) — going straight to the next
+                # (text-stronger) model avoids one guaranteed-to-fail attempt.
+                if len(prompt) >= MINIMAX_PROMPT_CHAR_LIMIT:
+                    print(
+                        f"   ⏭️  跳过 {current_model}: prompt {len(prompt)} 字符 ≥ "
+                        f"minimax 上限 {MINIMAX_PROMPT_CHAR_LIMIT}（长 stem 风格直接走后备模型）"
+                    )
+                    last_error_msg = (
+                        f"minimax skipped: prompt {len(prompt)} chars "
+                        f">= {MINIMAX_PROMPT_CHAR_LIMIT}"
+                    )
+                    continue
+                print(f"   尝试 {i}/{len(model_chain)}: 使用 {current_model}")
                 _generate_minimax_image_with_options(
                     current_model,
                     prompt,
