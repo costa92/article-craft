@@ -69,6 +69,13 @@ except ImportError:
 _MINIMAX_API_URL = "https://api.minimaxi.com/v1/image_generation"
 _DEFAULT_REQUEST_TIMEOUT = 120
 
+# Minimax rejects prompts >= 1500 chars (API base_resp 2013: "prompt length
+# must be less than 1500"). Long-stem styles (S8 black-card / S9 mascot
+# explainer) blow past this once the pipeline injects style tokens. The model
+# chain uses this to skip Minimax for over-limit prompts and fall straight to a
+# text-stronger model (gemini), rather than wasting one doomed attempt.
+MINIMAX_PROMPT_CHAR_LIMIT = 1500
+
 
 def _load_env_json() -> dict:
     """Resolve ~/.claude/env.json silently (returns {} on missing/invalid).
@@ -235,6 +242,16 @@ class MinimaxProvider:
         resolution: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> None:
+        # Fail fast with a clear message (before any deps/key/network) instead
+        # of the server's cryptic base_resp 2013 when the prompt is over the
+        # hard length limit.
+        if len(prompt) >= MINIMAX_PROMPT_CHAR_LIMIT:
+            raise RuntimeError(
+                f"Minimax prompt too long ({len(prompt)} chars >= "
+                f"{MINIMAX_PROMPT_CHAR_LIMIT}); use a text-stronger model "
+                f"(e.g. gemini-2.5-flash-image) for long-stem styles."
+            )
+
         if not _REQUESTS_AVAILABLE:
             raise RuntimeError("requests not installed (minimax provider needs it)")
         if not _PIL_AVAILABLE:
