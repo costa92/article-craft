@@ -1446,6 +1446,19 @@ VISUAL_STYLE_PRESETS = {
         "lighting": ("high-key illumination", "diffused studio light"),
         "scale": ("medium-scale balanced objects", "wide contextual scale"),
     },
+    # S9 卡通吉祥物讲解漫画 / Cartoon Mascot Explainer (image-guide.md).
+    # 拟人吉祥物 + 对话气泡 + 功能色区 + 分色箭头 + 内嵌终端，讲 how-it-works /
+    # 架构原理 / Agent 系统 / 数据流转。文字密度极高（标题/代码/气泡），只能 gemini
+    # 出图——minimax 必糊。与 S2 共存：S2 静态知识地图，S9 拟人叙事漫画。签名打进
+    # background 锁感觉；image-guide.md S9 段有完整 stem 让作者抄到 PROMPT 开头。
+    "cartoon mascot explainer": {
+        "triggers": ("how it works", "how-it-works", "explainer", "explainer comic", "mascot", "cartoon mascot", "agent system", "multi-agent", "sub-model", "sub-models", "cartoon mascot explainer", "mascot diagram", "anthropomorphic", "speech bubble"),
+        "palette": ("soft pastel functional color zones (blue, green, purple) with cyan mascot accents", "soft pastel zones (sky blue, mint, lavender) with cyan and yellow sticky-note accents"),
+        "background": "clean white background, cute anthropomorphic mascot characters (friendly round robots with cyan smiley faces, simple animal characters) with short English speech bubbles, soft pastel rounded color-zone panels grouping each component by role, color-coded hand-drawn arrows with short English labels, comic-style starbursts and sparkles, one small inline dark terminal/REPL panel, warm approachable technical explainer comic aesthetic",
+        "treatment": ("narrative comic layout with character dialogue and labeled arrows", "functional color-zoned panels with mascots and short captions"),
+        "lighting": ("flat even lighting", "soft daylight"),
+        "scale": ("wide contextual scale", "mixed-scale composition"),
+    },
 }
 
 DEFAULT_VISUAL_STYLE = {
@@ -1458,6 +1471,14 @@ DEFAULT_VISUAL_STYLE = {
 }
 
 DESIGN_LOGIC_RULES = (
+    {
+        # S9 卡通吉祥物讲解漫画。放在 ai-tutorial 之前：讲"agent 系统怎么运作"应走
+        # 拟人叙事漫画，而非 S8 黑底知识卡。触发词窄而独特（不含 system/flow/diagram
+        # 这类泛词），不抢 S2/S8 地盘；纯概念 AI（transformer/attention）仍落到 ai-tutorial。
+        "primary_goal": "narrate how a system works",
+        "triggers": ("how it works", "how-it-works", "explainer", "explainer comic", "mascot", "cartoon mascot", "agent system", "multi-agent", "sub-model", "sub-models", "cartoon mascot explainer", "mascot diagram", "anthropomorphic", "speech bubble"),
+        "preset": "cartoon mascot explainer",
+    },
     {
         "primary_goal": "teach AI/LLM concept",
         "triggers": (
