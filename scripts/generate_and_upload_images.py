@@ -882,7 +882,10 @@ def generate_image(config: ImageConfig, resolution: str = "2K", model: str = "ge
                 return True
 
             cmd = [
-                "python3",
+                # sys.executable (not literal "python3") so the child inherits the
+                # parent's interpreter/venv — else it falls back to system python3,
+                # which may lack the image deps and trigger a runtime pip install.
+                sys.executable,
                 NANOBANANA_PATH,
                 "--prompt", config.prompt,
                 "--size", size,
@@ -2764,7 +2767,7 @@ def main():
             try:
                 result = subprocess.run(
                     [
-                        "python3", NANOBANANA_PATH,
+                        sys.executable, NANOBANANA_PATH,
                         "--prompt", "test",
                         "--size", "1024x1024",
                         "--model", model_name,

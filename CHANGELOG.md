@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.9] - 2026-06-05 — 修复子进程用字面量 python3 导致非标准环境出图失败
+
+### Why
+
+`generate_and_upload_images.py` spawn `nanobanana.py` 子进程时用字面量 `"python3"`（系统解释器）
+而非 `sys.executable`，子进程**不继承父进程的 venv/解释器**。在 venv 或依赖未全局安装的环境下，
+子进程落到缺依赖的系统 python3 → 触发运行时自动 `pip install` → 在 PEP 668 externally-managed
+环境直接报错、出图全失败。S9 端到端验证时实测复现（4 次尝试全挂）。
+
+### Fixed
+
+- `generate_and_upload_images.py` 两处 spawn——主出图（L885）、Gemini 模型探测（L2767）：
+  `"python3"` → `sys.executable`，对齐同文件已有正确范本（L992 早已用 `sys.executable`）。
+- 验证：用原始复现条件（venv 父进程 + 系统 python3 缺依赖）重跑，修复后**首次尝试即出图成功**。
+
 ## [1.9.8] - 2026-06-05 — 新增 S9 卡通吉祥物讲解漫画风格（讲"它怎么运作"，与 S2 共存）
 
 ### Why
