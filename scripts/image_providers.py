@@ -272,15 +272,21 @@ class MinimaxProvider:
             payload["width"] = width
             payload["height"] = height
 
-        response = requests.post(
-            _MINIMAX_API_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=timeout or _DEFAULT_REQUEST_TIMEOUT,
-        )
+        try:
+            response = requests.post(
+                _MINIMAX_API_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=timeout or _DEFAULT_REQUEST_TIMEOUT,
+            )
+        except requests.exceptions.ConnectionError as exc:
+            raise RuntimeError(
+                f"Minimax API socket connection closed unexpectedly "
+                f"(url={_MINIMAX_API_URL}, timeout={timeout or _DEFAULT_REQUEST_TIMEOUT}s): {exc}"
+            ) from exc
         if response.status_code >= 400:
             raise RuntimeError(
                 f"Minimax API error {response.status_code}: {(response.text or '')[:200]}"
@@ -525,15 +531,21 @@ class OpenAIImageProvider:
             "size": size,
         }
 
-        response = requests.post(
-            _OPENAI_API_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=timeout or _DEFAULT_REQUEST_TIMEOUT,
-        )
+        try:
+            response = requests.post(
+                _OPENAI_API_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=timeout or _DEFAULT_REQUEST_TIMEOUT,
+            )
+        except requests.exceptions.ConnectionError as exc:
+            raise RuntimeError(
+                f"OpenAI API socket connection closed unexpectedly "
+                f"(url={_OPENAI_API_URL}, timeout={timeout or _DEFAULT_REQUEST_TIMEOUT}s): {exc}"
+            ) from exc
         if response.status_code >= 400:
             raise RuntimeError(
                 f"OpenAI API error {response.status_code}: {(response.text or '')[:200]}"
