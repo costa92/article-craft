@@ -145,11 +145,17 @@ HEDGE_POSTFIXES = [
     r'^\s*(左右|上下|前后|出头|出点|多一些|少一些|或更多|或更少|不到|开外)',
 ]
 
-# 不算虚构数字的特殊模式（年份、版本号等）
+# 不算虚构数字的特殊模式（年份、月份等时间参照）
 EXCLUDED_PATTERNS = [
     r'^(19|20)\d{2}\s*年',     # 年份 19xx/20xx 年
     r'^\d+\s*年(?:代)?$',         # 80 年代 / 2025 年
+    r'^(?:1[0-2]|[1-9])\s*月$',   # 日历月份 1-12 月（"6 月 21 日"）；18 月等仍报
 ]
+
+# Rule 24 分桶：结构性计数单位（枚举文章自身范围内的事物，非可捏造的测量值）。
+# 命中仍逐条 warning，但不计入 >5 高密度阈值——只有新颖声明（%/倍/时间/
+# 容量/金钱/tokens/吞吐/行数）计数，防止"这 3 个技巧"类结构引用稀释信号。
+STRUCTURAL_COUNT_UNITS = {'个', '篇', '条', '次', '轮', '组', '文件', '人', '起'}
 
 # Rule 18: AIGC 显式标识合规（GB 45438-2025 + cac.gov.cn 标识办法）
 # 任一匹配即认为有 AIGC 标识
@@ -1865,6 +1871,7 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
 
     violations: List[Violation] = []
     seen_per_line: set = set()  # 同行同数字只报一次
+    novel_count = 0  # 仅新颖声明（非结构性计数）计入高密度阈值
 
     for line_no, line in enumerate(lines, 1):
         if line_no in code_lines:
@@ -1922,6 +1929,8 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
                 continue
             seen_per_line.add(key)
 
+            if unit not in STRUCTURAL_COUNT_UNITS:
+                novel_count += 1
             violations.append(Violation(
                 line=line_no,
                 text=f"未标注来源: {full_match[:30]}",
@@ -1934,15 +1943,17 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
                 severity="warning",
             ))
 
-    # 阈值：>5 个未标注数字视为高密度警告（仍不阻断）
-    high_density = len(violations) > 5
+    # 阈值：>5 个新颖声明视为高密度警告（仍不阻断）；结构性计数不计入
+    high_density = novel_count > 5
 
     return CheckResult(
         rule_id=24, rule_name="虚构数字检测",
         passed=True,  # 永远 passed（warning 级）
         violations=violations,
         details=(
-            f"{len(violations)} 个未标注数字声明" + (" (高密度)" if high_density else "")
+            f"{len(violations)} 个未标注数字声明"
+            f"（新颖 {novel_count} / 结构计数 {len(violations) - novel_count}）"
+            + (" (高密度)" if high_density else "")
             if violations
             else "无未标注具体数字"
         ),
