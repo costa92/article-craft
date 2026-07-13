@@ -237,16 +237,24 @@ These are architectural gaps **intentionally deferred** because they require coo
   `tests/test_attribution_anchor.py`). Rule 5 remains detect-only,
   review-stage. See `references/self-check-rules.md` Rule 5/6 sections.
 
-- **Rule 24 (虚构数字) high warning-density tolerance.** v1.7.4 dogfood
-  article generates 36 unverified-number warnings (mostly version numbers
-  like `v1.7.0/1/2/3/4` and self-evident counts like "5 个 release"). The
-  rule is intentionally warning-only (not blocking), but if authors learn
-  to ignore high-density warnings the rule loses signal value. Two
-  possible refinements: (a) auto-exempt version-number patterns
-  (`v\d+\.\d+\.\d+`), (b) bucket warnings by "novel claim" vs "structural
-  reference" and only count novel claims toward the high-density threshold.
-
 ### Closed (kept for historical context)
+
+- ~~**Rule 24 (虚构数字) high warning-density tolerance**~~. Closed
+  2026-07-13 (v1.9.11). Field profiling over the 39 window-period KB
+  articles (480 warnings) showed the debt item's premise was stale:
+  version numbers were **already** exempt via the `(?<![`\w\.])`
+  lookbehind in `NUMERIC_CLAIM_PATTERN` (pinned by
+  `tests/test_rule_24_noise_buckets.py::VersionNumberPinTests`); the real
+  noise classes were calendar months ("6 月", top single pattern at 29
+  hits) and structural counts ("3 个"/"5 篇"). Fix implements both
+  refinements adjusted to the data: (a') calendar months 1-12 join the
+  year patterns in `EXCLUDED_PATTERNS`; (b) warnings are bucketed —
+  `STRUCTURAL_COUNT_UNITS` (个/篇/条/次/轮/组/文件/人/起) still warn
+  individually but only **novel claims** (measurements: %/倍/时间/容量/
+  金钱/tokens/吞吐/行) count toward the >5 高密度 flag. Corpus effect:
+  warnings 480 → 418 (-13%), 高密度-flagged articles 24 → 17 (-29%),
+  novel-claim signal fully preserved. Contract in
+  `tests/test_rule_24_noise_buckets.py` (10 tests).
 
 - ~~**v1.7.4 augmentation path needs 4-6 week field validation**~~. Closed
   2026-07-13. The dogfood experiment was n=1; the field audit ran

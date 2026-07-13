@@ -316,15 +316,18 @@ reading_time: 5 分钟
 
 class HighDensityWarningTests(unittest.TestCase):
     def test_high_density_marker(self):
-        """When >5 unverified numbers appear, details should say 高密度."""
-        # 6 unverified numbers
+        """When >5 unverified NOVEL claims appear, details should say 高密度.
+
+        Since the noise-bucket refinement, structural counts (个/文件/…)
+        no longer count toward the threshold — fixture uses 6 novel claims.
+        """
         content = """---
 title: t
 ---
 
 # T
 
-数字 1: 30%。数字 2: 50%。数字 3: 100 美元。数字 4: 200 个。数字 5: 500 行。数字 6: 1000 文件。
+数字 1: 30%。数字 2: 50%。数字 3: 100 美元。数字 4: 200 tokens。数字 5: 500 行。数字 6: 16GB。
 """
         result, v = run_rule_24(content)
         self.assertGreater(len(v), 5)
