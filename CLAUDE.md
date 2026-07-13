@@ -115,9 +115,13 @@ in `style-guide.md` `### Style G + opinionated 加强模板` section feeds
 1 dogfood article passes 23/23 vs 4 historical articles' 14.5/23 average,
 suggesting the augmentation path works without forcing reviewer loops.
 
-**Empirical validation cadence:** 4-6 week observation window for v1.7.4
-augmentation effectiveness. If new articles' Rule 17/22 pass rate doesn't
-hold above 80%, v1.7.5 starts the gating path as plan B.
+**Empirical validation (closed 2026-07-13):** the 4-6 week observation
+window for v1.7.4 augmentation effectiveness ran 2026-05-22 → 2026-07-03.
+Audit of 37 pipeline articles published in the window: Rule 17 pass rate
+100% (37/37), Rule 22 pass rate 86% (32/37) — both above the 80%
+threshold, so the gating plan B (adding Rules 5/17/22 to
+`WRITE_GATE_RULES`) is **not** triggered. Augmentation stays the
+mechanism of record.
 
 **A/B tier research basis:** all v1.7.x rule additions trace to A-tier
 official sources (cac.gov.cn / openstd.samr.gov.cn / mp.weixin.qq.com or
@@ -242,13 +246,21 @@ These are architectural gaps **intentionally deferred** because they require coo
   (`v\d+\.\d+\.\d+`), (b) bucket warnings by "novel claim" vs "structural
   reference" and only count novel claims toward the high-density threshold.
 
-- **v1.7.4 augmentation path needs 4-6 week field validation.** The dogfood
-  experiment is n=1. If new articles by Costa or other adopters don't
-  consistently hit 80%+ Rule 17/22 pass rate, v1.7.5 starts the gating
-  path as plan B (adding Rules 5/17/22 to `WRITE_GATE_RULES` despite
-  the 8-12% FP penalty).
-
 ### Closed (kept for historical context)
+
+- ~~**v1.7.4 augmentation path needs 4-6 week field validation**~~. Closed
+  2026-07-13. The dogfood experiment was n=1; the field audit ran
+  `review_selfcheck.py --rules 17,22` over the 37 pipeline-produced
+  articles (frontmatter `tone:`/`body_form:` markers + `date:` ≥
+  2026-05-22) in the KB. Result: **Rule 17 = 100% (37/37), Rule 22 = 86%
+  (32/37)** — both above the 80% bar, so plan B (adding Rules 5/17/22 to
+  `WRITE_GATE_RULES` with its 8-12% FP penalty) is not triggered;
+  augmentation > gating holds in the field. The 5 Rule 22 failures were
+  all single-dimension misses (缺具体数字 or 缺主观判断 — e.g. the
+  harness-engineering series installments 03-05 and the 2026-06 AI
+  monthly), not wholesale personalization failures; they suggest a
+  possible follow-up refinement (surface the missing dimension as a write
+  hint) rather than a gate.
 
 - ~~**Images parallel path still lacks coordinated backoff**~~. Fixed in v1.4.3 for the **sequential** batch loop. The **parallel** path now also has worker-coordinated backoff via `_ParallelRateLimitCoordinator` in `scripts/generate_and_upload_images.py` — when one worker exhausts the model fallback chain (`RateLimitExhausted`), it sets a shared pause window and every other worker blocks in `wait_if_paused()` before its next `generate_image()` call. Multiple concurrent rate-limit signals coalesce into the longest end-time. Per-image attempt counters preserve sequential-equivalent semantics. Exercised by `tests/test_image_parallel_backoff.py` (13 tests, runs in <2s by patching `BATCH_BACKOFF_DELAYS_SEC` / `BATCH_BACKOFF_JITTER_MAX_SEC`).
 - ~~**Self-check rules are duplicated across three skills**~~. Closed via the v1.4.x refactor: `write/SKILL.md` Step 7 explicitly delegates content-quality rules to `review` Phase 1 and only checks downstream-skill handoff contracts; `lint/SKILL.md` invokes `scripts/lint_article.py` for Rule 5 mechanical fixes; `review/SKILL.md` Phase 1 references rules by number from `references/self-check-rules.md`. The canonical rules now live in one place.
