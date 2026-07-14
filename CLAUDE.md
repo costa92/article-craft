@@ -254,7 +254,13 @@ These are architectural gaps **intentionally deferred** because they require coo
   金钱/tokens/吞吐/行) count toward the >5 高密度 flag. Corpus effect:
   warnings 480 → 418 (-13%), 高密度-flagged articles 24 → 17 (-29%),
   novel-claim signal fully preserved. Contract in
-  `tests/test_rule_24_noise_buckets.py` (10 tests).
+  `tests/test_rule_24_noise_buckets.py` (10 tests). **v1.9.12 follow-up**
+  (adversarial review of PR #26 found 3 fixable signal regressions): the
+  month exemption moved out of `EXCLUDED_PATTERNS` into a context-aware
+  `CALENDAR_MONTH_PATTERN` — covers ranges ("6-8 月") and yields to
+  duration cues (历时/耗时/花了/持续了/长达… before, 之久 after), so
+  "历时 6 月" warns again; `个`+time-word ("6 个月") is bucketed novel via
+  `GE_TIME_UNIT_AFTER`. 8 more tests in the same file.
 
 - ~~**v1.7.4 augmentation path needs 4-6 week field validation**~~. Closed
   2026-07-13. The dogfood experiment was n=1; the field audit ran
