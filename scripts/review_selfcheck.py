@@ -145,12 +145,29 @@ HEDGE_POSTFIXES = [
     r'^\s*(左右|上下|前后|出头|出点|多一些|少一些|或更多|或更少|不到|开外)',
 ]
 
-# 不算虚构数字的特殊模式（年份、月份等时间参照）
+# 不算虚构数字的特殊模式（年份等时间参照）
 EXCLUDED_PATTERNS = [
     r'^(19|20)\d{2}\s*年',     # 年份 19xx/20xx 年
     r'^\d+\s*年(?:代)?$',         # 80 年代 / 2025 年
-    r'^(?:1[0-2]|[1-9])\s*月$',   # 日历月份 1-12 月（"6 月 21 日"）；18 月等仍报
 ]
+
+# 日历月份（1-12 月，含 "6-8 月" 区间，两端都须 1-12）——与年份同类的时间
+# 参照，默认豁免。但需要行上下文消歧："历时 6 月"/"拖了 9 月之久" 是时长
+# 声明而非日历引用，不能豁免——所以不进 EXCLUDED_PATTERNS（那里只看
+# full_match 本身），在 check_rule_24 里单独判定。
+CALENDAR_MONTH_PATTERN = re.compile(
+    r'^(?:1[0-2]|[1-9])(?:\s*[-~–]\s*(?:1[0-2]|[1-9]))?\s*月$'
+)
+# 时长线索：命中则 "N 月" 按时长声明处理（照常 warning，计新颖桶）。
+# 注意用 "持续了/坚持了"（带 了）——"持续到 6 月" 指向日历日期，仍豁免。
+DURATION_CUE_BEFORE = re.compile(
+    r'(历时|耗时|花了|花费|用了|用时|持续了|坚持了|长达|熬了|等了)\s*$'
+)
+DURATION_CUE_AFTER = re.compile(r'^\s*之久')
+
+# 个-量词后接时间词（"6 个月"/"3 个小时"）是时长测量：NUMERIC_CLAIM_PATTERN
+# 的单位交替先捕获 "个"，若不看后文会把时长错分进结构计数桶。
+GE_TIME_UNIT_AFTER = re.compile(r'^(?:月|小时|星期|周|天|分钟|秒)')
 
 # Rule 24 分桶：结构性计数单位（枚举文章自身范围内的事物，非可捏造的测量值）。
 # 命中仍逐条 warning，但不计入 >5 高密度阈值——只有新颖声明（%/倍/时间/
@@ -1923,13 +1940,24 @@ def check_rule_24(content: str, lines: List[str]) -> CheckResult:
             if any(re.match(pat, full_match) for pat in EXCLUDED_PATTERNS):
                 continue
 
+            # 豁免 6b: 日历月份（含区间）——除非上下文是时长声明
+            if CALENDAR_MONTH_PATTERN.match(full_match):
+                before = line[max(0, start - 8):start]
+                after = line[m.end():m.end() + 4]
+                if not (DURATION_CUE_BEFORE.search(before)
+                        or DURATION_CUE_AFTER.match(after)):
+                    continue
+
             # 同行同数字+单位只报一次
             key = (line_no, num_str, unit)
             if key in seen_per_line:
                 continue
             seen_per_line.add(key)
 
-            if unit not in STRUCTURAL_COUNT_UNITS:
+            is_structural = unit in STRUCTURAL_COUNT_UNITS
+            if unit == '个' and GE_TIME_UNIT_AFTER.match(line[m.end():]):
+                is_structural = False  # "6 个月" 是时长测量，不是结构计数
+            if not is_structural:
                 novel_count += 1
             violations.append(Violation(
                 line=line_no,
