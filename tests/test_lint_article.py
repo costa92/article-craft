@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from py_exe import PYTHON
+
 
 def load_lint_article_module():
     module_path = Path(__file__).resolve().parents[1] / "scripts" / "lint_article.py"
@@ -269,7 +271,7 @@ uv sync
         article_path = self._write_temp_article(text, frontmatter="writing_style: B\ntone: casual")
         repo_root = Path(__file__).resolve().parent.parent
         subprocess.run(
-            ["python3", "-m", "scripts.lint_article", "--article", str(article_path), "--fix"],
+            [PYTHON, "-m", "scripts.lint_article", "--article", str(article_path), "--fix"],
             check=True, cwd=str(repo_root),
         )
         result = article_path.read_text(encoding="utf-8")

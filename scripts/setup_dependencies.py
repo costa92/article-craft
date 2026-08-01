@@ -615,63 +615,202 @@ def check_network_reachability() -> dict[str, Any]:
     )
 
 
-def check_script_entrypoints() -> dict[str, Any]:
-    """Verify review/lint scripts start under `python3 path/to/script.py`.
+# Imports skills need when agents run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*.py`.
+# Keep this list minimal but blocking — yaml is required for frontmatter in
+# review_selfcheck / lint_article / publish_plan.
+PATH_PYTHON_CRITICAL_IMPORTS: tuple[str, ...] = ("yaml",)
 
-    Historical failure mode: `lint_article.py` used `from scripts.config`
-    which only works as `python3 -m scripts.lint_article` from the repo root.
-    Skills invoke `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/<name>.py ...`, so a
-    broken import path surfaces as ModuleNotFoundError at review/lint time —
-    after the user already wrote a full article. This check fails fast.
+
+def _path_python3() -> str | None:
+    """Resolve PATH ``python3`` (what skill docs and agents actually invoke)."""
+    return shutil.which("python3")
+
+
+def _same_python(a: str | None, b: str | None) -> bool:
+    if not a or not b:
+        return False
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(
+            os.path.abspath(b)
+        )
+
+
+def _probe_python_imports(python_bin: str, modules: tuple[str, ...]) -> list[str]:
+    """Return list of modules that fail to import under *python_bin*."""
+    missing: list[str] = []
+    for mod in modules:
+        try:
+            proc = subprocess.run(
+                [python_bin, "-c", f"import {mod}"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            missing.append(f"{mod} ({type(exc).__name__})")
+            continue
+        if proc.returncode != 0:
+            missing.append(mod)
+    return missing
+
+
+def check_path_python3() -> dict[str, Any]:
+    """Skills document ``python3 …/scripts/*.py`` — that binary must work.
+
+    ``check_python_dependencies`` only inspects *this* process's interpreter
+    (``sys.executable``). Agents and skill docs invoke bare ``python3`` from
+    PATH, which is often a different Homebrew/pyenv binary with no PyYAML.
+    That mismatch made review/lint CLI explode after a full article write
+    (v1.10.0 dogfood) while doctor still reported python_dependencies: pass.
+    """
+    path_py = _path_python3()
+    if not path_py:
+        return _result(
+            "path_python3",
+            "warn",
+            "python3 not found on PATH (skills document `python3 …/scripts/*.py`)",
+            "Install Python 3 and ensure `python3` is on PATH",
+            {"path_python3": None, "sys_executable": sys.executable},
+        )
+
+    same = _same_python(path_py, sys.executable)
+    missing = _probe_python_imports(path_py, PATH_PYTHON_CRITICAL_IMPORTS)
+    details: dict[str, Any] = {
+        "path_python3": path_py,
+        "sys_executable": sys.executable,
+        "same_as_sys_executable": same,
+        "critical_imports": list(PATH_PYTHON_CRITICAL_IMPORTS),
+        "missing_imports": missing,
+    }
+
+    if missing:
+        same_hint = ""
+        if not same and sys.executable:
+            same_hint = (
+                f"\n  Alternative: put the healthy interpreter first on PATH, e.g.\n"
+                f"    export PATH=\"{Path(sys.executable).parent}:$PATH\"\n"
+                f"  (current sys.executable: {sys.executable})"
+            )
+        return _result(
+            "path_python3",
+            "block",
+            (
+                f"PATH python3 ({path_py}) cannot import: {', '.join(missing)}. "
+                f"Skills invoke this binary, not {sys.executable}."
+            ),
+            (
+                f"Run: {path_py} -m pip install -r {REQUIREMENTS_FILE}\n"
+                f"  If that binary's pip is broken (Homebrew python + libexpat), "
+                f"reinstall Python or repoint `python3`."
+                f"{same_hint}"
+            ),
+            details,
+        )
+
+    if same:
+        return _result(
+            "path_python3",
+            "pass",
+            f"PATH python3 is this interpreter ({Path(path_py).name})",
+            details=details,
+        )
+    return _result(
+        "path_python3",
+        "pass",
+        (
+            f"PATH python3 ({path_py}) differs from sys.executable but critical "
+            f"imports OK"
+        ),
+        details=details,
+    )
+
+
+def _run_entrypoint(
+    python_bin: str, path: Path, argv: list[str]
+) -> str | None:
+    """Run script --help-style probe. Returns error string or None on success."""
+    if not path.exists():
+        return f"missing file: {path}"
+    try:
+        proc = subprocess.run(
+            [python_bin, str(path), *argv],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(SCRIPT_DIR.parent),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"{type(exc).__name__}: {exc}"
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "").strip().splitlines()
+        tail = err[-1] if err else f"exit {proc.returncode}"
+        return tail[:200]
+    return None
+
+
+def check_script_entrypoints() -> dict[str, Any]:
+    """Verify review/lint scripts start under the interpreters agents use.
+
+    Historical failure modes:
+    1. ``lint_article.py`` used ``from scripts.config`` which only works as
+       ``python3 -m scripts.lint_article`` from the repo root.
+    2. Doctor ran under a healthy ``sys.executable`` while skill docs invoke
+       PATH ``python3`` — entrypoints passed here but failed in the agent.
+
+    Probe **both** ``sys.executable`` and PATH ``python3`` (when different).
     """
     targets = (
         ("review_selfcheck", SCRIPT_DIR / "review_selfcheck.py", ["--help"]),
         ("lint_article", SCRIPT_DIR / "lint_article.py", ["--help"]),
     )
+    interpreters: list[tuple[str, str]] = [("sys", sys.executable)]
+    path_py = _path_python3()
+    if path_py and not _same_python(path_py, sys.executable):
+        interpreters.append(("path", path_py))
+
     failures: dict[str, str] = {}
     successes: list[str] = []
-    for name, path, argv in targets:
-        if not path.exists():
-            failures[name] = f"missing file: {path}"
-            continue
-        try:
-            proc = subprocess.run(
-                [sys.executable, str(path), *argv],
-                capture_output=True,
-                text=True,
-                timeout=15,
-                cwd=str(SCRIPT_DIR.parent),
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            failures[name] = f"{type(exc).__name__}: {exc}"
-            continue
-        if proc.returncode != 0:
-            err = (proc.stderr or proc.stdout or "").strip().splitlines()
-            tail = err[-1] if err else f"exit {proc.returncode}"
-            failures[name] = tail[:200]
-        else:
-            successes.append(name)
+    for label, python_bin in interpreters:
+        for name, path, argv in targets:
+            key = f"{name}@{label}"
+            err = _run_entrypoint(python_bin, path, argv)
+            if err:
+                failures[key] = err
+            else:
+                successes.append(key)
 
-    details = {"successes": successes, "failures": failures, "python": sys.executable}
+    details = {
+        "successes": successes,
+        "failures": failures,
+        "python": sys.executable,
+        "path_python3": path_py,
+        "interpreters": [b for _, b in interpreters],
+    }
     if failures:
+        # Prefer install tip for PATH python when path probes failed.
+        path_failed = any(k.endswith("@path") for k in failures)
+        fix_bin = path_py if path_failed and path_py else sys.executable
         return _result(
             "script_entrypoints",
             "block",
             (
-                f"{len(failures)} quality-gate script(s) fail under direct invoke: "
+                f"{len(failures)} quality-gate script probe(s) failed: "
                 + ", ".join(f"{k} ({v})" for k, v in failures.items())
             ),
             (
-                f"Run: {sys.executable} -m pip install -r {REQUIREMENTS_FILE} "
-                f"(and ensure scripts import config via script-dir sys.path, "
-                f"not only `from scripts.config`)"
+                f"Run: {fix_bin} -m pip install -r {REQUIREMENTS_FILE}\n"
+                f"  (skills invoke PATH python3; ensure that binary has deps, "
+                f"not only the interpreter that ran doctor)"
             ),
             details=details,
         )
+    labels = ", ".join(label for label, _ in interpreters)
     return _result(
         "script_entrypoints",
         "pass",
-        f"review/lint scripts start under {Path(sys.executable).name}",
+        f"review/lint scripts start under {labels}",
         details=details,
     )
 
@@ -681,6 +820,7 @@ def run_all_checks(include_network: bool = False) -> list[dict[str, Any]]:
         check_plugin_root(),
         check_env_json(),
         check_python_dependencies(),
+        check_path_python3(),
         check_script_entrypoints(),
         check_gemini_api_key(),
         check_minimax_api_key(),
@@ -738,13 +878,15 @@ def render_human_report(results: list[dict[str, Any]]) -> int:
     return worst
 
 
-def install_missing_python_dependencies() -> bool:
+def install_missing_python_dependencies(python_bin: str | None = None) -> bool:
+    """Install requirements into *python_bin* (default: ``sys.executable``)."""
+    bin_ = python_bin or sys.executable
     try:
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "-q", "-r", str(REQUIREMENTS_FILE)]
+            [bin_, "-m", "pip", "install", "-q", "-r", str(REQUIREMENTS_FILE)]
         )
         return True
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         return False
 
 
@@ -756,11 +898,31 @@ def main() -> int:
     if python_result and python_result["status"] == "block":
         missing = python_result.get("details", {}).get("missing", [])
         if missing:
-            print("📦 Attempting automatic Python dependency install...")
+            print("📦 Attempting automatic Python dependency install (sys.executable)...")
             if install_missing_python_dependencies():
                 print("✅ Python dependencies installed. Re-run this command to verify everything.\n")
             else:
-                print(f"❌ Auto-install failed. Run manually: pip install -r {REQUIREMENTS_FILE}\n")
+                print(
+                    f"❌ Auto-install failed. Run manually: "
+                    f"{sys.executable} -m pip install -r {REQUIREMENTS_FILE}\n"
+                )
+
+    # Skills invoke PATH python3 — if it lacks critical imports, try that binary too.
+    path_result = next((r for r in results if r["name"] == "path_python3"), None)
+    if path_result and path_result["status"] == "block":
+        path_py = (path_result.get("details") or {}).get("path_python3")
+        if path_py and not _same_python(path_py, sys.executable):
+            print(f"📦 Attempting install into PATH python3 ({path_py})...")
+            if install_missing_python_dependencies(path_py):
+                print(
+                    "✅ Installed into PATH python3. Re-run doctor to verify.\n"
+                )
+            else:
+                print(
+                    f"❌ PATH python3 install failed. Run manually:\n"
+                    f"   {path_py} -m pip install -r {REQUIREMENTS_FILE}\n"
+                    f"   (or fix PATH so python3 → a working interpreter)\n"
+                )
 
     return status
 

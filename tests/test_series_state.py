@@ -4,12 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from py_exe import PYTHON
+
 
 class SeriesStateTests(unittest.TestCase):
     def _run(self, *args: str):
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
-            ["python3", str(repo_root / "scripts" / "series_state.py"), *args],
+            [PYTHON, str(repo_root / "scripts" / "series_state.py"), *args],
             capture_output=True,
             text=True,
         )

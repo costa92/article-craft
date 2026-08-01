@@ -213,3 +213,47 @@ def test_marketplace_json_agrees_with_plugin_json():
         f"plugin.json={plugin_v} but marketplace.json plugins[0].version={mp_v}. "
         "Run `python3 scripts/bump_version.py <type>` to fix lockstep."
     )
+
+
+# Literal PATH-python argv is allowed only in these files —
+# content fixtures (verify_claims tool names) or TimeoutExpired mock cmd.
+_PYTHON3_ARGV_ALLOWLIST = {
+    "tests/test_verify_claims.py",
+    "tests/test_doctor.py",
+    "tests/py_exe.py",
+}
+
+# Matches subprocess argv lists that hardcode the PATH binary as first element.
+_HARDCODED_PYTHON3_ARGV = re.compile(
+    r"""\[\s*["']python3["']\s*,""",
+    re.MULTILINE,
+)
+# Drop comments + triple-quoted strings so docs/examples in this file don't trip.
+_CODE_NOISE = re.compile(
+    r"('''.*?'''|\"\"\".*?\"\"\"|#.*?$)",
+    re.DOTALL | re.MULTILINE,
+)
+
+
+def test_cli_tests_do_not_hardcode_path_python3():
+    """v1.10.1: CLI subprocess tests must use sys.executable (via py_exe.PYTHON).
+
+    Hardcoding PATH python3 as the first argv made the suite fail when that
+    binary was a broken/incomplete Homebrew install while pytest itself ran
+    under a healthy interpreter with deps. Skills still document python3;
+    doctor probes PATH separately — tests must not depend on PATH quality.
+    """
+    offenders: list[str] = []
+    for path in (REPO / "tests").glob("test_*.py"):
+        rel = str(path.relative_to(REPO))
+        if rel in _PYTHON3_ARGV_ALLOWLIST:
+            continue
+        text = path.read_text(encoding="utf-8")
+        code_only = _CODE_NOISE.sub("", text)
+        if _HARDCODED_PYTHON3_ARGV.search(code_only):
+            offenders.append(rel)
+    assert not offenders, (
+        "CLI tests hardcode PATH python3 as subprocess argv — use "
+        "`from py_exe import PYTHON` and [PYTHON, ...] instead "
+        f"(see tests/py_exe.py). Offenders: {offenders}"
+    )

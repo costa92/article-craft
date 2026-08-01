@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from py_exe import PYTHON
+
 
 def load_pipeline_state_module():
     module_path = Path(__file__).resolve().parents[1] / "scripts" / "pipeline_state.py"
@@ -258,7 +260,7 @@ class PipelineStateTests(unittest.TestCase):
             repo_root = Path(__file__).resolve().parent.parent
             result = subprocess.run(
                 [
-                    "python3",
+                    PYTHON,
                     str(repo_root / "scripts" / "pipeline_state.py"),
                     "validate-state",
                     "--article",
@@ -280,7 +282,7 @@ class PipelineStateTests(unittest.TestCase):
             repo_root = Path(__file__).resolve().parent.parent
             result = subprocess.run(
                 [
-                    "python3",
+                    PYTHON,
                     str(repo_root / "scripts" / "pipeline_state.py"),
                     "missing-stages",
                     "--article",
@@ -313,7 +315,7 @@ class CheckPublishReadyTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
             [
-                "python3",
+                PYTHON,
                 str(repo_root / "scripts" / "pipeline_state.py"),
                 "check-publish-ready",
                 "--article", str(article_path),

@@ -7,6 +7,8 @@ from unittest import TestCase, main
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from py_exe import PYTHON
+
 import re as _re
 import unittest
 
@@ -169,7 +171,7 @@ class CliFlagsTests(TestCase):
         )
         # Override neutral by passing --tone=casual on the CLI
         result = subprocess.run(
-            ["python3", "-m", "scripts.lint_article",
+            [PYTHON, "-m", "scripts.lint_article",
              "--article", str(article), "--tone", "casual", "--fix"],
             capture_output=True, text=True,
             cwd=Path(__file__).resolve().parent.parent,
@@ -183,7 +185,7 @@ class CliFlagsTests(TestCase):
         import subprocess
         article = _temp_article("无关内容。")
         result = subprocess.run(
-            ["python3", "-m", "scripts.lint_article",
+            [PYTHON, "-m", "scripts.lint_article",
              "--article", str(article), "--tone", "aggressive"],
             capture_output=True, text=True,
             cwd=Path(__file__).resolve().parent.parent,

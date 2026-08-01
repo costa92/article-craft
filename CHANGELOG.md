@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.10.1] - 2026-08-01 — PATH python3 健康检查 + CLI 测试不再硬编码 python3
+
+### Why
+
+v1.10.0 dogfood / 本机全量 pytest 暴露：**pytest 用健康的 python3.13（deps 齐全），测试与 skill 文档却 spawn PATH 上的 `python3`（Homebrew 3.14，缺 PyYAML / libexpat 损坏）**。结果是：
+
+1. `review_selfcheck` CLI 子进程测假失败（`ModuleNotFoundError: yaml`），与本版无关的噪音掩盖真实回归。
+2. doctor 的 `python_dependencies` 只查 `sys.executable`，对 PATH `python3` 失明——agent 按 skill 文档跑 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*.py` 仍会挂，但 preflight 报绿。
+
+### Fixed
+
+- **Tests**：所有 CLI subprocess 改为 `from py_exe import PYTHON`（`sys.executable`）。新增 `tests/py_exe.py` + layout 回归测试 `test_cli_tests_do_not_hardcode_path_python3`，防止再引入字面量 `["python3", ...]`。
+- **Doctor `path_python3` 检查**：探测 PATH `python3` 能否 `import yaml`（critical list 可扩）；失败 **block**，fix 提示对该二进制 `pip install -r requirements` 或调整 PATH。
+- **`script_entrypoints`**：在 sys.executable 之外，若 PATH `python3` 不同则**双解释器**跑 review/lint `--help`；任一侧失败 block。
+- **auto-install**：`path_python3` block 时额外尝试向 PATH 二进制装依赖（pip 本身损坏时给出明确失败信息）。
+
+### Tests
+
+- `test_doctor` +4；layout 回归 1；CLI 相关套件 **134 passed**（含此前因 PATH 假失败的 5 条 write-gate CLI）。
+
 ## [1.10.0] - 2026-08-01 — recap 阶段 + takeaways frontmatter + 脚本入口健壮性 + wechat-native 去 AI 味固化
 
 ### Why

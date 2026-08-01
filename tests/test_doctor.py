@@ -267,6 +267,66 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual(result["status"], "pass")
             self.assertEqual(result["details"]["path"], tmp)
 
+    def test_check_path_python3_blocks_when_critical_import_missing(self):
+        """PATH python3 without PyYAML must block — skills invoke that binary."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            setup, _doctor = self._load_modules(home)
+            fake_path_py = str(Path(tmp) / "fake-python3")
+            with mock.patch.object(setup, "_path_python3", return_value=fake_path_py), \
+                 mock.patch.object(
+                     setup, "_probe_python_imports", return_value=["yaml"]
+                 ), \
+                 mock.patch.object(setup, "_same_python", return_value=False):
+                result = setup.check_path_python3()
+            self.assertEqual(result["status"], "block")
+            self.assertIn("yaml", result["message"])
+            self.assertIn("pip install", result["fix"])
+            self.assertEqual(result["details"]["path_python3"], fake_path_py)
+
+    def test_check_path_python3_passes_when_same_as_sys_and_imports_ok(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            setup, _doctor = self._load_modules(home)
+            with mock.patch.object(setup, "_path_python3", return_value=sys.executable), \
+                 mock.patch.object(setup, "_probe_python_imports", return_value=[]), \
+                 mock.patch.object(setup, "_same_python", return_value=True):
+                result = setup.check_path_python3()
+            self.assertEqual(result["status"], "pass")
+            self.assertTrue(result["details"]["same_as_sys_executable"])
+
+    def test_check_path_python3_warns_when_python3_missing_from_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            setup, _doctor = self._load_modules(home)
+            with mock.patch.object(setup, "_path_python3", return_value=None):
+                result = setup.check_path_python3()
+            self.assertEqual(result["status"], "warn")
+            self.assertIn("not found on PATH", result["message"])
+
+    def test_script_entrypoints_also_probe_path_python_when_different(self):
+        """Entrypoint check must fail under PATH python3 if that binary is broken."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            setup, _doctor = self._load_modules(home)
+            path_py = str(Path(tmp) / "path-python3")
+
+            def fake_run(python_bin, path, argv):
+                # sys.executable ok; PATH binary fails
+                if python_bin == path_py:
+                    return "ModuleNotFoundError: No module named 'yaml'"
+                return None
+
+            with mock.patch.object(setup, "_path_python3", return_value=path_py), \
+                 mock.patch.object(setup, "_same_python", return_value=False), \
+                 mock.patch.object(setup, "_run_entrypoint", side_effect=fake_run):
+                result = setup.check_script_entrypoints()
+            self.assertEqual(result["status"], "block")
+            self.assertTrue(
+                any(k.endswith("@path") for k in result["details"]["failures"]),
+                result["details"],
+            )
+
     def test_network_check_excluded_by_default(self):
         """Default `doctor check` must NOT probe the network."""
         with tempfile.TemporaryDirectory() as tmp:

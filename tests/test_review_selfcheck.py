@@ -2,6 +2,8 @@ import importlib.util
 import unittest
 from pathlib import Path
 
+from py_exe import PYTHON
+
 
 def load_review_selfcheck_module():
     module_path = Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py"
@@ -365,7 +367,7 @@ print(sub(9, 4))
         path = self._write_tmp(draft_with_placeholder)
         script = (Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py")
         proc = subprocess.run(
-            ["python3", str(script), path, "--write-gate"],
+            [PYTHON, str(script), path, "--write-gate"],
             capture_output=True, text=True,
         )
         self.assertEqual(
@@ -407,7 +409,7 @@ print("hi")
         path = self._write_tmp(draft_with_ascii)
         script = (Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py")
         proc = subprocess.run(
-            ["python3", str(script), path, "--write-gate"],
+            [PYTHON, str(script), path, "--write-gate"],
             capture_output=True, text=True,
         )
         self.assertEqual(
@@ -431,7 +433,7 @@ print("hi")
         path = self._write_tmp(self.bad_article)
         script = (Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py")
         proc = subprocess.run(
-            ["python3", str(script), path, "--write-gate"],
+            [PYTHON, str(script), path, "--write-gate"],
             capture_output=True, text=True,
         )
         self.assertEqual(proc.returncode, 1, f"Expected exit 1, got {proc.returncode}\nstdout: {proc.stdout}\nstderr: {proc.stderr}")
@@ -494,7 +496,7 @@ assert result2 == 6
         path = self._write_tmp(clean_article)
         script = (Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py")
         proc = subprocess.run(
-            ["python3", str(script), path, "--write-gate"],
+            [PYTHON, str(script), path, "--write-gate"],
             capture_output=True, text=True,
         )
         self.assertEqual(
@@ -510,7 +512,7 @@ assert result2 == 6
         script = (Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py")
         for bad in ("", ",,,", "  ,  ,"):
             proc = subprocess.run(
-                ["python3", str(script), path, "--rules", bad],
+                [PYTHON, str(script), path, "--rules", bad],
                 capture_output=True, text=True,
             )
             self.assertNotEqual(
@@ -550,7 +552,7 @@ print("ok2")
         script = (Path(__file__).resolve().parents[1] / "scripts" / "review_selfcheck.py")
         # --rules 11 alone should pass even though Rule 1 would fail.
         proc = subprocess.run(
-            ["python3", str(script), path, "--rules", "11", "--write-gate"],
+            [PYTHON, str(script), path, "--rules", "11", "--write-gate"],
             capture_output=True, text=True,
         )
         self.assertEqual(proc.returncode, 0, f"--rules 11 should pass (Rule 1 ignored). stdout: {proc.stdout}")

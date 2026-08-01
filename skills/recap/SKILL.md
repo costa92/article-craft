@@ -1,6 +1,6 @@
 ---
 name: article-craft:recap
-version: 1.10.0
+version: 1.10.1
 description: "收获复盘 — 提炼读者收获清单并复查正文兑现度。诊断性，只写 sidecar，不改正文。"
 allowed-tools:
   - Read
