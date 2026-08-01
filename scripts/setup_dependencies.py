@@ -615,11 +615,73 @@ def check_network_reachability() -> dict[str, Any]:
     )
 
 
+def check_script_entrypoints() -> dict[str, Any]:
+    """Verify review/lint scripts start under `python3 path/to/script.py`.
+
+    Historical failure mode: `lint_article.py` used `from scripts.config`
+    which only works as `python3 -m scripts.lint_article` from the repo root.
+    Skills invoke `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/<name>.py ...`, so a
+    broken import path surfaces as ModuleNotFoundError at review/lint time —
+    after the user already wrote a full article. This check fails fast.
+    """
+    targets = (
+        ("review_selfcheck", SCRIPT_DIR / "review_selfcheck.py", ["--help"]),
+        ("lint_article", SCRIPT_DIR / "lint_article.py", ["--help"]),
+    )
+    failures: dict[str, str] = {}
+    successes: list[str] = []
+    for name, path, argv in targets:
+        if not path.exists():
+            failures[name] = f"missing file: {path}"
+            continue
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(path), *argv],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=str(SCRIPT_DIR.parent),
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            failures[name] = f"{type(exc).__name__}: {exc}"
+            continue
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip().splitlines()
+            tail = err[-1] if err else f"exit {proc.returncode}"
+            failures[name] = tail[:200]
+        else:
+            successes.append(name)
+
+    details = {"successes": successes, "failures": failures, "python": sys.executable}
+    if failures:
+        return _result(
+            "script_entrypoints",
+            "block",
+            (
+                f"{len(failures)} quality-gate script(s) fail under direct invoke: "
+                + ", ".join(f"{k} ({v})" for k, v in failures.items())
+            ),
+            (
+                f"Run: {sys.executable} -m pip install -r {REQUIREMENTS_FILE} "
+                f"(and ensure scripts import config via script-dir sys.path, "
+                f"not only `from scripts.config`)"
+            ),
+            details=details,
+        )
+    return _result(
+        "script_entrypoints",
+        "pass",
+        f"review/lint scripts start under {Path(sys.executable).name}",
+        details=details,
+    )
+
+
 def run_all_checks(include_network: bool = False) -> list[dict[str, Any]]:
     checks = [
         check_plugin_root(),
         check_env_json(),
         check_python_dependencies(),
+        check_script_entrypoints(),
         check_gemini_api_key(),
         check_minimax_api_key(),
         check_openai_api_key(),

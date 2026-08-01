@@ -39,6 +39,7 @@ class PipelineStateTests(unittest.TestCase):
                     "images",
                     "verify_claims",
                     "review",
+                    "recap",
                     "publish",
                 ],
             )
@@ -64,6 +65,7 @@ class PipelineStateTests(unittest.TestCase):
                 "images",
                 "verify_claims",
                 "review",
+                "recap",
                 "publish",
             ]:
                 state.complete_stage(stage, {"ok": True})
@@ -83,6 +85,7 @@ class PipelineStateTests(unittest.TestCase):
                     "images",
                     "verify_claims",
                     "review",
+                    "recap",
                     "publish",
                 ],
             )
@@ -135,7 +138,7 @@ class PipelineStateTests(unittest.TestCase):
             state = pipeline_state.PipelineState(str(article))
             state.set_meta("standard", None)
             for stage in ["requirements", "verify", "write", "screenshot", "share_card",
-                          "images", "verify_claims", "review", "publish"]:
+                          "images", "verify_claims", "review", "recap", "publish"]:
                 state.complete_stage(stage, {"ok": True})
             state.save()
 

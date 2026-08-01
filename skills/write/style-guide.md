@@ -124,6 +124,28 @@ Phase-2 signal). The constraints formerly under "Platform Adaptation Rules"
 - 《微信公众号推荐运营规范》developers.weixin.qq.com/community/develop/doc/000cac23600b40d219814a85467809
 - 2025-03 微信扩大朋友入口测试范围（腾讯新闻 news.qq.com/rain/a/20250321A05GDI00）
 
+### WeChat 低质 / 合规硬约束（v1.10+，写作时贴在屏幕上）
+
+对齐平台与国标后，`wechat-native` 正文还要避开这些**会被判低质或违规**的模式：
+
+| 风险 | 要求 | 写作动作 |
+|---|---|---|
+| **低创作度 AIGC**（推荐规范：非真人自动化 / 空壳整理） | 主体内容须有作者实测、判断、可复现步骤 | ≥2 处第一人称踩坑；≥1 处本机命令输出；禁止纯文档搬运 |
+| **AIGC 标识**（GB 45438-2025 + 珊瑚安全 2025-08-31） | 显式声明 AI 参与；禁止删改平台标识 | 文末脚注 `本文由 AI 辅助创作…`；发布时后台勾选「创作来源 → 内容由 AI 生成」 |
+| **AIGC 反向声明**（Rule 23 error） | 禁止「纯人工 / 无 AI 生成」等伪造 | 绝不写反向声明 |
+| **标题党**（推荐规范） | 禁止震惊体；标题宜 ≤28 字且兑现 | 痛点/数字/反差钩子；正文必须给到标题承诺 |
+| **虚构数字**（Rule 24） | 无来源的「效率提升 300%」类 | 数字旁写环境与日期；估速标 `est.`；未跑的 bench 直说 |
+| **空壳结构** | 手册十二章 + 大表连表 + callout 堆砌 | 3–6 个短节；少表；**无** `> [!abstract]`；段落 1–3 句 |
+| **外链硬堆** | 公众号正文硬链体验差 | 行内 `[名](url)` 或「GitHub 搜项目名」；禁独立「参考资料」章 |
+
+**去 AI 味（wechat-native 优先顺序）**：
+
+1. 开场用**真实失败/选择**，不用「本文将从三方面展开」
+2. 段落长短交错；禁止相邻两段同一句式（概念→解释→代码 连打）
+3. 用「我这台机器 / 我核对过 / 老实交代没跑 bench」替代第三人称说明书
+4. 工具对比只保留**读者会照着做的命令**，删掉百科式「维度大表」
+5. 结语给**一条可复制命令**，不给鸡汤 CTA / 一键三连堆砌
+
 ---
 
 ## Core Principle: Remove "AI Flavor"
@@ -308,7 +330,7 @@ command --option
 ### Forbidden Sections
 
 - "互动环节" (engagement section)
-- "写在最后" (closing thoughts)
+- "写在最后" as empty emotional outro (closing thoughts with no CTA) — prefer a concrete next-step heading like "下次 pull 之前"
 - "一句话总结" (one-line summary)
 - "下期预告" (next episode preview)
 - Standalone "参考资料" / "参考链接" section at the end

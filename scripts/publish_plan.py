@@ -16,7 +16,12 @@ import config
 from utils import SmartDirectoryMatcher
 
 
-SIDECAR_FILES = ("_evidence.json", "_harvest_menu.md")
+SIDECAR_FILES = (
+    "_evidence.json",
+    "_harvest_menu.md",
+    "_recap.md",
+    "_recap.json",
+)
 
 
 def _payload(ok: bool, message: str, details: dict[str, Any], error_code: str | None = None) -> dict[str, Any]:

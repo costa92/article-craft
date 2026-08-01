@@ -28,13 +28,36 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
-from scripts.config import (
-    TONE_REGISTER_LEVELS,
-    TONE_LEXICAL_REWRITES,
-    get_rewrites_for_tone,
-    parse_tone_regions,
-    resolve_tone,
-)
+# Make this script work three ways (mirror review_selfcheck.py):
+#   1. Direct script:    python3 scripts/lint_article.py --article a.md
+#   2. Module from root: python3 -m scripts.lint_article --article a.md
+#   3. Pytest import:    from scripts.lint_article import auto_fix
+# Path 1 historically broke because `from scripts.config` requires the repo
+# root on sys.path. Adding the script dir makes `from config import ...`
+# work when invoked as a file; keep a scripts.* fallback for package imports.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_SCRIPT_DIR)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+try:
+    from config import (  # type: ignore
+        TONE_REGISTER_LEVELS,
+        TONE_LEXICAL_REWRITES,
+        get_rewrites_for_tone,
+        parse_tone_regions,
+        resolve_tone,
+    )
+except ImportError:  # pragma: no cover - package-import fallback
+    from scripts.config import (
+        TONE_REGISTER_LEVELS,
+        TONE_LEXICAL_REWRITES,
+        get_rewrites_for_tone,
+        parse_tone_regions,
+        resolve_tone,
+    )
 
 # ---------------------------------------------------------------------------
 # Test seam: tests inject synthetic rewrites via _set_test_rewrites_hook()

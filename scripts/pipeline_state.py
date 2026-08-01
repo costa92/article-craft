@@ -56,14 +56,14 @@ STATE_FILENAME = ".article-craft-state.json"
 STAGE_STATUSES = {"pending", "running", "completed", "failed", "skipped"}
 KNOWN_STAGES = {
     "requirements", "verify", "evidence", "write", "screenshot",
-    "share_card", "images", "verify_claims", "review", "publish",
+    "share_card", "images", "verify_claims", "review", "recap", "publish",
 }
 
 MODE_STAGES: dict[str, list[str]] = {
     "standard": [
         "requirements", "verify", "evidence",
         "write", "screenshot", "share_card", "images",
-        "verify_claims", "review", "publish",
+        "verify_claims", "review", "recap", "publish",
     ],
     "quick": [
         "requirements", "evidence",
@@ -73,7 +73,7 @@ MODE_STAGES: dict[str, list[str]] = {
     "series": [
         "requirements", "verify", "evidence",
         "write", "screenshot", "share_card", "images",
-        "verify_claims", "review", "publish",
+        "verify_claims", "review", "recap", "publish",
     ],
 }
 
@@ -90,6 +90,7 @@ class Scan:
         in_kb: bool = False,
         has_evidence: bool = False,
         has_harvest_menu: bool = False,
+        has_recap: bool = False,
         tone: str | None = None,
     ):
         self.image_placeholders = image_placeholders
@@ -100,6 +101,7 @@ class Scan:
         self.in_kb = in_kb
         self.has_evidence = has_evidence
         self.has_harvest_menu = has_harvest_menu
+        self.has_recap = has_recap
         self.tone = tone
 
 
@@ -326,6 +328,7 @@ def _scan_article(article_path: Path) -> Scan:
         # even when no state file exists.
         has_evidence=(article_path.parent / "_evidence.json").exists(),
         has_harvest_menu=(article_path.parent / "_harvest_menu.md").exists(),
+        has_recap=(article_path.parent / "_recap.json").exists(),
         tone=tone,
     )
 
@@ -348,6 +351,9 @@ def _stage_done_heuristic(stage: str, scan: Scan) -> bool:
         )
     if stage == "images":
         return scan.image_placeholders == 0 and scan.cdn_images > 0
+    if stage == "recap":
+        # Sidecar from skills/recap — delivery check + takeaway list.
+        return scan.has_recap
     if stage == "publish":
         return scan.in_kb
     return False

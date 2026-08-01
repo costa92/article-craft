@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`article-craft` is a **Claude Code plugin** (not a runtime application) that ships 13 composable skills for the full article generation lifecycle, plus the orchestrator that composes them. The repo is the source that gets installed to `~/.claude/plugins/article-craft/` via `install.sh` or the Claude Code plugin marketplace. Skills are executed by Claude Code itself — this repo contains the prompts, references, and supporting Python scripts, not a service to run.
+`article-craft` is a **Claude Code plugin** (not a runtime application) that ships 14 composable skills for the full article generation lifecycle, plus the orchestrator that composes them. The repo is the source that gets installed to `~/.claude/plugins/article-craft/` via `install.sh` or the Claude Code plugin marketplace. Skills are executed by Claude Code itself — this repo contains the prompts, references, and supporting Python scripts, not a service to run.
 
 **Two verification stages (since v1.4.5):** `verify` runs **before** `write` and vets the *sources* (URL reachability, T0–T5 trust tiering — this is effectively a source-vet stage, the directory kept its name for command compat). `verify-claims` runs **after images, before review** and vets the *article body* (scans shell code blocks for tool names, checks each is on PATH via `scripts/verify_claims.py`).
 
-**WeChat distribution focus (v1.7.x):** Built on the experience of an author whose published WeChat articles consistently underperformed (4 articles, 8 rules with 100% failure rate against `review_selfcheck.py`). The v1.7.x series adds 6 new self-check rules (Rules 18-24, except 21 reserved) targeting WeChat compliance + reach mechanics + LLM systematic failure modes. **Active rule count: 23 (v1.7.4; unchanged through v1.9.3)**. Rule details: `references/self-check-rules.md`. Empirical validation: v1.7.4 dogfood article passes 23/23 vs the original 4 articles' 63% pass rate — augmentation > gating works.
+**WeChat distribution focus (v1.7.x):** Built on the experience of an author whose published WeChat articles consistently underperformed (4 articles, 8 rules with 100% failure rate against `review_selfcheck.py`). The v1.7.x series adds 6 new self-check rules (Rules 18-24, except 21 reserved) targeting WeChat compliance + reach mechanics + LLM systematic failure modes. **Active rule count: 23 (v1.7.4; unchanged through v1.9.10)**. Rule details: `references/self-check-rules.md`. Empirical validation: v1.7.4 dogfood article passes 23/23 vs the original 4 articles' 63% pass rate — augmentation > gating works.
 
 ## Architecture
 
@@ -48,6 +48,14 @@ When making changes: SKILL.md files reference scripts by `${CLAUDE_PLUGIN_ROOT}/
 - `scripts/utils.py` — `PlaceholderManager` (in-place article mutation) and `SmartDirectoryMatcher` (knowledge base auto-placement for publish skill).
 - `scripts/review_selfcheck.py` — the 23-rule self-check invoked by the review skill (`check_rule_1` … `check_rule_24`, with Rule 21 reserved → 23 active, dispatched from `_RULE_DISPATCH` at the bottom of the file). The pre-save write GATE subset is `WRITE_GATE_RULES = (1, 2, 6, 13, 14, 16)` — Rule 11 (placeholder residue) is **not** in the write gate (placeholders are expected pre-images); Rule 14 (ASCII-in-code-blocks) is the pre-images gate. Do not run it standalone from the orchestrator; the review skill calls it internally.
 - `scripts/write_verify_cache.py` — writer counterpart to the verify cache; the verify skill calls it (single-URL or `--batch` JSONL) to populate `~/.cache/article-craft/verify-cache.json`.
+- `scripts/image_providers.py` — image provider abstraction (B7, v1.9.x). Defines an `ImageProvider` Protocol and a compile-time registry (`register()`). Built-in providers: `MinimaxProvider`, `GeminiProvider`, `OpenAIProvider`. Adding a fourth provider means subclassing `ImageProvider` and calling `register()` here — no edits to `generate_and_upload_images.py` / `nanobanana.py` / `config.filter_chain_by_available_keys` needed. Existing module-level functions in those files are kept as thin shims so tests mocking them by name still work.
+- `scripts/uploaders.py` — shared CDN upload helper (B2). Centralizes PicGo output parsing (`parse_picgo_output`) to fix divergent regex/JSON heuristics that had caused silent failures in screenshot and image-gen. Full upload implementations stay in their callers (different error contracts); only the parser is unified here.
+- `scripts/ascii_gate.py` — standalone ASCII diagram gate; standalone CLI (`python3 ascii_gate.py /abs/path/article.md`) that mirrors the Rule 14 threshold (box_count ≥ 5 OR (≥ 2 + arrow_count ≥ 2)) and only flags characters *inside non-executable code blocks*. Exit code 0 = clean, 1 = violations (file:line to stdout), 2 = file not found.
+- `scripts/evidence.py` — batch evidence harvester for Style H articles. Reads a `materials.md` URL list, runs `screenshot_tool.py harvest` on each, and merges results into `_evidence.json` consumed by the write skill in Style H mode.
+- `scripts/publish_plan.py` — atomic publish moves: plans the article + sidecar file (`_evidence.json`, `_harvest_menu.md`) copy/move to the KB directory, computes target paths via `SmartDirectoryMatcher`, and applies them. Called by the publish skill's move step.
+- `scripts/series_state.py` — series state manager; tracks `index`, `title`, `summary`, `status` per article in a series JSON file, used by the series skill to pre-fill requirements across related articles.
+- `scripts/lint_article.py` — rule-based article linter; consumes `TONE_LEXICAL_REWRITES` from `config.py` with Vale-style severity (info/warning/error), honors inline `<!-- lint:disable rule_id -->` regions, and includes a 3-pass oscillation guard. Called by the lint skill.
+- `scripts/doctor.py` — runtime health check; verifies API keys, PicGo, Playwright, `env.json` keys, and model reachability. Called by `/article-craft:doctor [--json]`.
 - `scripts/bump_version.py` — bumps `plugin.json`, `marketplace.json`, and every `skills/*/SKILL.md` frontmatter in lockstep. Accepts `major` / `minor` / `patch` or an explicit `X.Y.Z`. Use `--no-tag` to let the GitHub workflow handle tag creation on push (recommended default).
 - `lib/article-core.js` — tiny Node shim exposing `loadConfig()`, `resolveScriptPath()`, `findSkills()` for any JS-side consumers. Also respects `CLAUDE_PLUGIN_ROOT`.
 
@@ -158,7 +166,7 @@ The **review skill** runs Phase 1 self-check (23 rules, embedded — see `script
 
 ## Common commands
 
-Everything is shell-driven; there is no build system, no test suite, and no linter config in this repo.
+Everything is shell-driven; there is no build system, no linter config in this repo. The test suite lives under `tests/` and uses pytest.
 
 ```bash
 # Install / reinstall the plugin (Python deps, Playwright, PicGo, image-model keys)
@@ -191,6 +199,15 @@ shot-scraper install     # or: playwright install chromium
 # Runtime healthcheck command — thin wrapper around scripts/doctor.py (no matching skill directory)
 /article-craft:doctor          # or: /article-craft:doctor --json
 
+# Run the test suite (excludes Playwright E2E — needs a browser binary)
+python -m pytest tests/ -q --ignore=tests/test_screenshot_e2e.py
+
+# Run a single test file
+python -m pytest tests/test_review_selfcheck.py -v
+
+# Run only the layout + version lockstep tests (fast, no API deps)
+python -m pytest tests/test_plugin_layout.py tests/test_bump_version.py -v
+
 # Bump the plugin version (source of truth: .claude-plugin/plugin.json)
 python3 scripts/bump_version.py patch    # or: major | minor | 1.4.0
 
@@ -205,8 +222,8 @@ python3 scripts/share_card.py -f /abs/path/article.md \
 ## Conventions when editing this repo
 
 - **Paths**: always `${CLAUDE_PLUGIN_ROOT}` in markdown/shell, `process.env.CLAUDE_PLUGIN_ROOT` in JS, read from env/argv in Python. Never `~/.claude/plugins/article-craft/`.
-- **SKILL.md frontmatter**: every skill must declare `name`, `version`, `description`, and `allowed-tools`. All 13 non-orchestrator skills comply (the invariant dates to v1.3.4's 12 skills; share-card became standalone in v1.6.7) — do not regress this. The orchestrator's `allowed-tools` list must stay a superset of the union of what downstream skills declare.
-- **Skill versions**: all 13 non-orchestrator skills track the plugin version in lockstep. When bumping manually, update `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and all `skills/*/SKILL.md` frontmatter in the same commit; `scripts/bump_version.py` does that for you.
+- **SKILL.md frontmatter**: every skill must declare `name`, `version`, `description`, and `allowed-tools`. All 14 non-orchestrator skills comply (the invariant dates to v1.3.4's 12 skills; share-card became standalone in v1.6.7; recap joined in v1.10.0) — do not regress this. The orchestrator's `allowed-tools` list must stay a superset of the union of what downstream skills declare.
+- **Skill versions**: all 14 non-orchestrator skills track the plugin version in lockstep. When bumping manually, update `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and all `skills/*/SKILL.md` frontmatter in the same commit; `scripts/bump_version.py` does that for you.
 - **Version bumps**: `.claude-plugin/plugin.json` is the source of truth, and `scripts/bump_version.py` must update `plugin.json`, `marketplace.json`, and all `skills/*/SKILL.md` frontmatter together. `.github/workflows/tag-release.yml` reads `plugin.json` on push to `main`; if the release for that version doesn't exist, it creates the tag + release (no auto-bump — that was a v1.3.2 bug fixed in v1.3.4). If the release already exists, the workflow is an idempotent no-op, so pushes without a version bump are safe.
 - **Owner auto-merge CI** (`.github/workflows/auto-merge-owner.yml`, since v1.9.0): when the PR author equals `github.repository_owner` and the PR is non-draft, a `gate` job runs the test suite (excludes the Playwright E2E, which has its own workflow) and a `merge` job (`needs: gate`) then `gh pr merge --merge --delete-branch`. Non-owner PRs are left for human review. **Gotcha worth preserving**: a merge push made with `GITHUB_TOKEN` does *not* cascade-trigger `on: push` workflows, so `tag-release.yml` would never fire after an auto-merge and a version bump would ship untagged — the merge job works around this by explicitly `gh workflow run tag-release.yml --ref main` (`workflow_dispatch` is the documented exception to that suppression). If you touch either workflow, keep this dispatch link intact.
 - **Configuration**: all API keys, model selection, S3, timeouts go in `~/.claude/env.json` (see `ENV.md`). Do not add new config files; extend `scripts/config.py` to read additional keys. A populated template lives at `env.example.json` in the repo root — keep it in sync when you add new keys.

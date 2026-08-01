@@ -126,7 +126,7 @@ notebooklm-mcp --help
 ├── .claude-plugin/             # 插件元数据
 │   ├── plugin.json             # 插件配置
 │   └── marketplace.json
-├── skills/                     # 14 个 Skill 模块（orchestrator + 13 子技能）
+├── skills/                     # 15 个 Skill 模块（orchestrator + 14 子技能）
 │   ├── orchestrator/          # 主编排器
 │   ├── write/                 # 文章生成
 │   ├── images/                 # 图片生成

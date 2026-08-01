@@ -17,6 +17,7 @@ import sys
 import json
 import os
 import hashlib
+import tempfile
 import yaml
 import statistics
 from datetime import datetime, timezone
@@ -332,6 +333,106 @@ def frontmatter_end_line(content: str) -> int:
     if not match:
         return 0
     return content[:match.start(1)].count('\n') + 1
+
+
+def extract_section_headings(content: str) -> List[str]:
+    """Return plain `##` section titles from the article body (scaffolding for
+    promise/takeaway analysis). Headings inside fenced code blocks are ignored.
+    """
+    body = get_body(content)
+    headings: List[str] = []
+    for heading, _section_body in get_sections(body):
+        if not heading:
+            continue
+        label = _section_label(heading)
+        if label and label != "导言 / 未命名段落":
+            headings.append(label)
+    return headings
+
+
+def write_takeaways(
+    content: str,
+    takeaways: List[str],
+) -> Tuple[str, str]:
+    """Deterministically set frontmatter ``takeaways:`` without touching body.
+
+    Returns ``(new_content, status)`` where status is one of:
+      - ``written`` — frontmatter updated (created or overwritten takeaways)
+      - ``no_frontmatter`` — file has no opening ``---`` block; content unchanged
+      - ``parse_error`` — YAML frontmatter invalid; content unchanged
+
+    Body bytes after the closing ``---`` are never modified. All frontmatter
+    keys other than ``takeaways`` are preserved (re-serialized via PyYAML with
+    ``sort_keys=False``). Empty / whitespace-only takeaway strings are dropped.
+    """
+    match = re.match(r'^---\n(.*?)\n---(\n|$)', content, re.DOTALL)
+    if not match:
+        return content, "no_frontmatter"
+
+    raw_fm = match.group(1)
+    try:
+        fm = yaml.safe_load(raw_fm)
+    except yaml.YAMLError:
+        return content, "parse_error"
+    if fm is None:
+        fm = {}
+    if not isinstance(fm, dict):
+        return content, "parse_error"
+
+    cleaned = [str(t).strip() for t in takeaways if str(t).strip()]
+    fm["takeaways"] = cleaned
+
+    dumped = yaml.safe_dump(
+        fm,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+        width=10_000,
+    )
+    if not dumped.endswith("\n"):
+        dumped += "\n"
+
+    new_content = f"---\n{dumped}---{match.group(2)}{content[match.end():]}"
+    return new_content, "written"
+
+
+def write_takeaways_file(article_path: str, takeaways: List[str]) -> Dict[str, object]:
+    """Read article, write takeaways into frontmatter, atomic-replace on success.
+
+    Returns a small result dict for CLI / skill consumption.
+    """
+    path = Path(article_path)
+    original = path.read_text(encoding="utf-8")
+    new_content, status = write_takeaways(original, takeaways)
+    result: Dict[str, object] = {
+        "path": str(path),
+        "status": status,
+        "takeaways": [str(t).strip() for t in takeaways if str(t).strip()],
+    }
+    if status != "written":
+        return result
+
+    # Atomic write — never leave a half-written article.
+    fd, tmp = tempfile.mkstemp(
+        prefix=".takeaways.",
+        suffix=".md",
+        dir=str(path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(new_content)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+    # Round-trip verify
+    verify_fm = parse_frontmatter(path.read_text(encoding="utf-8"))
+    result["verified"] = verify_fm.get("takeaways") == result["takeaways"]
+    return result
 
 
 def strip_code_blocks(text: str) -> str:
@@ -2153,7 +2254,7 @@ def _parse_rule_list(s: str) -> List[int]:
     return out
 
 
-def main():
+def main(argv: Optional[List[str]] = None):
     import argparse
 
     parser = argparse.ArgumentParser(description=f"Article self-check ({len(ALL_CHECKS)} rules)")
@@ -2166,11 +2267,45 @@ def main():
     parser.add_argument("--rules", type=str, default=None,
                         help='Comma-separated rule IDs to run (e.g. "1,2,6,11,13"). '
                              'Overrides --gate-only and --write-gate when present.')
-    args = parser.parse_args()
+    parser.add_argument(
+        "--write-takeaways",
+        type=str,
+        default=None,
+        metavar="JSON",
+        help='Write frontmatter takeaways: from a JSON array string, e.g. '
+             '\'["收获1","收获2"]\'. Deterministic; never touches body. '
+             'Exits 0 on written, 1 on no_frontmatter/parse_error.',
+    )
+    parser.add_argument(
+        "--extract-headings",
+        action="store_true",
+        help="Print ## section headings as a JSON array (scaffolding for "
+             "takeaway / promise analysis). Does not modify the file.",
+    )
+    args = parser.parse_args(argv)
 
     if not os.path.exists(args.article):
         print(f"❌ File not found: {args.article}", file=sys.stderr)
         sys.exit(2)
+
+    if args.extract_headings:
+        content = Path(args.article).read_text(encoding="utf-8")
+        headings = extract_section_headings(content)
+        print(json.dumps(headings, ensure_ascii=False, indent=2))
+        sys.exit(0)
+
+    if args.write_takeaways is not None:
+        try:
+            payload = json.loads(args.write_takeaways)
+        except json.JSONDecodeError as exc:
+            print(f"❌ --write-takeaways expects a JSON array: {exc}", file=sys.stderr)
+            sys.exit(2)
+        if not isinstance(payload, list):
+            print("❌ --write-takeaways expects a JSON array of strings", file=sys.stderr)
+            sys.exit(2)
+        result = write_takeaways_file(args.article, payload)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        sys.exit(0 if result.get("status") == "written" else 1)
 
     # Resolve which rules to run. Precedence: --rules > --write-gate > --gate-only > all.
     # `args.rules is not None` — distinguishes "--rules was passed (even as '')"

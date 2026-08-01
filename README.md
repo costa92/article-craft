@@ -3,7 +3,7 @@
 [![Plugin Layout Smoke](https://github.com/costa92/article-craft/actions/workflows/smoke.yml/badge.svg)](https://github.com/costa92/article-craft/actions/workflows/smoke.yml)
 [![Screenshot E2E](https://github.com/costa92/article-craft/actions/workflows/screenshot-e2e.yml/badge.svg)](https://github.com/costa92/article-craft/actions/workflows/screenshot-e2e.yml)
 
-Modular article generation plugin for Claude Code — 13 composable skills plus orchestrator for the full article lifecycle. **WeChat distribution-aware** (v1.7.x): built from 4 real published articles where 8 self-check rules failed 100% of the time, hardened with A/B-tier official-source evidence chain. **v1.8.x** adds an orthogonal `body_form` axis — `wechat-native` (mobile-shaped 公众号 body) is now the default — and attribution-as-voice (Rule 5/22 credit honest source attribution, not just first-person anecdotes).
+Modular article generation plugin for Claude Code — **14 composable skills** plus orchestrator for the full article lifecycle. **WeChat distribution-aware** (v1.7.x+): built from 4 real published articles where 8 self-check rules failed 100% of the time, hardened with A/B-tier official-source evidence chain. **v1.8.x** adds orthogonal `body_form` (`wechat-native` default). **v1.10.0** adds **recap** (reader takeaways + delivery check) after review, deterministic frontmatter `takeaways:`, and stronger wechat-native de-AI / 低质-AIGC guardrails.
 
 ## What it does
 
@@ -54,7 +54,8 @@ This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and
 | screenshot | Web screenshots (Playwright + URL validation) + share cards |
 | images | Minimax-first image generation + CDN upload |
 | verify-claims | Post-write shell command validation |
-| review | Self-check + 8-dimension quality scoring |
+| review | Self-check + takeaways + 8-dimension quality scoring |
+| recap | Reader takeaways + delivery check (sidecar only) |
 | publish | Knowledge base auto-placement |
 | lint | Style violation detection + auto-fix |
 | series | Multi-part article management |
@@ -73,7 +74,7 @@ This installs Python dependencies (Playwright, Pillow, requests), PicGo CLI, and
 ## Standard Pipeline
 
 ```
-requirements → verify → [evidence if Style H] → write → screenshot → share_card? → images → verify-claims → review → publish
+requirements → verify → [evidence if Style H] → write → screenshot → share_card? → images → verify-claims → review → recap → publish
 ```
 
 ## WeChat 适配 (v1.7.x)
@@ -163,6 +164,7 @@ User commands
   ├─ /article-craft:images
   ├─ /article-craft:verify-claims
   ├─ /article-craft:review
+  ├─ /article-craft:recap
   ├─ /article-craft:publish
   ├─ /article-craft:lint
   ├─ /article-craft:series
@@ -182,6 +184,8 @@ orchestrator
   │                     └─ reads scripts/config.py
   ├─ verify-claims    → scripts/verify_claims.py
   ├─ review / lint    → applies references/self-check-rules.md
+  │                     + takeaways via review_selfcheck --write-takeaways
+  ├─ recap            → sidecar _recap.md / _recap.json (no body edits)
   └─ publish          → uses scripts/utils.py SmartDirectoryMatcher
 ```
 
@@ -242,9 +246,11 @@ In practice, `skills/` decides **what should happen next**, while `scripts/` is 
 
 **verify-claims** — Post-write shell-command validation. Scans code blocks in the completed article and checks the referenced tools exist on PATH before review.
 
-**review** — Quality gate with **23 self-check rules + 8-dimension scoring** (≥63/80 to pass, v1.7+). Self-contained — no external scoring dependency. Includes image-count validation by word count. Rules 18-24 (v1.7.x) cover WeChat-specific compliance, recommendation-pool qualification, anti-LLM systematic failure modes (fabricated numbers, AIGC reverse declarations).
+**review** — Quality gate with **23 self-check rules + reader takeaways (`takeaways:`) + 8-dimension scoring** (≥63/80 to pass, v1.7+/v1.10). Self-contained — no external scoring dependency. Includes image-count validation by word count. Rules 18-24 (v1.7.x) cover WeChat-specific compliance, recommendation-pool qualification, anti-LLM systematic failure modes (fabricated numbers, AIGC reverse declarations).
 
-**publish** — Auto-detects Obsidian knowledge base, matches subdirectory. Step 3.5 prints a 7-item human checklist enforcing WeChat backend operations (创作来源 4 选 1 / 原创声明 / 允许推荐 / 不分组群发 / tag 自动检测 / AIGC compliance / no reverse declarations). Optionally runs WeChat SEO optimization.
+**recap** (v1.10) — After review, before publish: harvest 3–5 reader gains, grade delivery (兑现率 ≥0.80), write `_recap.md` / `_recap.json` only. Never edits article body.
+
+**publish** — Auto-detects Obsidian knowledge base, matches subdirectory. Step 3.5 prints a 7-item human checklist enforcing WeChat backend operations (创作来源 4 选 1 / 原创声明 / 允许推荐 / 不分组群发 / tag 自动检测 / AIGC compliance / no reverse declarations). Optionally runs WeChat SEO optimization. Copies recap sidecars with the article.
 
 ## Standalone Commands
 
@@ -260,7 +266,8 @@ Every skill is independently invokable. All commands resolve as
 /article-craft:screenshot     # Web screenshots + share cards
 /article-craft:images         # Generate images (Minimax → Gemini fallback)
 /article-craft:verify-claims  # Validate shell commands in article body
-/article-craft:review         # Quality gate (23 rules + 8-dim scoring)
+/article-craft:review         # Quality gate (23 rules + takeaways + 8-dim scoring)
+/article-craft:recap          # Reader takeaways + delivery check (v1.10)
 /article-craft:publish        # KB auto-placement + sidecar copy
 /article-craft:lint           # Style check + auto-fix
 /article-craft:series         # Multi-part series management

@@ -1,6 +1,6 @@
 # article-craft 功能说明
 
-> 版本：**v1.9.0** ｜ 本文档基于当前源码实测整理，覆盖全部技能、脚本、工作流与质量体系。
+> 版本：**v1.10.0** ｜ 本文档基于当前源码实测整理，覆盖全部技能、脚本、工作流与质量体系。
 
 ---
 
@@ -28,7 +28,7 @@
 一切从 `skills/orchestrator/SKILL.md` 出发，串起主流水线：
 
 ```
-requirements → verify → [evidence(仅Style H)] → write → screenshot → (share_card?) → images → verify-claims → review → publish
+requirements → verify → [evidence(仅Style H)] → write → screenshot → (share_card?) → images → verify-claims → review → recap → publish
 ```
 
 - 每个技能也可独立调用：`/article-craft:<skill-name>`。
@@ -74,8 +74,9 @@ requirements → verify → [evidence(仅Style H)] → write → screenshot → 
 | - | **share-card** | `/article-craft:share-card` | 可选：从 frontmatter 生成社交分享卡（封面/信息流/帖图），**11 个平台预设（9 平台 + 2 别名）+ 7 套配色** |
 | 5 | **images** | `/article-craft:images` | 处理正文 `<!-- IMAGE: -->`/`<!-- PROMPT: -->` 占位符，**Minimax 优先、Gemini 兜底**，Pillow 压缩、PicGo/S3 上传，原地改写文章 |
 | 6 | **verify-claims** | `/article-craft:verify-claims` | 扫描正文 shell 代码块，逐个检查工具是否在 PATH 上（写作后的事实校验） |
-| 7 | **review** | `/article-craft:review` | 质量门：Phase 1 自检 23 条规则 + Phase 2 八维评分（阈值 63/80），无外部依赖 |
-| 8 | **publish** | `/article-craft:publish` | 自动归档到知识库（智能目录匹配）、分发优化、微信发布前 checklist |
+| 7 | **review** | `/article-craft:review` | 质量门：Phase 1 自检 23 条规则 + Phase 2.0 读者收获提炼（`takeaways:`）+ 八维评分（阈值 63/80），无外部依赖 |
+| 7.5 | **recap** | `/article-craft:recap` | 收获复盘：兑现度复查 + sidecar `_recap.md`/`_recap.json`（不改正文）；standard 模式在 review 与 publish 之间 |
+| 8 | **publish** | `/article-craft:publish` | 自动归档到知识库（智能目录匹配）、分发优化、微信发布前 checklist；搬运 recap sidecar |
 
 辅助/独立技能：
 

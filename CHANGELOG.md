@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.10.0] - 2026-08-01 — recap 阶段 + takeaways frontmatter + 脚本入口健壮性 + wechat-native 去 AI 味固化
+
+### Why
+
+四件事叠在一起值得一次 minor：
+
+1. 设计文档（2026-06-23/24）里的「读者收获提炼 / 承诺-兑现」长期待实现——review 只做规则合规与八维分，回答不了「读者带走什么、标题有没有兑现」。
+2. 实战 dogfood（llmfit 选型文）暴露 **lint 直接 `python3 scripts/lint_article.py` 因 `from scripts.config` 挂掉**，与 review_selfcheck 早已修好的三入口模式不一致；doctor 也不探测这条路径。
+3. 同一次 dogfood 需要把 wechat-native 去 AI 味 + 微信低质/合规约束写进 style-guide，避免手册腔 / 空壳 AIGC / 反向声明。
+4. 两份设计（review 内 takeaways vs 独立 recap）并存——本版**两者都落地且职责拆分**：review Phase 2.0 写 frontmatter；recap 做兑现度 + sidecar。
+
+### Added
+
+- **`write_takeaways` / `write_takeaways_file` / `extract_section_headings`**（`scripts/review_selfcheck.py`）
+  - 确定性写 frontmatter `takeaways:`，正文字节不可触；四分支降级（written / no_frontmatter / parse_error）。
+  - CLI：`--write-takeaways '["…"]'`、`--extract-headings`。
+  - `tests/test_write_takeaways.py`（8 测）全绿。
+- **review Phase 2.0 — 读者收获提炼**（`skills/review/SKILL.md`）
+  - publish 模式：抽 `##` 标题脚手架 → agent 提炼 3–5 条核心收获 → 承诺-兑现软信号（补集原则、单维 −2 上限、error 缺口 ≤3）→ 脚本写 `takeaways:`。
+  - draft 模式整段跳过 Phase 2（含 2.0）。
+- **`article-craft:recap` 独立阶段**（`skills/recap/SKILL.md` + `commands/recap.md`）
+  - standard 流水线：`review → recap → publish`；quick/draft 跳过。
+  - 只写 sidecar `_recap.md` / `_recap.json`，**不 Edit 正文**；可复用 frontmatter `takeaways:`。
+  - 兑现率阈值 0.80；NEEDS_REVISION 走既有 AskUserQuestion 三选一。
+- **pipeline / publish 接入**
+  - `pipeline_state.KNOWN_STAGES` / `MODE_STAGES` 含 `recap`；启发式：`_recap.json` 存在 ⇒ recap done。
+  - `publish_plan.SIDECAR_FILES` 增加 `_recap.md` / `_recap.json`。
+  - orchestrator Step 3.7.5 + summary / standalone 列表同步。
+- **doctor `script_entrypoints` 检查**（`setup_dependencies.py`）
+  - 直接 `python3 path/to/{review_selfcheck,lint_article}.py --help`；失败则 **block**，fail-fast 在写完文章之前。
+- **wechat-native 去 AI 味 + 微信低质表**（`skills/write/style-guide.md`）
+  - 固化：低创作度 AIGC、GB 45438 / 珊瑚安全标识、反向声明、标题党、虚构数字、空壳结构、外链习惯；写作优先序 5 条。
+
+### Fixed
+
+- **`lint_article.py` 三入口导入**：与 `review_selfcheck` 对齐——script dir + repo root 入 `sys.path`，`from config` 优先、`from scripts.config` 兜底。  
+  修复 `python3 scripts/lint_article.py --article …` 的 `ModuleNotFoundError: scripts`。
+- **`generate_and_upload_images.py` tqdm fallback**：系统未装 `tqdm` 时的简易 stub 现在接受 `unit` / `bar_format` 等 kwargs，并实现 `update` / `set_description` / `set_postfix`，避免 `--process-file` 在无 tqdm 环境直接 `TypeError` 崩掉（llmfit dogfood 复现）。
+
+### Tests
+
+- 受影响子集：`test_write_takeaways` / `test_plugin_layout` / `test_pipeline_state` / `test_publish_plan` / `test_lint_article` / `test_doctor` → **79 passed**。
+- `test_pipeline_state` 期望序列补上 `recap`。
+
+### Docs
+
+- `docs/FEATURES.md` → v1.10.0；流水线含 recap；技能表增 recap 行。
+- 设计文档仍保留为规格源：`docs/superpowers/specs/2026-06-23-recap-stage-design.md`、`2026-06-24-reader-takeaway-consistency-review-design.md`。
+
+### Migration
+
+- 旧文章 `--upgrade` 到 standard 时会多出 **missing: recap**，直到生成 `_recap.json` 或用户在 pipeline 中跑 recap。
+- review 重跑会**覆盖**自动生成的 `takeaways:`（作者手改会被覆盖——与设计一致）。
+
 ## [1.9.12] - 2026-07-14 — Rule 24 月份/时长消歧：修复 v1.9.11 的三个信号回归
 
 ### Why

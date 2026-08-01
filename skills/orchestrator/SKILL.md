@@ -1,6 +1,6 @@
 ---
 name: article-craft
-version: 1.9.12
+version: 1.10.0
 description: "Enhanced full article generation pipeline — orchestrated with intelligent inference, source trust detection, and structure validation. Uses multi-layer requirements, T0-T5 verification focus, and section depth enforcement."
 allowed-tools:
   - Read
@@ -31,7 +31,7 @@ Five modes, selected at invocation:
 
 | Mode | Skills Executed | Use Case |
 |------|----------------|----------|
-| **standard** (default) | requirements → verify (source-vet) → [evidence if Style H] → write → screenshot → images → verify-claims → review → publish | Full article with quality gate |
+| **standard** (default) | requirements → verify (source-vet) → [evidence if Style H] → write → screenshot → images → verify-claims → review → recap → publish | Full article with quality gate + reader recap |
 | **quick** (`--quick`) | requirements → [evidence if Style H] → write → screenshot → images | Fast output, skip both verify stages and review |
 | **draft** (`--draft`) | requirements → [evidence if Style H] → write | Content only, no images or review |
 | **series** (`--series FILE`) | Read series.md → requirements (pre-filled) → standard pipeline | Write the next article in a series |
@@ -179,6 +179,8 @@ Pipeline Status:
   images:       pending
   verify_claims: pending
   review:       pending
+  recap:        pending
+    └─ 收获清单 + 兑现度复查（诊断性，sidecar only）
   publish:      pending
 ```
 
@@ -250,7 +252,8 @@ Result payloads per stage (pass as JSON to `--result` / `--partial`):
 | `share_card` | `cards_generated`, `platforms`, `skip_reason` (if skipped) |
 | `images` | `images_generated`, `images_failed`, `unresolved_placeholders` |
 | `verify_claims` | `total_tools`, `checked_tools`, `missing_tools`, `action` |
-| `review` | `score_0`, `final_score`, `rounds`, `verdict` |
+| `review` | `score_0`, `final_score`, `rounds`, `verdict`, `takeaways_count` |
+| `recap` | `takeaways_count`, `delivery_rate`, `verdict`, `recap_sidecar` |
 | `publish` | `final_path`, `kb_dir` |
 
 **Path updates:** if a stage moves the article (publish), pass the new path as
@@ -495,8 +498,8 @@ Invoke the `article-craft:review` skill (via the **Skill tool** — `skill: "art
 
 | Return value | Meaning | Orchestrator action |
 |--------------|---------|---------------------|
-| `PASS` | score ≥ 63，或 score < 63 但用户选 "Publish anyway" | 继续到 publish |
-| `NEEDS_REVISION_RERUN_WRITE` | 用户选 "Re-run write with hints" | **回跳到 Step 3.3**，把 review 的 feedback 列表作为输入重跑 write；回跑后 screenshot / images / review 按正常顺序继续。最多回跳 2 次（避免无限循环）；第 3 次 NEEDS_REVISION 强制 AskUserQuestion 不含 rerun 选项 |
+| `PASS` | score ≥ 63，或 score < 63 但用户选 "Publish anyway" | 继续到 **recap** |
+| `NEEDS_REVISION_RERUN_WRITE` | 用户选 "Re-run write with hints" | **回跳到 Step 3.3**，把 review 的 feedback 列表作为输入重跑 write；回跑后 screenshot / images / review / recap 按正常顺序继续。最多回跳 2 次（避免无限循环）；第 3 次 NEEDS_REVISION 强制 AskUserQuestion 不含 rerun 选项 |
 | `ABORT` | 用户选 "Abort" | 停止 pipeline，在 summary 中报告"review ABORT @ score X/80" |
 
 **Rerun loop guard:** track `review_rerun_count` in state file; if ≥ 2 when the
@@ -510,6 +513,28 @@ intermediate rerun (review didn't fail, the user chose to iterate).
 
 > [!note]
 > Skipped in quick and draft modes. Mark as `skipped`.
+
+#### 3.7.5 Recap (standard mode only, new in v1.10)
+
+Invoke the `article-craft:recap` skill (via the **Skill tool** — `skill: "article-craft:recap"`)
+**after review PASS (or Publish anyway), before publish**.
+
+- Pass the article.md absolute file path
+- Recap is **diagnostic only**: chat report + sidecar `_recap.md` / `_recap.json`
+- **Never edits article body** (no Edit tool); may call
+  `review_selfcheck.py --write-takeaways` only if review left frontmatter empty
+- If frontmatter already has `takeaways:` from review Phase 2.0, reuse them
+
+**Outcome:**
+
+| Return value | Meaning | Orchestrator action |
+|--------------|---------|---------------------|
+| `PASS` | 兑现率 ≥ 0.80 且无未兑现，或用户选 Publish anyway | 继续到 publish |
+| `NEEDS_REVISION_RERUN_WRITE` | 用户选 re-write | **回跳 Step 3.3**，hints = 未兑现/部分兑现清单；回跑后 screenshot/images/verify-claims/review/recap 续跑。`recap_rerun_count` 封顶 2 |
+| `ABORT` | 用户选 Abort | 停止，summary 报 "recap ABORT @ rate X" |
+
+> [!note]
+> Skipped in quick and draft modes (`reason: mode skip`).
 
 #### 3.8 Publish (standard mode only)
 
@@ -548,6 +573,7 @@ After all skills complete (or pipeline stops on fatal error), print a summary ta
 │ images       │ success  │ 4/5 uploaded, 1 placeholder   │
 │ verify_claims │ success  │ 0 missing tools               │
 │ review       │ success  │ Score: 66/80 (PASS)           │
+│ recap        │ success  │ 兑现率 0.83 (PASS)            │
 │ publish      │ success  │ KB: {final_path}              │
 ├──────────────┼──────────┼───────────────────────────────┤
 │ Mode: standard │ Duration: ~2 min                       │
@@ -588,6 +614,7 @@ If the pipeline stops due to a fatal error (write skill failure):
 │ images       │ skipped  │ (blocked by write failure)    │
 │ verify_claims │ skipped  │ (blocked by write failure)    │
 │ review       │ skipped  │ (blocked by write failure)    │
+│ recap        │ skipped  │ (blocked by write failure)    │
 │ publish      │ skipped  │ (blocked by write failure)    │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -605,6 +632,7 @@ Each skill can be used independently without the orchestrator:
 /article-craft:images         # Just generate images for existing article
 /article-craft:verify-claims  # Just verify tool claims in the article body
 /article-craft:review         # Just review an existing article
+/article-craft:recap          # Reader takeaways + delivery check (sidecar)
 /article-craft:publish        # Just publish to knowledge base
 ```
 

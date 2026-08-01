@@ -114,7 +114,7 @@ def test_all_command_files_have_description_frontmatter():
 
 def test_all_skill_files_have_required_frontmatter():
     """Per CLAUDE.md convention every skill SKILL.md must declare these
-    four fields. All 13 non-orchestrator skills + orchestrator must comply.
+    four fields. All 14 non-orchestrator skills + orchestrator must comply.
     """
     required = {"name", "version", "description", "allowed-tools"}
     for skill in SKILLS_DIR.glob("*/SKILL.md"):

@@ -98,21 +98,41 @@ except ImportError:
 try:
     from tqdm import tqdm
 except ImportError:
-    # 如果 tqdm 未安装，提供一个简单的替代
+    # 如果 tqdm 未安装，提供一个简单的替代（兼容 unit/bar_format/set_* 等 kwargs）
     class tqdm:
-        def __init__(self, iterable=None, desc=None, total=None):
+        def __init__(self, iterable=None, desc=None, total=None, **kwargs):
             self.iterable = iterable
-            self.desc = desc
-            self.total = total or (len(iterable) if iterable else 0)
+            self.desc = desc or ""
+            self.total = total if total is not None else (len(iterable) if iterable is not None else 0)
+            self.n = 0
+            self._postfix = {}
 
         def __iter__(self):
-            return iter(self.iterable)
+            return iter(self.iterable or [])
 
         def __enter__(self):
+            if self.desc:
+                print(self.desc, flush=True)
             return self
 
         def __exit__(self, *args):
             pass
+
+        def update(self, n=1):
+            self.n += n
+            if self.total:
+                print(f"  [{self.n}/{self.total}] {self.desc}", flush=True)
+
+        def set_description(self, desc=None, refresh=True):
+            if desc is not None:
+                self.desc = desc
+                if refresh:
+                    print(self.desc, flush=True)
+
+        def set_postfix(self, ordered_dict=None, refresh=True, **kwargs):
+            if ordered_dict:
+                self._postfix.update(ordered_dict)
+            self._postfix.update(kwargs)
 
 try:
     from google import genai
